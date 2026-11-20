@@ -94,9 +94,10 @@ func syncEdge(a *app.App, on bool) {
 
 func newEdgeMode(a *app.App, side string) *edgeMode {
 	e := &edgeMode{
-		app:  a,
-		side: side,
-		disp: cursorDisplay(),
+		app:     a,
+		side:    side,
+		groupID: initialModeGroup(a.Settings.EdgeGroup, a.Group),
+		disp:    cursorDisplay(),
 	}
 	x, y, w, h := e.boundsFor(edgeHidden)
 	e.win = mygo.NewWindow(mygo.WindowOptions{
@@ -547,6 +548,7 @@ func (e *edgeMode) viewPanel(c *ui.Context, p *theme.Palette, lib *model.Library
 							widget.RevealSelectedTab(pill, selected, i)
 							if pill.Clicked() {
 								e.groupID = g.ID
+								e.app.SetModeGroup(model.ModeEdge, g.ID)
 								e.tmplID = ""
 								e.list.ScrollTo(0, ui.Start)
 							}

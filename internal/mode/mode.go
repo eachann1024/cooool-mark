@@ -213,6 +213,13 @@ func firstSubID(g *model.Group) string {
 	return ""
 }
 
+func initialModeGroup(saved, fallback string) string {
+	if saved != "" {
+		return saved
+	}
+	return fallback
+}
+
 func activeGroup(lib *model.Library, id string) *model.Group {
 	if g := lib.Group(id); g != nil {
 		return g

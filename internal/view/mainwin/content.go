@@ -251,7 +251,7 @@ func (s *mainState) syncBrowseSubFromScroll(c *ui.Context, lib *model.Library) {
 	}
 
 	if subID := s.browseSubAtScroll(c, cache.rows, first, last, listBounds, scrollY, deltaY); subID != "" && subID != a.Sub {
-		a.Sub = subID
+		a.SetSub(subID)
 	}
 }
 
@@ -849,7 +849,7 @@ func (s *mainState) bindBookmarkRowEvents(c *ui.Context, p *theme.Palette, click
 	if clickEl.Clicked() {
 		s.cursorID = b.ID
 		if b.SubID != "" {
-			a.Sub = b.SubID
+			a.SetSub(b.SubID)
 		}
 		s.stopBrowseFollow()
 		s.contentHandle.Focus(c)

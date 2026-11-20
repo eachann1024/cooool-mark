@@ -82,8 +82,9 @@ func syncNotch(a *app.App, on bool) {
 
 func newNotchMode(a *app.App) *notchMode {
 	n := &notchMode{
-		app:  a,
-		disp: cursorDisplay(),
+		app:     a,
+		groupID: initialModeGroup(a.Settings.NotchGroup, a.Group),
+		disp:    cursorDisplay(),
 	}
 	x, y, w, h := n.boundsFor(notchClosed, 1)
 	n.win = mygo.NewWindow(mygo.WindowOptions{
@@ -505,6 +506,7 @@ func (n *notchMode) renderOpen(c *ui.Context, p *theme.Palette, lib *model.Libra
 							})
 							if pill.Clicked() {
 								n.groupID = g.ID
+								n.app.SetModeGroup(model.ModeNotch, g.ID)
 								n.tmplID = ""
 								n.list.ScrollTo(0, ui.Start)
 								n.syncOpenHeight()

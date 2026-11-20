@@ -74,6 +74,8 @@ func main() {
 		}()
 
 		mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) {
+			settings.Flush()
+			a.FlushSettings()
 			if err := a.Store.Flush(); err != nil && !e.SessionEnding {
 				e.PreventDefault()
 				a.Win.ShowMain()
@@ -84,6 +86,8 @@ func main() {
 		mygo.App.OnQuitCanceled(func() { mode.Apply(a) })
 		mygo.App.OnWillQuit(func(*mygo.QuitEvent) {
 			cancel()
+			settings.Flush()
+			a.FlushSettings()
 			_ = a.Store.Flush()
 		})
 

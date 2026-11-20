@@ -58,7 +58,10 @@ func syncTray(a *app.App, on bool) {
 }
 
 func newTrayMode(a *app.App) *trayMode {
-	t := &trayMode{app: a}
+	t := &trayMode{
+		app:     a,
+		groupID: initialModeGroup(a.Settings.TrayGroup, a.Group),
+	}
 	tray, err := mygo.NewTray(mygo.TrayOptions{
 		ID:             "cooool-mark-tray",
 		Icon:           trayIconBytes(),
@@ -401,6 +404,7 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 						widget.RevealSelectedTab(pill, selected, i)
 						if pill.Clicked() {
 							t.groupID = g.ID
+							t.app.SetModeGroup(model.ModeTray, g.ID)
 							t.tmplID = ""
 							t.flyoutList.ScrollTo(0, ui.Start)
 							t.detachedList.ScrollTo(0, ui.Start)

@@ -220,11 +220,7 @@ func (s *mainState) inputFocused(c *ui.Context) bool {
 }
 
 func (s *mainState) toggleView() {
-	if s.app.View == "grid" {
-		s.app.View = "list"
-	} else {
-		s.app.View = "grid"
-	}
+	s.app.ToggleView()
 }
 
 func (s *mainState) handleGlobalShortcuts(c *ui.Context) {
@@ -339,7 +335,7 @@ func (s *mainState) moveCursor(ids []string, delta int) {
 	s.cursorScrollMoved = true
 	s.stopBrowseFollow()
 	if b := a.Store.Lib().Bookmark(target); b != nil && b.SubID != "" {
-		a.Sub = b.SubID
+		a.SetSub(b.SubID)
 	}
 }
 

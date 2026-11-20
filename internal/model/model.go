@@ -239,6 +239,11 @@ type Settings struct {
 	// Last place, always restored on launch.
 	LastGroup string `json:"lastGroup,omitempty"`
 	LastSub   string `json:"lastSub,omitempty"`
+
+	// Last group per summon mode, restored on launch.
+	NotchGroup string `json:"notchGroup,omitempty"`
+	TrayGroup  string `json:"trayGroup,omitempty"`
+	EdgeGroup  string `json:"edgeGroup,omitempty"`
 }
 
 // DefaultSettings are the settings of a fresh install.
@@ -268,7 +273,7 @@ func (s *Settings) ModeOn(mode string) bool {
 
 // SetMode switches an open mode on or off.
 func (s *Settings) SetMode(mode string, on bool) {
-	out := s.OpenModes[:0:0]
+	out := make([]string, 0, len(s.OpenModes)+1)
 	for _, m := range s.OpenModes {
 		if m != mode {
 			out = append(out, m)

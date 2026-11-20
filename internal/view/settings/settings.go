@@ -210,6 +210,41 @@ func (s *state) flushKeySave() {
 	go s.persistOpenAIKey(val, version)
 }
 
+// Flush synchronously persists any debounced settings or API key edits
+// before the app quits. Main thread.
+func Flush() {
+	if s := cur; s != nil {
+		if s.saveTimer != nil {
+			s.saveTimer.Stop()
+			s.saveTimer = nil
+			s.a.SaveSettings()
+		}
+		if s.openAIKeyReady && s.keyTimer != nil {
+			s.keyTimer.Stop()
+			s.keyTimer = nil
+			s.keySeq++
+			val := s.openAIKey
+			version := keyWriteVersion.Add(1)
+			_ = writeOpenAIKeySync(val, version)
+		}
+	}
+	// Wait for any in-flight background keychain write to finish before exit.
+	keyWriteMu.Lock()
+	keyWriteMu.Unlock()
+}
+
+func writeOpenAIKeySync(val string, version uint64) error {
+	keyWriteMu.Lock()
+	defer keyWriteMu.Unlock()
+	if keyWriteVersion.Load() != version {
+		return nil
+	}
+	if val == "" {
+		return mygo.Secrets.Delete(openAISecretKey)
+	}
+	return mygo.Secrets.Set(openAISecretKey, []byte(val))
+}
+
 func (s *state) persistOpenAIKey(val string, version uint64) {
 	keyWriteMu.Lock()
 	if keyWriteVersion.Load() != version {

@@ -77,6 +77,8 @@ type App struct {
 
 	settingsPath  string
 	savedSettings atomic.Pointer[model.Settings]
+	placeTimer    *time.Timer
+	placeDirty    bool
 	windows       []*mygo.Window
 	postMu        sync.Mutex
 	postQueue     []func()
@@ -234,6 +236,7 @@ func (a *App) SaveSettings() {
 		a.SayErr("无法保存设置："+err.Error(), "", nil)
 		return
 	}
+	a.clearPlaceTimer()
 	if previous != nil && previous.DefaultView != a.Settings.DefaultView {
 		a.View = a.Settings.DefaultView
 	}
@@ -331,14 +334,139 @@ func (a *App) Go(groupID, subID string) {
 	a.Group, a.Sub = groupID, subID
 	a.EnsurePlace()
 	a.Settings.LastGroup, a.Settings.LastSub = a.Group, a.Sub
-	if previous := a.savedSettings.Load(); previous != nil {
-		next := *previous
-		next.LastGroup, next.LastSub = a.Group, a.Sub
-		if err := a.writeSettings(next); err != nil {
-			a.SayErr("无法记住当前分组："+err.Error(), "", nil)
-		}
+	a.clearPlaceTimer()
+	if err := a.patchSavedSettings(func(s *model.Settings) {
+		s.LastGroup, s.LastSub = a.Group, a.Sub
+	}); err != nil {
+		a.SayErr("无法记住当前分组："+err.Error(), "", nil)
 	}
 	a.Invalidate()
+}
+
+// SetSub updates the active sub-group within the current group and schedules
+// persisting it to settings.json (debounced so scrolling stays smooth).
+func (a *App) SetSub(subID string) {
+	if subID == "" || subID == a.Sub {
+		return
+	}
+	if a.Store.Lib().Sub(a.Group, subID) == nil {
+		return
+	}
+	a.Sub = subID
+	a.Settings.LastGroup, a.Settings.LastSub = a.Group, a.Sub
+	a.schedulePlaceSave()
+}
+
+// SetView switches between "list" and "grid" and persists the choice.
+func (a *App) SetView(view string) {
+	if view != "grid" {
+		view = "list"
+	}
+	if a.View == view && a.Settings.DefaultView == view {
+		return
+	}
+	prevView, prevDefault := a.View, a.Settings.DefaultView
+	a.View = view
+	a.Settings.DefaultView = view
+	if err := a.patchSavedSettings(func(s *model.Settings) {
+		s.DefaultView = view
+	}); err != nil {
+		a.View = prevView
+		a.Settings.DefaultView = prevDefault
+		a.SayErr("无法保存视图设置："+err.Error(), "", nil)
+		return
+	}
+	a.Invalidate()
+}
+
+// ToggleView switches between list and grid view and persists the choice.
+func (a *App) ToggleView() {
+	if a.View == "grid" {
+		a.SetView("list")
+	} else {
+		a.SetView("grid")
+	}
+}
+
+// SetModeGroup remembers the last selected group for a summon mode.
+func (a *App) SetModeGroup(mode, groupID string) {
+	var target *string
+	switch mode {
+	case model.ModeNotch:
+		target = &a.Settings.NotchGroup
+	case model.ModeTray:
+		target = &a.Settings.TrayGroup
+	case model.ModeEdge:
+		target = &a.Settings.EdgeGroup
+	default:
+		return
+	}
+	if *target == groupID {
+		return
+	}
+	*target = groupID
+	_ = a.patchSavedSettings(func(s *model.Settings) {
+		switch mode {
+		case model.ModeNotch:
+			s.NotchGroup = groupID
+		case model.ModeTray:
+			s.TrayGroup = groupID
+		case model.ModeEdge:
+			s.EdgeGroup = groupID
+		}
+	})
+}
+
+// FlushSettings writes any pending debounced settings (such as last place) now.
+func (a *App) FlushSettings() {
+	a.EnsurePlace()
+	dirty := a.placeDirty || a.Settings.LastGroup != a.Group || a.Settings.LastSub != a.Sub
+	a.clearPlaceTimer()
+	if !dirty {
+		return
+	}
+	a.Settings.LastGroup, a.Settings.LastSub = a.Group, a.Sub
+	_ = a.patchSavedSettings(func(s *model.Settings) {
+		s.LastGroup, s.LastSub = a.Group, a.Sub
+	})
+}
+
+func (a *App) clearPlaceTimer() {
+	if a.placeTimer != nil {
+		a.placeTimer.Stop()
+		a.placeTimer = nil
+	}
+	a.placeDirty = false
+}
+
+func (a *App) schedulePlaceSave() {
+	a.placeDirty = true
+	if a.placeTimer != nil {
+		a.placeTimer.Stop()
+	}
+	a.placeTimer = time.AfterFunc(400*time.Millisecond, func() {
+		a.Post(func() {
+			a.placeTimer = nil
+			if !a.placeDirty {
+				return
+			}
+			a.placeDirty = false
+			a.Settings.LastGroup, a.Settings.LastSub = a.Group, a.Sub
+			_ = a.patchSavedSettings(func(s *model.Settings) {
+				s.LastGroup, s.LastSub = a.Group, a.Sub
+			})
+		})
+	})
+}
+
+func (a *App) patchSavedSettings(fn func(s *model.Settings)) error {
+	previous := a.savedSettings.Load()
+	if previous == nil {
+		return nil
+	}
+	next := *previous
+	fn(&next)
+	return a.writeSettings(next)
 }
 
 // Choices lists every group / sub-group, for pickers and the AI.
