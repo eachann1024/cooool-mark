@@ -210,9 +210,14 @@ func (s *state) shortcutsCard(c *ui.Context, p *theme.Palette) {
 								return true
 							}
 							if (ev.Key == ui.KeyBackspace || ev.Key == ui.KeyDelete) && ev.Mods == 0 {
-								item.clear()
-								s.setRecording("")
-								a.SaveSettings()
+								if a.Win.SetShortcut != nil {
+									s.recordingSlot = ""
+									a.Win.SetShortcut(item.id, "")
+								} else {
+									item.clear()
+									s.setRecording("")
+									a.SaveSettings()
+								}
 								return true
 							}
 							if isReservedAppShortcut(ev) {
@@ -267,9 +272,14 @@ func (s *state) shortcutsCard(c *ui.Context, p *theme.Palette) {
 					if item.value != "" {
 						clrBtn := btnSecondaryCompact(c, p, locales.ActionClear()).Tooltip(locales.SettingsShortcutClearTip()).Disabled(locked)
 						if !locked && clrBtn.Clicked() {
-							item.clear()
-							s.setRecording("")
-							a.SaveSettings()
+							if a.Win.SetShortcut != nil {
+								s.recordingSlot = ""
+								a.Win.SetShortcut(item.id, "")
+							} else {
+								item.clear()
+								s.setRecording("")
+								a.SaveSettings()
+							}
 						}
 					}
 					if item.canReset && item.reset != nil {

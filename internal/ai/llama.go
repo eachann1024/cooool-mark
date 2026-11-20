@@ -108,6 +108,19 @@ func (m *llamaManager) acquire(ctx context.Context, s model.Settings, modelPath 
 		m.mu.Unlock()
 		return nil, ctx.Err()
 	}
+	// Re-verify settings after potentially slow binary download so disabling
+	// local AI or switching local models in Settings never spawns a stale server.
+	if m.e != nil {
+		cur := m.e.currentSettings()
+		if cur.AIEngine != model.AILocal {
+			m.mu.Unlock()
+			return nil, context.Canceled
+		}
+		if curPath, ok := modelFileIfReady(resolveModelSpec(cur.LocalModel)); !ok || curPath != modelPath {
+			m.mu.Unlock()
+			return nil, context.Canceled
+		}
+	}
 
 	var inst *llamaInstance
 	if m.cur != nil && m.cur.modelPath == modelPath && m.cur.isAlive() {

@@ -239,8 +239,19 @@ func (s *Store) Flush() error {
 	return s.persist()
 }
 
+func marshalLibrary(lib *model.Library) ([]byte, error) {
+	cp := *lib
+	if cp.Groups == nil {
+		cp.Groups = []model.Group{}
+	}
+	if cp.Bookmarks == nil {
+		cp.Bookmarks = []model.Bookmark{}
+	}
+	return json.MarshalIndent(cp, "", "  ")
+}
+
 func (s *Store) persist() error {
-	data, err := json.MarshalIndent(s.lib, "", "  ")
+	data, err := marshalLibrary(s.lib)
 	if err != nil {
 		s.reportSaveError(err)
 		return err
@@ -429,7 +440,7 @@ func (s *Store) Backup(label string) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	data, err := json.MarshalIndent(s.lib, "", "  ")
+	data, err := marshalLibrary(s.lib)
 	if err != nil {
 		return "", err
 	}

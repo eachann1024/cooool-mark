@@ -189,11 +189,21 @@ func main() {
 		mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) {
 			if e.SessionEnding {
 				editor.AllowClose()
-			} else if editor.PromptUnsavedOnQuit() {
-				e.PreventDefault()
-				return
+				settings.Flush()
+			} else {
+				if editor.PromptUnsavedOnQuit() {
+					e.PreventDefault()
+					return
+				}
+				if err := settings.FlushBeforeQuit(); err != nil {
+					e.PreventDefault()
+					if a.Win.ShowSettings != nil {
+						a.Win.ShowSettings("ai")
+					}
+					a.SayErr(locales.AiKeySaveErr(), "", nil)
+					return
+				}
 			}
-			settings.Flush()
 			a.FlushSettings()
 			if err := a.Store.Flush(); err != nil && !e.SessionEnding {
 				e.PreventDefault()

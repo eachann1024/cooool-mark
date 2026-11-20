@@ -56,6 +56,9 @@ var (
 	keyWantVer    uint64
 	keyWorkerBusy bool
 	keyWorkerDone chan struct{}
+	keyLastErr    error
+	keyLastErrVer uint64
+	keyErrShown   bool
 )
 
 // RefreshChrome updates the settings window title and contents after locale changes.
@@ -111,6 +114,9 @@ func Show(a *app.App, page string) {
 		cur.page = page
 		cur.setRecording("")
 		cur.openAtLogin = mygo.App.OpenAtLogin()
+		if cur.win.IsMinimized() {
+			cur.win.Restore()
+		}
 		cur.win.Show()
 		cur.win.Focus()
 		cur.win.Invalidate()
@@ -294,6 +300,29 @@ func Flush() {
 	}
 }
 
+// FlushBeforeQuit flushes pending settings/API key edits and waits for the
+// background credential worker to finish writing the latest key. Because
+// runKeyWorker executes off the main thread without pumping the native event
+// loop, waiting here cannot trigger re-entrant quits. Returns an unsurfaced
+// save error so OnBeforeQuit can keep windows open and inform the user.
+func FlushBeforeQuit() error {
+	Flush()
+	keySyncMu.Lock()
+	done := keyWorkerDone
+	busy := keyWorkerBusy
+	keySyncMu.Unlock()
+	if busy && done != nil {
+		<-done
+	}
+	keySyncMu.Lock()
+	defer keySyncMu.Unlock()
+	if keyLastErr != nil && !keyErrShown {
+		keyErrShown = true
+		return keyLastErr
+	}
+	return nil
+}
+
 // FlushWait flushes pending settings/API key edits and waits for the
 // background credential worker to finish writing the latest key. Call from
 // OnWillQuit after the quit sequence has committed (non-reentrant). When
@@ -323,6 +352,8 @@ func enqueueKeyPersist(a *app.App, val string) {
 	keyWantValid = true
 	keyWantVal = val
 	keyWantVer++
+	keyLastErr = nil
+	keyErrShown = false
 	start := !keyWorkerBusy
 	if start {
 		keyWorkerBusy = true
@@ -353,18 +384,34 @@ func runKeyWorker(a *app.App) {
 		keySyncMu.Unlock()
 
 		err := app.SaveOpenAIKey(val)
+		keySyncMu.Lock()
+		if keyWantVer == ver {
+			keyLastErr = err
+			keyLastErrVer = ver
+			if err == nil {
+				keyErrShown = false
+			}
+		}
+		keySyncMu.Unlock()
 		if a == nil {
 			continue
 		}
 		a.Post(func() {
+			settingsActive := mygo.App.IsActive() && cur != nil && cur.win != nil && !cur.win.IsDestroyed() &&
+				cur.win.IsVisible() && !cur.win.IsMinimized() && cur.win.IsFocused()
 			keySyncMu.Lock()
 			latest := keyWantVer
+			if latest == ver && err != nil && keyLastErrVer == ver && settingsActive {
+				keyErrShown = true
+			}
 			keySyncMu.Unlock()
 			if latest != ver {
 				return
 			}
 			if err != nil {
-				a.SayErr(locales.AiKeySaveErr(), locales.ActionRetry(), func() { enqueueKeyPersist(a, val) })
+				if settingsActive || a.HasRegularWindow() {
+					a.SayErr(locales.AiKeySaveErr(), locales.ActionRetry(), func() { enqueueKeyPersist(a, val) })
+				}
 				return
 			}
 			if a.AI != nil {

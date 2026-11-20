@@ -47,7 +47,6 @@ func PromptUnsavedOnQuit() bool {
 	if edWin == nil || edWin.IsDestroyed() || edSt == nil || edSt.forceClose || !edSt.hasPendingDraft() {
 		return false
 	}
-	edSt.newSubFocused = false
 	edSt.confirmSwitch = false
 	edSt.confirmClose = true
 	edSt.quitAfterClose = true
@@ -63,7 +62,6 @@ func Show(a *app.App, req app.EditorRequest) {
 	if edWin != nil && !edWin.IsDestroyed() && edSt != nil {
 		if edSt.hasPendingDraft() {
 			edSt.pendingReqs = append(edSt.pendingReqs, req)
-			edSt.newSubFocused = false
 			edSt.confirmClose = false
 			edSt.quitAfterClose = false
 			edSt.confirmSwitch = true
@@ -102,7 +100,6 @@ func Show(a *app.App, req app.EditorRequest) {
 	w.OnClose(func(e *mygo.CloseEvent) {
 		if !st.forceClose && st.hasPendingDraft() {
 			e.PreventDefault()
-			st.newSubFocused = false
 			st.confirmSwitch = false
 			st.confirmClose = true
 			st.invalidate()
@@ -157,10 +154,9 @@ type state struct {
 	forceClose     bool
 
 	// Tag / sub-group inline drafts
-	tagDraft      string
-	addingSub     bool
-	newSubName    string
-	newSubFocused bool
+	tagDraft   string
+	addingSub  bool
+	newSubName string
 
 	// Async fetch & AI state
 	sessionSeq     uint64
@@ -262,7 +258,6 @@ func (s *state) hasPendingDraft() bool {
 
 func (s *state) requestClose() {
 	if s.hasPendingDraft() {
-		s.newSubFocused = false
 		s.confirmSwitch = false
 		s.confirmClose = true
 		s.quitAfterClose = false
@@ -307,7 +302,6 @@ func (s *state) load(req app.EditorRequest) {
 	s.forceClose = false
 	s.addingSub = false
 	s.newSubName = ""
-	s.newSubFocused = false
 	s.tagDraft = ""
 	s.fetchErr = ""
 	s.aiErr = ""
@@ -648,7 +642,6 @@ func (s *state) applyAI() {
 		s.groupID, s.subID = p.GroupID, p.SubID
 		s.addingSub = false
 		s.newSubName = ""
-		s.newSubFocused = false
 	}
 	s.aiDismissed = true
 	s.polished = true
@@ -689,7 +682,6 @@ func (s *state) commitNewSub() {
 	name := strings.TrimSpace(s.newSubName)
 	s.addingSub = false
 	s.newSubName = ""
-	s.newSubFocused = false
 	if name == "" || s.groupID == "" {
 		return
 	}

@@ -24,6 +24,8 @@ type engine struct {
 	a              *app.App
 	ctx            context.Context
 	cancel         context.CancelFunc
+	localCtx       context.Context
+	localCancel    context.CancelFunc
 	mu             sync.Mutex
 	settings       model.Settings
 	listeners      []func()
@@ -40,11 +42,14 @@ func New(a *app.App) app.AI {
 		s = a.Settings
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	localCtx, localCancel := context.WithCancel(ctx)
 	e := &engine{
-		a:        a,
-		ctx:      ctx,
-		cancel:   cancel,
-		settings: s,
+		a:           a,
+		ctx:         ctx,
+		cancel:      cancel,
+		localCtx:    localCtx,
+		localCancel: localCancel,
+		settings:    s,
 	}
 	e.llama = newLlamaManager(e)
 	return e
@@ -101,12 +106,27 @@ func (e *engine) Configure(s model.Settings) {
 	oldLocal := e.settings.LocalModel
 	oldEngine := e.settings.AIEngine
 	e.settings = s
+	var cancelLocal context.CancelFunc
+	resetLocal := oldLocal != s.LocalModel || (oldEngine == model.AILocal && s.AIEngine != model.AILocal)
+	if resetLocal {
+		cancelLocal = e.localCancel
+		e.localCtx, e.localCancel = context.WithCancel(e.ctx)
+	}
 	e.mu.Unlock()
 
-	if oldLocal != s.LocalModel || (oldEngine == model.AILocal && s.AIEngine != model.AILocal) {
+	if cancelLocal != nil {
+		cancelLocal()
+	}
+	if resetLocal {
 		e.llama.stop()
 	}
 	e.notify()
+}
+
+func (e *engine) currentSettingsAndLocalCtx() (model.Settings, context.Context) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.settings, e.localCtx
 }
 
 func (e *engine) currentSettings() model.Settings {
@@ -171,12 +191,16 @@ func (e *engine) Polish(ctx context.Context, in app.PolishInput) (app.Polish, er
 	stopCancel := context.AfterFunc(e.ctx, cancel)
 	defer stopCancel()
 
-	s := e.currentSettings()
+	s, lctx := e.currentSettingsAndLocalCtx()
 	switch s.AIEngine {
 	case model.AIOff, "":
 		return app.Polish{}, errors.New(locales.AiErrNotEnabled())
 
 	case model.AILocal:
+		if lctx != nil {
+			stopLocal := context.AfterFunc(lctx, cancel)
+			defer stopLocal()
+		}
 		spec := resolveModelSpec(s.LocalModel)
 		path, ok := modelFileIfReady(spec)
 		if !ok {

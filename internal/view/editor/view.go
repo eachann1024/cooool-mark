@@ -34,7 +34,6 @@ func (s *state) view(c *ui.Context) {
 		if s.addingSub {
 			s.addingSub = false
 			s.newSubName = ""
-			s.newSubFocused = false
 			return
 		}
 		s.requestClose()
@@ -59,6 +58,7 @@ func (s *state) view(c *ui.Context) {
 
 		ui.Box(c).Height(1).FillWidth().Background(p.Line)
 		s.footerBar(c, p)
+		widget.Toast(c, s.a, p, 64)
 		s.unsavedSwitchModal(c, p)
 		s.unsavedCloseModal(c, p)
 	})
@@ -496,7 +496,6 @@ func (s *state) groupSection(c *ui.Context, p *theme.Palette) {
 					s.subID = s.aiSuggest.SubID
 					s.addingSub = false
 					s.newSubName = ""
-					s.newSubFocused = false
 				}
 			}
 		})
@@ -516,7 +515,6 @@ func (s *state) groupSection(c *ui.Context, p *theme.Palette) {
 					}
 					s.addingSub = false
 					s.newSubName = ""
-					s.newSubFocused = false
 				}
 			}
 		})
@@ -555,18 +553,15 @@ func (s *state) groupSection(c *ui.Context, p *theme.Palette) {
 						Bind(&s.newSubHandle).
 						Width(132).Height(28).FontSize(12).
 						Placeholder(locales.EditorNewSubPlaceholder()).Label(locales.EditorNewSubLabel())
-					if subIn.Focused() && !s.confirmClose && !s.confirmSwitch {
-						s.newSubFocused = true
-					}
+					// Commit only on explicit Enter or validated Save (never on
+					// blur) so clicking Save with an invalid URL or discarding
+					// a draft never writes a phantom sub-group to the library.
 					switch {
 					case subIn.Submitted():
 						s.commitNewSub()
 					case subIn.Shortcut(0, ui.KeyEscape):
 						s.addingSub = false
 						s.newSubName = ""
-						s.newSubFocused = false
-					case s.newSubFocused && !subIn.Focused() && !s.confirmClose && !s.confirmSwitch:
-						s.commitNewSub()
 					}
 				} else {
 					addBtn := ui.ButtonBase(c.Key("add-sub-btn")).Height(28).PaddingX(10).Radius(8).
@@ -582,7 +577,6 @@ func (s *state) groupSection(c *ui.Context, p *theme.Palette) {
 					if addBtn.Clicked() {
 						s.addingSub = true
 						s.newSubName = ""
-						s.newSubFocused = false
 						s.needFocus = &s.newSubHandle
 					}
 				}

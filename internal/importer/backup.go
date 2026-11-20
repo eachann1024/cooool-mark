@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -25,26 +26,64 @@ func parseJSONBackup(data []byte) (*app.ImportPlan, error) {
 	if !hasGroups && !hasBookmarks {
 		return nil, errors.New(locales.ImportErrInvalidBackup())
 	}
+
+	var lib model.Library
+	if raw, ok := rawObj["schemaVersion"]; ok {
+		if err := json.Unmarshal(raw, &lib.SchemaVersion); err != nil {
+			return nil, errors.New(locales.ImportErrParseJSON(err.Error()))
+		}
+	}
+	if raw, ok := rawObj["revision"]; ok {
+		if err := json.Unmarshal(raw, &lib.Revision); err != nil {
+			return nil, errors.New(locales.ImportErrParseJSON(err.Error()))
+		}
+	}
+	if raw, ok := rawObj["updatedAt"]; ok {
+		if err := json.Unmarshal(raw, &lib.UpdatedAt); err != nil {
+			return nil, errors.New(locales.ImportErrParseJSON(err.Error()))
+		}
+	}
+	if raw, ok := rawObj["deviceId"]; ok {
+		if err := json.Unmarshal(raw, &lib.DeviceID); err != nil {
+			return nil, errors.New(locales.ImportErrParseJSON(err.Error()))
+		}
+	}
+	if raw, ok := rawObj["tombstones"]; ok && !isJSONNull(raw) {
+		if err := validateJSONObjectArray(raw); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(raw, &lib.Tombstones); err != nil {
+			return nil, errors.New(locales.ImportErrParseJSON(err.Error()))
+		}
+	}
+
 	validArray := false
-	if hasGroups && !bytes.Equal(bytes.TrimSpace(rawGroups), []byte("null")) {
+	if hasGroups && !isJSONNull(rawGroups) {
 		if err := validateJSONObjectArray(rawGroups); err != nil {
 			return nil, err
 		}
-		validArray = true
-	}
-	if hasBookmarks && !bytes.Equal(bytes.TrimSpace(rawBookmarks), []byte("null")) {
-		if err := validateJSONObjectArray(rawBookmarks); err != nil {
-			return nil, err
+		if err := json.Unmarshal(rawGroups, &lib.Groups); err != nil {
+			return nil, errors.New(locales.ImportErrParseJSON(err.Error()))
 		}
 		validArray = true
 	}
-	if !validArray {
+	if hasBookmarks && !isJSONNull(rawBookmarks) {
+		if err := validateJSONObjectArray(rawBookmarks); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(rawBookmarks, &lib.Bookmarks); err != nil {
+			return nil, errors.New(locales.ImportErrParseJSON(err.Error()))
+		}
+		validArray = true
+	}
+	// Accept legacy empty backups written by Store.Backup where both exact keys
+	// "groups" and "bookmarks" are present as null alongside schemaVersion >= 1.
+	if !validArray && !(lib.SchemaVersion >= 1 && hasGroups && hasBookmarks) {
 		return nil, errors.New(locales.ImportErrInvalidBackup())
 	}
 
-	var lib model.Library
-	if err := json.Unmarshal(clean, &lib); err != nil {
-		return nil, errors.New(locales.ImportErrParseJSON(err.Error()))
+	if lib.SchemaVersion < 0 {
+		return nil, errors.New(locales.ImportErrInvalidBackup())
 	}
 	if lib.SchemaVersion > model.SchemaVersion {
 		return nil, errors.New(locales.ImportErrNewerSchema(lib.SchemaVersion))
@@ -52,20 +91,39 @@ func parseJSONBackup(data []byte) (*app.ImportPlan, error) {
 	if lib.SchemaVersion == 0 && len(lib.Groups) == 0 && len(lib.Bookmarks) == 0 {
 		return nil, errors.New(locales.ImportErrInvalidBackup())
 	}
+
+	// Store sync merges tombstones in a single flat ID namespace across groups,
+	// sub-groups, and bookmarks, so IDs must be globally unique across all types.
+	seenIDs := make(map[string]struct{}, len(lib.Groups)+len(lib.Bookmarks))
 	for _, g := range lib.Groups {
-		if strings.TrimSpace(g.ID) == "" || strings.TrimSpace(g.Name) == "" {
+		gid := strings.TrimSpace(g.ID)
+		if gid == "" || strings.TrimSpace(g.Name) == "" {
 			return nil, errors.New(locales.ImportErrInvalidBackup())
 		}
+		if _, dup := seenIDs[gid]; dup {
+			return nil, errors.New(locales.ImportErrInvalidBackup())
+		}
+		seenIDs[gid] = struct{}{}
 		for _, sub := range g.Subs {
-			if strings.TrimSpace(sub.ID) == "" || strings.TrimSpace(sub.Name) == "" {
+			sid := strings.TrimSpace(sub.ID)
+			if sid == "" || strings.TrimSpace(sub.Name) == "" {
 				return nil, errors.New(locales.ImportErrInvalidBackup())
 			}
+			if _, dup := seenIDs[sid]; dup {
+				return nil, errors.New(locales.ImportErrInvalidBackup())
+			}
+			seenIDs[sid] = struct{}{}
 		}
 	}
 	for _, b := range lib.Bookmarks {
-		if strings.TrimSpace(b.ID) == "" || strings.TrimSpace(b.URL) == "" {
+		bid := strings.TrimSpace(b.ID)
+		if bid == "" || strings.TrimSpace(b.URL) == "" {
 			return nil, errors.New(locales.ImportErrInvalidBackup())
 		}
+		if _, dup := seenIDs[bid]; dup {
+			return nil, errors.New(locales.ImportErrInvalidBackup())
+		}
+		seenIDs[bid] = struct{}{}
 	}
 
 	live := lib.Live()
@@ -152,9 +210,13 @@ func parseJSONBackup(data []byte) (*app.ImportPlan, error) {
 	}, nil
 }
 
-// parseStrictTopLevelJSONObject parses a top-level JSON object while rejecting
-// duplicate or case-colliding keys (e.g. "groups" + "Groups") that could bypass
-// schema validation during Go's case-insensitive struct unmarshaling.
+func isJSONNull(raw json.RawMessage) bool {
+	return bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
+}
+
+// parseStrictTopLevelJSONObject parses a top-level JSON object using exact key
+// names while rejecting duplicate keys under Unicode EqualFold (such as
+// "groups" + "Groups" or "groups" + "groupſ") and trailing tokens.
 func parseStrictTopLevelJSONObject(clean []byte) (map[string]json.RawMessage, error) {
 	dec := json.NewDecoder(bytes.NewReader(clean))
 	tok, err := dec.Token()
@@ -165,6 +227,7 @@ func parseStrictTopLevelJSONObject(clean []byte) (map[string]json.RawMessage, er
 		return nil, errors.New(locales.ImportErrInvalidBackup())
 	}
 	out := map[string]json.RawMessage{}
+	var seenKeys []string
 	for dec.More() {
 		keyTok, err := dec.Token()
 		if err != nil {
@@ -174,15 +237,17 @@ func parseStrictTopLevelJSONObject(clean []byte) (map[string]json.RawMessage, er
 		if !ok {
 			return nil, errors.New(locales.ImportErrInvalidBackup())
 		}
-		low := strings.ToLower(key)
-		if _, dup := out[low]; dup {
-			return nil, errors.New(locales.ImportErrInvalidBackup())
+		for _, existing := range seenKeys {
+			if strings.EqualFold(existing, key) {
+				return nil, errors.New(locales.ImportErrInvalidBackup())
+			}
 		}
+		seenKeys = append(seenKeys, key)
 		var val json.RawMessage
 		if err := dec.Decode(&val); err != nil {
 			return nil, errors.New(locales.ImportErrParseJSON(err.Error()))
 		}
-		out[low] = val
+		out[key] = val
 	}
 	endTok, err := dec.Token()
 	if err != nil {
@@ -191,7 +256,7 @@ func parseStrictTopLevelJSONObject(clean []byte) (map[string]json.RawMessage, er
 	if delim, ok := endTok.(json.Delim); !ok || delim != '}' {
 		return nil, errors.New(locales.ImportErrInvalidBackup())
 	}
-	if dec.More() {
+	if _, err := dec.Token(); err != io.EOF {
 		return nil, errors.New(locales.ImportErrInvalidBackup())
 	}
 	return out, nil
