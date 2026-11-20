@@ -26,6 +26,7 @@ const (
 type browseRow struct {
 	kind      browseRowKind
 	sub       model.Sub
+	count     int
 	b         *model.Bookmark
 	items     []*model.Bookmark
 	lastInSub bool
@@ -115,9 +116,9 @@ func (s *mainState) ensureBrowseCache(lib *model.Library, g *model.Group, view s
 	bmRow = make(map[string]int, len(s.groupCache.ids))
 	rows = rows[:0]
 	for si, sub := range g.Subs {
-		subRow[sub.ID] = len(rows)
-		rows = append(rows, browseRow{kind: browseRowHeader, sub: sub})
 		items := subs[si]
+		subRow[sub.ID] = len(rows)
+		rows = append(rows, browseRow{kind: browseRowHeader, sub: sub, count: len(items)})
 		if len(items) == 0 {
 			rows = append(rows, browseRow{kind: browseRowEmpty, sub: sub})
 			continue
@@ -413,10 +414,10 @@ func (s *mainState) buildBrowseBody(c *ui.Context, p *theme.Palette) {
 	}
 
 	const (
-		gridGap      = float32(10)
-		minCardW     = float32(176)
-		cardH        = float32(112)
-		gridTileSize = float32(34)
+		gridGap      = float32(8)
+		minCardW     = float32(168)
+		cardH        = float32(56)
+		gridTileSize = float32(32)
 		listTileSize = float32(22)
 		minH         = float32(40)
 		padY         = float32(6)
@@ -505,12 +506,21 @@ func (s *mainState) buildBrowseBody(c *ui.Context, p *theme.Palette) {
 			}
 			switch r.kind {
 			case browseRowHeader:
-				hdPadB, hdPadX := float32(4), float32(10)
-				if a.View == "grid" {
-					hdPadB, hdPadX = 8, 6
+				padT, padB := float32(14), float32(6)
+				if row.Index == 0 {
+					padT = 12
 				}
-				ui.Row(c).Bind(s.subHeaderHandle(r.sub.ID)).FillWidth().Padding(14, 24+hdPadX, hdPadB+extraBottom, 24+hdPadX).AlignItems(ui.Center).Children(func() {
-					widget.Title(c, p, r.sub.Name, 14)
+				if a.View == "grid" {
+					if row.Index > 0 {
+						padT = 18
+					}
+					padB = 10
+				}
+				ui.Row(c).Bind(s.subHeaderHandle(r.sub.ID)).FillWidth().
+					Padding(padT, 24, padB+extraBottom, 24).AlignItems(ui.Center).Gap(8).Children(func() {
+					widget.Title(c, p, r.sub.Name, 15).FontWeight(600).TextColor(p.Text).MinWidth(0).Shrink(1)
+					ui.Textf(c, "%d", r.count).FontSize(12).TextColor(p.Muted).SingleLine().Shrink(0)
+					ui.Box(c).Grow(1).MinWidth(12).Height(1).Background(p.Line)
 				})
 			case browseRowEmpty:
 				ui.Box(c).FillWidth().Padding(0, 24, extraBottom, 24).Children(func() {
@@ -629,6 +639,35 @@ func (s *mainState) buildBookmarkHoverActions(c *ui.Context, p *theme.Palette, b
 	}, menuButtonOptions(p, menuOpen, true))
 }
 
+func (s *mainState) buildGridHoverActions(c *ui.Context, p *theme.Palette, b *model.Bookmark, menuOpen *bool, size, iconSize float32) {
+	a := s.app
+	openBtn := rowIconAction(c, p, theme.IconExternal, "打开", size, iconSize, false)
+	if openBtn.Clicked() {
+		s.activateBookmark(c, b)
+	}
+	editBtn := rowIconAction(c, p, theme.IconEdit, "编辑", size, iconSize, false)
+	if editBtn.Clicked() && a.Win.ShowEditor != nil {
+		a.Win.ShowEditor(app.EditorRequest{ID: b.ID})
+	}
+	moreBtn := rowIconAction(c, p, theme.IconMore, "更多操作", size, iconSize, false)
+	moreBtn.PopoverMenuButton(func(m *ui.Menu) {
+		s.buildBookmarkMenu(c, m, b)
+	}, menuButtonOptions(p, menuOpen, true))
+}
+
+func (s *mainState) buildGridHoverToolbar(c *ui.Context, p *theme.Palette, b *model.Bookmark, menuOpen *bool) {
+	shadow := ui.RGBA(0, 0, 0, 0.14)
+	if p.Dark {
+		shadow = ui.RGBA(0, 0, 0, 0.45)
+	}
+	ui.Row(c).Absolute().Top(13).Right(8).Padding(2).Radius(8).Gap(1).
+		Background(p.Surface).Border(1, p.Line).
+		Shadow(0, 4, 12, -4, shadow).
+		Children(func() {
+			s.buildGridHoverActions(c, p, b, menuOpen, 24, 13)
+		})
+}
+
 func (s *mainState) buildBookmarkListRow(c *ui.Context, p *theme.Palette, g *model.Group, sub model.Sub, b *model.Bookmark, tileSize, minH, padY float32) {
 	a := s.app
 	keyC := c.Key("bm-" + b.ID)
@@ -725,8 +764,8 @@ func (s *mainState) buildBookmarkGridCard(c *ui.Context, p *theme.Palette, g *mo
 	selected := s.cursorID == b.ID
 	_, polished := a.PolishedAt[b.ID]
 
-	card := ui.Column(keyC).MinHeight(cardH).Padding(14).Radius(12).
-		AlignItems(ui.Start).Role(ui.RoleOption).Label(b.Title).AccessSelected(selected)
+	card := ui.Row(keyC).MinWidth(0).MinHeight(cardH).Padding(8, 12).Radius(10).
+		AlignItems(ui.Center).Role(ui.RoleOption).Label(b.Title).AccessSelected(selected)
 	menuOpen := ui.Local(card, "gridMenuOpen", func() bool { return false })
 
 	_, dragOver := ui.DragOver[dragPayload](card)
@@ -735,6 +774,7 @@ func (s *mainState) buildBookmarkGridCard(c *ui.Context, p *theme.Palette, g *mo
 	}
 
 	hovered := card.Hovered()
+	activeHover := hovered || *menuOpen
 	switch {
 	case dragOver:
 		card.Background(softAccentBg(p)).Border(2, p.Accent).BorderStyle(ui.BorderDashed)
@@ -742,10 +782,10 @@ func (s *mainState) buildBookmarkGridCard(c *ui.Context, p *theme.Palette, g *mo
 		card.Background(softAccentBg(p)).Border(1, p.Accent)
 	case polished:
 		card.Background(softAccentBg(p)).Border(1, p.Line)
-	case hovered:
-		card.Background(p.Hover).Border(1, ui.Transparent)
+	case activeHover:
+		card.Background(p.Hover).Border(1, p.Line.Mix(p.Text, 0.06))
 	default:
-		card.Border(1, ui.Transparent)
+		card.Background(p.Surface).Border(1, p.Line)
 	}
 
 	payload := dragPayload{IDs: []string{b.ID}, SourceGroup: b.GroupID, SourceSub: b.SubID}
@@ -754,44 +794,50 @@ func (s *mainState) buildBookmarkGridCard(c *ui.Context, p *theme.Palette, g *mo
 		card.Opacity(0.45)
 	}
 
+	subText := shortDomain(b.URL)
+	if a.Settings.ShowNote && strings.TrimSpace(b.Note) != "" {
+		subText = strings.TrimSpace(b.Note)
+	}
+
 	var mainArea ui.Element
 	card.Children(func() {
-		mainArea = ui.Column(c).FillWidth().Grow(1).Gap(8).AlignItems(ui.Start)
+		mainArea = ui.Row(c).Grow(1).MinWidth(0).Gap(10).AlignItems(ui.Center)
 		mainArea.Children(func() {
 			s.buildTile(c, b, tileSize)
 
-			ui.Row(c).Gap(5).AlignItems(ui.Center).FillWidth().MinWidth(0).Children(func() {
-				ui.Text(c, b.Title).FontSize(13.5).FontWeight(500).TextColor(p.Text).SingleLine().Shrink(1).MinWidth(0)
-				if b.IsTemplate() {
-					ui.Icon(c, theme.IconBraces).FontSize(12).TextColor(p.Primary).Shrink(0)
-				}
-				if polished {
-					polishedBadge(c, p)
-				}
-			})
-
-			if a.Settings.ShowNote && b.Note != "" {
-				ui.Text(c, b.Note).FontSize(12).TextColor(p.Muted).MaxLines(2)
+			textCol := ui.Column(c).Grow(1).MinWidth(0).Gap(2)
+			if activeHover {
+				textCol.Padding(0, 84, 0, 0)
 			}
-
-			if a.Settings.ShowTags && len(b.Tags) > 0 {
-				ui.Row(c).Wrap().Gap(4).Children(func() {
-					for _, tg := range b.Tags {
-						ui.Row(c).Height(18).PaddingX(6).Radius(5).Background(p.Field).AlignItems(ui.Center).Children(func() {
-							ui.Text(c, tg).FontSize(11).TextColor(p.Muted).SingleLine()
-						})
+			textCol.Children(func() {
+				ui.Row(c).Gap(5).AlignItems(ui.Center).FillWidth().MinWidth(0).Children(func() {
+					ui.Text(c, b.Title).FontSize(13.5).FontWeight(500).TextColor(p.Text).SingleLine().Shrink(1).MinWidth(0)
+					if b.IsTemplate() {
+						ui.Icon(c, theme.IconBraces).FontSize(12).TextColor(p.Primary).Shrink(0)
+					}
+					if polished {
+						polishedBadge(c, p)
 					}
 				})
-			}
+
+				if subText != "" {
+					ui.Text(c, subText).FontSize(12).TextColor(p.Muted).SingleLine()
+				}
+
+				if a.Settings.ShowTags && len(b.Tags) > 0 {
+					ui.Row(c).Wrap().Gap(4).Margin(2, 0, 0, 0).Children(func() {
+						for _, tg := range b.Tags {
+							ui.Row(c).Height(18).PaddingX(6).Radius(5).Background(p.Field).AlignItems(ui.Center).Children(func() {
+								ui.Text(c, tg).FontSize(11).TextColor(p.Muted).SingleLine()
+							})
+						}
+					})
+				}
+			})
 		})
 
-		if hovered || *menuOpen {
-			ui.Row(c).Absolute().Top(8).Right(8).Padding(2).Radius(7).Gap(1).
-				Background(p.Surface).Border(1, p.Line).
-				Shadow(0, 4, 12, -4, ui.RGBA(0, 0, 0, 0.14)).
-				Children(func() {
-					s.buildBookmarkHoverActions(c, p, b, menuOpen, 22, 12)
-				})
+		if activeHover {
+			s.buildGridHoverToolbar(c, p, b, menuOpen)
 		}
 	})
 
@@ -930,12 +976,12 @@ func (s *mainState) buildSearchBody(c *ui.Context, p *theme.Palette) {
 
 	cols, gap := 1, float32(2)
 	if a.View == "grid" {
-		gap = 10
+		gap = 8
 		availW := s.contentHandle.Bounds(c).W - 48
 		if availW <= 0 {
 			availW = 648
 		}
-		cols = max(1, int((availW+gap)/(176+gap)))
+		cols = max(1, int((availW+gap)/(168+gap)))
 	}
 	offset := 0
 	if isURL {
@@ -1171,16 +1217,18 @@ func (s *mainState) buildSearchCard(c *ui.Context, p *theme.Palette, hit app.Hit
 	a := s.app
 	b := hit.B
 	on := idx == s.searchIdx
-	card := ui.Column(c.Key("sgrid-" + b.ID)).MinHeight(104).Padding(13).Radius(12).
-		AlignItems(ui.Start).Role(ui.RoleOption).Label(b.Title)
+	card := ui.Row(c.Key("sgrid-"+b.ID)).MinWidth(0).MinHeight(56).Padding(8, 12).Radius(10).
+		AlignItems(ui.Center).Role(ui.RoleOption).Label(b.Title)
 	menuOpen := ui.Local(card, "sgMenuOpen", func() bool { return false })
 	hovered := card.Hovered()
-	if on {
+	activeHover := hovered || *menuOpen
+	switch {
+	case on:
 		card.Background(softAccentBg(p)).Border(1, p.Accent)
-	} else if hovered {
-		card.Background(p.Hover).Border(1, ui.Transparent)
-	} else {
-		card.Background(p.Surface).Border(1, p.LineSoft)
+	case activeHover:
+		card.Background(p.Hover).Border(1, p.Line.Mix(p.Text, 0.06))
+	default:
+		card.Background(p.Surface).Border(1, p.Line)
 	}
 
 	path := hit.Path
@@ -1190,21 +1238,27 @@ func (s *mainState) buildSearchCard(c *ui.Context, p *theme.Palette, hit app.Hit
 
 	var mainArea ui.Element
 	card.Children(func() {
-		mainArea = ui.Column(c).FillWidth().Grow(1).Gap(8).AlignItems(ui.Start)
+		mainArea = ui.Row(c).Grow(1).MinWidth(0).Gap(10).AlignItems(ui.Center)
 		mainArea.Children(func() {
 			s.buildTile(c, b, 32)
-			ui.RichText(c, highlightedTitleSpans(b.Title, hit.Ranges, p.AccentBg, p.AccentText)...).
-				FontSize(13.5).FontWeight(500).TextColor(p.Text).SingleLine().FillWidth()
-			ui.Text(c, path).FontSize(12).TextColor(p.Muted).SingleLine()
+			textCol := ui.Column(c).Grow(1).MinWidth(0).Gap(2)
+			if activeHover {
+				textCol.Padding(0, 84, 0, 0)
+			}
+			textCol.Children(func() {
+				ui.Row(c).Gap(5).AlignItems(ui.Center).FillWidth().MinWidth(0).Children(func() {
+					ui.RichText(c, highlightedTitleSpans(b.Title, hit.Ranges, p.AccentBg, p.AccentText)...).
+						FontSize(13.5).FontWeight(500).TextColor(p.Text).SingleLine().Shrink(1).MinWidth(0)
+					if b.IsTemplate() {
+						ui.Icon(c, theme.IconBraces).FontSize(12).TextColor(p.Primary).Shrink(0)
+					}
+				})
+				ui.Text(c, path).FontSize(12).TextColor(p.Muted).SingleLine()
+			})
 		})
 
-		if hovered || *menuOpen {
-			ui.Row(c).Absolute().Top(8).Right(8).Padding(2).Radius(7).Gap(1).
-				Background(p.Surface).Border(1, p.Line).
-				Shadow(0, 4, 12, -4, ui.RGBA(0, 0, 0, 0.14)).
-				Children(func() {
-					s.buildBookmarkHoverActions(c, p, b, menuOpen, 22, 12)
-				})
+		if activeHover {
+			s.buildGridHoverToolbar(c, p, b, menuOpen)
 		}
 	})
 

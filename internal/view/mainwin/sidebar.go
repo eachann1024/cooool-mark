@@ -43,16 +43,17 @@ func (s *mainState) buildSidebar(c *ui.Context, p *theme.Palette) {
 				s.buildSidebarEmpty(c, p, "还没有子分组", "新建子分组", func() { s.startAddSub(c) })
 				return
 			}
-			col := ui.Column(c.Key("sidebar-subs-col")).Gap(1)
+			col := ui.Column(c.Key("sidebar-subs-col")).Gap(2)
 			lastSelected := ui.Local(col, "selected-sub", func() string { return "" })
 			revealSub := ""
 			if strings.TrimSpace(s.query) == "" && *lastSelected != a.Sub {
 				revealSub = a.Sub
 				*lastSelected = a.Sub
 			}
+			subs, _ := s.ensureGroupCache(lib, g)
 			col.Children(func() {
 				for i, sub := range g.Subs {
-					s.buildSidebarSubItem(c, p, lib, g, i, sub, revealSub == sub.ID)
+					s.buildSidebarSubItem(c, p, lib, g, i, sub, len(subs[i]), revealSub == sub.ID)
 				}
 				if s.addingSub {
 					s.buildNewSubInput(c, p, g.ID)
@@ -103,7 +104,7 @@ func (s *mainState) buildSidebarEmpty(c *ui.Context, p *theme.Palette, title, bt
 	})
 }
 
-func (s *mainState) buildSidebarSubItem(c *ui.Context, p *theme.Palette, lib *model.Library, g *model.Group, idx int, sub model.Sub, reveal bool) {
+func (s *mainState) buildSidebarSubItem(c *ui.Context, p *theme.Palette, lib *model.Library, g *model.Group, idx int, sub model.Sub, count int, reveal bool) {
 	a := s.app
 	keyC := c.Key("sub-" + sub.ID)
 
@@ -216,9 +217,12 @@ func (s *mainState) buildSidebarSubItem(c *ui.Context, p *theme.Palette, lib *mo
 			default:
 				txt.TextColor(p.Text2)
 			}
+			if !dragOver && !hovered && !*menuOpen {
+				ui.Textf(c, "%d", count).FontSize(12).TextColor(p.Muted).SingleLine().Shrink(0).Padding(0, 4, 0, 0)
+			}
 		})
 
-		if !dragOver && (hovered || selected || *menuOpen) {
+		if !dragOver && (hovered || *menuOpen) {
 			moreBtn := ui.ButtonBase(c).Label("子分组操作").Tooltip("子分组操作").
 				Size(22, 22).Radius(6).Center().TextColor(p.Text2).Shrink(0)
 			if moreBtn.Hovered() || *menuOpen {
