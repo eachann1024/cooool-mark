@@ -329,6 +329,14 @@ func (s *mainState) handleGlobalShortcuts(c *ui.Context) {
 		return
 	}
 	if s.searchOpen {
+		if c.Shortcut(0, ui.KeyEscape) && !s.searchHandle.Focused(c) && !s.tplInputHandle.Focused(c) {
+			if s.tplBookmarkID != "" {
+				s.tplBookmarkID = ""
+				s.tplQuery = ""
+			} else {
+				s.closeSearch(c)
+			}
+		}
 		return
 	}
 	if c.Shortcut(ui.Cmd, ui.KeyComma) && !c.ShortcutRepeated() {

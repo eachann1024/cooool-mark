@@ -212,7 +212,7 @@ func (s *mainState) buildSidebarGroupItem(c *ui.Context, p *theme.Palette, lib *
 	})
 
 	if mainArea.Clicked() {
-		s.clearSearch()
+		s.closeSearch(c)
 		s.cursorID = ""
 		s.subTabsScroll.X = 0
 		s.browseList.ScrollTo(0, ui.Start)
