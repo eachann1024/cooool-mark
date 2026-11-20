@@ -32,16 +32,18 @@ var (
 	pendingTargets       = map[string]string{}
 	pendingRollback      = map[string]string{}
 	pendingHasRollback   = map[string]bool{}
+	xwaylandSuperseded   = map[string]bool{}
 	pendingSeqs          = map[string]uint64{}
 	timedOutReplyKeys    = map[string]string{}
 	timedOutCandidates   = map[string]bool{}
 	deferredEdit         *pendingShortcutEdit
 	portalTimer          *time.Timer
 	portalTimerSeq       uint64
-	portalTimedOut       bool
-	portalDrainScheduled bool
-	portalObserved       bool
-	shortcutsPaused      bool
+	portalTimedOut          bool
+	portalDrainScheduled    bool
+	portalObserved          bool
+	xwaylandSentUnconfirmed bool
+	shortcutsPaused         bool
 )
 
 // isPureWayland reports whether Linux is running natively on Wayland without
@@ -145,6 +147,26 @@ func clearSlotPendingMeta(slotID string) {
 	delete(pendingTargets, slotID)
 	delete(pendingRollback, slotID)
 	delete(pendingHasRollback, slotID)
+	delete(xwaylandSuperseded, slotID)
+}
+
+// cancelPendingShortcut drops any queued or in-flight candidate edit for slot
+// (for example when the user turns Global Search off while a search shortcut
+// change is awaiting Wayland portal confirmation).
+func cancelPendingShortcut(a *app.App, slot string) {
+	if deferredEdit != nil && deferredEdit.slot == slot {
+		deferredEdit = nil
+	}
+	delete(timedOutCandidates, slot)
+	clearSlotPendingMeta(slot)
+	if a != nil {
+		a.SetShortcutPending(slot, false)
+		a.SetShortcutBoundKeys(slot, "")
+		a.SetShortcutErr(slot, "")
+		if !a.HasAnyShortcutPending() {
+			stopPortalTimer()
+		}
+	}
 }
 
 func stopPortalTimer() {
@@ -200,7 +222,20 @@ func finishTimedOutDrain(a *app.App) {
 		return
 	}
 
-	if shortcutsMatchSettings(a) {
+	if shortcutsPaused {
+		clearGlobalShortcuts()
+		a.Invalidate()
+		return
+	}
+
+	candidateRejected := false
+	for id := range prevCandidates {
+		if strings.TrimSpace(replies[id]) == "" {
+			candidateRejected = true
+			break
+		}
+	}
+	if !candidateRejected && shortcutsMatchSettings(a) {
 		for id, keys := range replies {
 			if strings.TrimSpace(keys) != "" {
 				a.SetShortcutBoundKeys(id, keys)
@@ -217,7 +252,7 @@ func finishTimedOutDrain(a *app.App) {
 	clearGlobalShortcuts()
 	applyGlobalShortcuts(a)
 	for id := range prevCandidates {
-		if slotAccel(a, id) == "" {
+		if strings.TrimSpace(replies[id]) == "" || slotAccel(a, id) == "" {
 			a.SetShortcutErr(id, locales.SettingsShortcutRejected())
 		}
 	}
@@ -274,6 +309,7 @@ func registerSlot(a *app.App, s shortcutSlot) error {
 		Description: s.description,
 		OnKeys: func(keys string) {
 			portalObserved = true
+			xwaylandSentUnconfirmed = false
 			if registeredShortcuts[slotID] != acc || pendingSeqs[slotID] != seq {
 				return
 			}
@@ -300,10 +336,12 @@ func registerSlot(a *app.App, s shortcutSlot) error {
 			matchesPendingTarget := hasPendingTarget && pendingAcc == acc
 			hasRollback := pendingHasRollback[slotID]
 			rollbackAcc := pendingRollback[slotID]
-			if matchesPendingTarget || hasRollback {
+			wasSuperseded := xwaylandSuperseded[slotID]
+			if matchesPendingTarget || hasRollback || wasSuperseded {
 				delete(pendingTargets, slotID)
 				delete(pendingRollback, slotID)
 				delete(pendingHasRollback, slotID)
+				delete(xwaylandSuperseded, slotID)
 			}
 
 			if trimmedKeys == "" {
@@ -315,6 +353,22 @@ func registerSlot(a *app.App, s shortcutSlot) error {
 						clearGlobalShortcuts()
 					}
 					applyGlobalShortcuts(a)
+				} else if wasSuperseded {
+					// An earlier unconfirmed XWayland bind was superseded before
+					// the portal was observed, so this empty reply may belong to
+					// the previous BindShortcuts request rather than acc. Restore
+					// the confirmed baseline to disk and re-submit acc cleanly in
+					// full portal mode so it is actually presented to the portal.
+					if hasRollback {
+						setSlotAccel(&a.Settings, slotID, rollbackAcc)
+						prevPaused := shortcutsPaused
+						shortcutsPaused = true
+						a.SaveSettings()
+						shortcutsPaused = prevPaused
+					}
+					xwaylandSuperseded = map[string]bool{}
+					trySetShortcut(a, slotID, acc)
+					return
 				} else if hasRollback {
 					mygo.GlobalShortcut.Unregister(acc)
 					delete(registeredShortcuts, slotID)
@@ -347,12 +401,14 @@ func registerSlot(a *app.App, s shortcutSlot) error {
 	if usesShortcutPortal() && a.ShortcutBoundKeys(slotID) == "" {
 		a.SetShortcutPending(slotID, true)
 		armPortalTimer(a)
+	} else if runtime.GOOS == "linux" && strings.TrimSpace(os.Getenv("WAYLAND_DISPLAY")) != "" && !usesShortcutPortal() {
+		xwaylandSentUnconfirmed = true
 	}
 	return nil
 }
 
 func setGlobalShortcutsPaused(a *app.App, paused bool) {
-	if paused && usesShortcutPortal() && a != nil && (a.HasAnyShortcutPending() || portalTimedOut) {
+	if paused && usesShortcutPortal() && a != nil && a.HasAnyShortcutPending() {
 		return
 	}
 	if shortcutsPaused == paused {
@@ -360,6 +416,9 @@ func setGlobalShortcutsPaused(a *app.App, paused bool) {
 	}
 	shortcutsPaused = paused
 	if paused {
+		if portalTimedOut {
+			return
+		}
 		clearGlobalShortcuts()
 		return
 	}
@@ -415,6 +474,8 @@ func trySetShortcut(a *app.App, slot, candidate string) bool {
 		return true
 	}
 
+	hadPriorUnconfirmed := xwaylandSentUnconfirmed
+
 	// Ensure all non-target slots are registered first with fresh IDs so
 	// duplicate bindings are caught and Wayland portal always delivers OnKeys.
 	clearGlobalShortcuts()
@@ -439,6 +500,7 @@ func trySetShortcut(a *app.App, slot, candidate string) bool {
 
 	portalMode := usesShortcutPortal()
 	prevRollback, hadRollback := pendingRollback[slot], pendingHasRollback[slot]
+	prevSuperseded := xwaylandSuperseded[slot]
 	clearSlotPendingMeta(slot)
 	if portalMode {
 		pendingTargets[slot] = candSlot.accel
@@ -451,13 +513,21 @@ func trySetShortcut(a *app.App, slot, candidate string) bool {
 			pendingRollback[slot] = baseline
 			pendingHasRollback[slot] = true
 		}
+		if hadPriorUnconfirmed {
+			xwaylandSuperseded[slot] = true
+		}
 	}
 
 	if err := registerSlot(a, candSlot); err != nil {
 		clearSlotPendingMeta(slot)
-		if hadRollback && !portalMode {
-			pendingRollback[slot] = prevRollback
-			pendingHasRollback[slot] = true
+		if !portalMode {
+			if hadRollback {
+				pendingRollback[slot] = prevRollback
+				pendingHasRollback[slot] = true
+			}
+			if prevSuperseded {
+				xwaylandSuperseded[slot] = true
+			}
 		}
 		if target.accel != "" {
 			_ = registerSlot(a, *target)
@@ -468,6 +538,9 @@ func trySetShortcut(a *app.App, slot, candidate string) bool {
 	}
 
 	if !portalMode {
+		if runtime.GOOS == "linux" && strings.TrimSpace(os.Getenv("WAYLAND_DISPLAY")) != "" {
+			xwaylandSentUnconfirmed = true
+		}
 		setSlotAccel(&a.Settings, slot, candSlot.accel)
 		a.SaveSettings()
 	} else {

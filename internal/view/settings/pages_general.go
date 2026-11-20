@@ -68,6 +68,14 @@ func (s *state) pageGeneral(c *ui.Context, p *theme.Palette) {
 		globalOn := a.Settings.GlobalSearchOn()
 		switchRow(c, p, locales.SettingsGlobalSearch(), &globalOn, func() {
 			a.Settings.GlobalSearchOff = !globalOn
+			if !globalOn {
+				if s.recordingSlot == "search" {
+					s.setRecording("")
+				}
+				if a.Win.CancelPendingShortcut != nil {
+					a.Win.CancelPendingShortcut("search")
+				}
+			}
 			a.SaveSettings()
 		})
 
@@ -184,6 +192,9 @@ func (s *state) shortcutsCard(c *ui.Context, p *theme.Palette) {
 		})
 
 		anyPending := a.HasAnyShortcutPending()
+		if anyPending && s.recordingSlot != "" {
+			s.setRecording("")
+		}
 		for _, item := range items {
 			errMsg := a.ShortcutErr(item.id)
 			pending := a.IsShortcutPending(item.id)

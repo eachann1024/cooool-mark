@@ -89,6 +89,8 @@ type Windows struct {
 	// SetShortcut attempts to assign and register accel for slot, preserving
 	// the previous working shortcut on failure.
 	SetShortcut func(slot, accel string) bool
+	// CancelPendingShortcut drops any queued or in-flight portal shortcut edit for slot.
+	CancelPendingShortcut func(slot string)
 	// SetShortcutsPaused temporarily suspends global shortcuts while recording one in Settings.
 	SetShortcutsPaused func(bool)
 	// RefreshChrome rebuilds menus, Dock/JumpList entries, and open window titles

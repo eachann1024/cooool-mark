@@ -41,6 +41,7 @@ type quickSearchMode struct {
 	tmplQuery   string
 	tmplInput   ui.Handle
 	list        ui.ListState
+	outside     quickSearchOutsideMonitor
 	cache       struct {
 		library  *model.Library
 		revision int64
@@ -114,7 +115,7 @@ func newQuickSearchMode(a *app.App) *quickSearchMode {
 	q.win = w
 	a.AddWindow(w)
 	w.OnBlur(func() {
-		if !q.menuOpen && q.win != nil && q.win.IsVisible() && time.Since(q.openedAt) > 150*time.Millisecond {
+		if q.win != nil && q.win.IsVisible() && time.Since(q.openedAt) > 150*time.Millisecond {
 			q.hide()
 		}
 	})
@@ -146,11 +147,13 @@ func (q *quickSearchMode) show() {
 	q.win.SetBounds(quickSearchBounds())
 	q.win.Show()
 	q.win.Focus()
+	q.startOutsideClickWatch()
 	q.searchInput.SelectAll()
 	q.win.Invalidate()
 }
 
 func (q *quickSearchMode) hide() {
+	q.stopOutsideClickWatch()
 	q.menuOpen = false
 	q.tmplID = ""
 	q.tmplQuery = ""
@@ -160,6 +163,7 @@ func (q *quickSearchMode) hide() {
 }
 
 func (q *quickSearchMode) destroy() {
+	q.releaseOutsideClickWatch()
 	if q.win != nil {
 		w := q.win
 		q.win = nil
