@@ -63,11 +63,6 @@ func (s *mainState) buildHeader(c *ui.Context, p *theme.Palette) {
 			if m.Item(locales.MenuSearchBookmarks()).Icon(theme.MenuIcon(theme.IconSearch)).Shortcut(ui.Cmd, ui.KeyF).Chosen() {
 				s.openSearch(c, "", false)
 			}
-			if m.Item(locales.MenuNewBookmark()).Icon(theme.MenuIcon(theme.IconPlus)).Shortcut(ui.Cmd, ui.KeyN).Chosen() {
-				if a.Win.ShowEditor != nil {
-					a.Win.ShowEditor(app.EditorRequest{GroupID: a.Group, SubID: a.Sub})
-				}
-			}
 			if g != nil {
 				if m.Item(locales.ActionNewSub()).Icon(theme.MenuIcon(theme.IconFolderPlus)).Chosen() {
 					s.startAddSub(c)
@@ -81,29 +76,6 @@ func (s *mainState) buildHeader(c *ui.Context, p *theme.Palette) {
 				s.buildCardSizeMenu(m)
 			}
 			m.Separator()
-			if m.Item(locales.MenuImport()).Icon(theme.MenuIcon(theme.IconImport)).Chosen() {
-				if a.Win.ShowImport != nil {
-					a.Win.ShowImport("")
-				}
-			}
-			m.Submenu(locales.MenuAppearance(), func(sm *ui.Menu) {
-				modes := []struct {
-					key   string
-					label string
-					icon  *ui.SVG
-				}{
-					{"auto", locales.AppearanceAuto(), theme.IconMonitor},
-					{"light", locales.AppearanceLight(), theme.IconSun},
-					{"dark", locales.AppearanceDark(), theme.IconMoon},
-				}
-				for _, mode := range modes {
-					cur := a.Settings.Appearance == mode.key || (mode.key == "auto" && a.Settings.Appearance == "")
-					if sm.Item(mode.label).Icon(theme.MenuIcon(mode.icon)).Radio(cur).Chosen() {
-						a.Settings.Appearance = mode.key
-						a.SaveSettings()
-					}
-				}
-			}).Icon(theme.MenuIcon(theme.IconContrast))
 			if m.Item(locales.MenuSettings()).Icon(theme.MenuIcon(theme.IconSettings)).Shortcut(ui.Cmd, ui.KeyComma).Chosen() {
 				if a.Win.ShowSettings != nil {
 					a.Win.ShowSettings("")
