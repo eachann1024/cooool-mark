@@ -1,0 +1,224 @@
+// Package theme is Cooool Mark's look: the warm paper palette with a coral
+// accent (light) and its dark twin, the serif used for titles, the stroke
+// icons, and the bookmark tile every view shows.
+package theme
+
+import (
+	"os"
+	"runtime"
+	"strings"
+	"sync"
+
+	"github.com/egoist/mygo/ui"
+
+	"cooool-mark/internal/model"
+)
+
+// Palette are the app's colors. Views use these, never raw hexes.
+type Palette struct {
+	Dark       bool
+	Bg         ui.Color // content
+	Sidebar    ui.Color
+	Line       ui.Color // hairlines
+	LineSoft   ui.Color
+	Hover      ui.Color
+	RowSel     ui.Color // selected row
+	SideSel    ui.Color // selected sidebar item
+	Field      ui.Color // search field, secondary buttons
+	Surface    ui.Color // dialogs, popovers, panels
+	Overlay    ui.Color
+	Text       ui.Color
+	Text2      ui.Color // headings in sections
+	Muted      ui.Color
+	Accent     ui.Color // bars, focus rings, drop lines
+	AccentBg   ui.Color // selected pill
+	AccentText ui.Color // text on AccentBg
+	Primary    ui.Color // primary button
+	OnPrimary  ui.Color
+	Danger     ui.Color
+	DangerBg   ui.Color
+	ToastBg    ui.Color
+	ToastText  ui.Color
+	Notch      ui.Color // the notch panel's black
+}
+
+// Light is the paper palette.
+var Light = Palette{
+	Bg: ui.Hex("#faf9f5"), Sidebar: ui.Hex("#f3f1ea"), Line: ui.Hex("#ebe8df"), LineSoft: ui.Hex("#f0ede6"),
+	Hover: ui.Hex("#f3f1ea"), RowSel: ui.Hex("#efece4"), SideSel: ui.Hex("#e8e5db"), Field: ui.Hex("#f0eee6"),
+	Surface: ui.Hex("#ffffff"), Overlay: ui.RGBA(38, 36, 32, 0.22),
+	Text: ui.Hex("#1f1e1d"), Text2: ui.Hex("#3d3c38"), Muted: ui.Hex("#6c6b64"),
+	Accent: ui.Hex("#d97757"), AccentBg: ui.Hex("#f3e7e0"), AccentText: ui.Hex("#9a4a2e"),
+	Primary: ui.Hex("#b5583a"), OnPrimary: ui.Hex("#ffffff"), Danger: ui.Hex("#b54a3f"), DangerBg: ui.Hex("#fbefed"),
+	ToastBg: ui.Hex("#1f1e1d"), ToastText: ui.Hex("#faf9f5"), Notch: ui.Hex("#0b0b0c"),
+}
+
+// Dark is the night palette.
+var Dark = Palette{
+	Dark: true,
+	Bg:   ui.Hex("#0f0f10"), Sidebar: ui.Hex("#161617"), Line: ui.Hex("#262624"), LineSoft: ui.Hex("#1f1f1d"),
+	Hover: ui.Hex("#1e1e1c"), RowSel: ui.Hex("#262624"), SideSel: ui.Hex("#262624"), Field: ui.Hex("#1e1e1c"),
+	Surface: ui.Hex("#1c1c1b"), Overlay: ui.RGBA(0, 0, 0, 0.45),
+	Text: ui.Hex("#eae8e1"), Text2: ui.Hex("#c7c5bd"), Muted: ui.Hex("#b7b5ad"),
+	Accent: ui.Hex("#e0875f"), AccentBg: ui.Hex("#3a2a22"), AccentText: ui.Hex("#f0a07c"),
+	Primary: ui.Hex("#c96a48"), OnPrimary: ui.Hex("#ffffff"), Danger: ui.Hex("#e5776b"), DangerBg: ui.Hex("#3a2422"),
+	ToastBg: ui.Hex("#262624"), ToastText: ui.Hex("#eae8e1"), Notch: ui.Hex("#0b0b0c"),
+}
+
+// Serif is the family of titles; Sans of everything else.
+var Serif, Sans = fonts()
+
+func fonts() (string, string) {
+	switch runtime.GOOS {
+	case "darwin":
+		return "Songti SC", "PingFang SC"
+	case "windows":
+		return "SimSun", "Microsoft YaHei UI"
+	}
+	return "Noto Serif CJK SC", "Noto Sans CJK SC"
+}
+
+// ScrollbarStyle gives scrollbars a thin thumb and a clear track.
+func ScrollbarStyle(dark bool) ui.ScrollbarStyle {
+	s := ui.ScrollbarStyle{
+		ThumbWidth: 3, TrackWidth: 7, MinLength: 24, Track: ui.Transparent,
+		Thumb: Light.Text.Alpha(0.14), Hover: Light.Text.Alpha(0.26), Active: Light.Text.Alpha(0.38),
+	}
+	if dark {
+		s.Thumb = Dark.Text.Alpha(0.16)
+		s.Hover = Dark.Text.Alpha(0.28)
+		s.Active = Dark.Text.Alpha(0.42)
+	}
+	return s
+}
+
+// SlimScrollbarStyle fits horizontal scrollbars in compact tab strips.
+func SlimScrollbarStyle(dark bool) ui.ScrollbarStyle {
+	s := ScrollbarStyle(dark)
+	s.ThumbWidth, s.TrackWidth, s.MinLength = 2, 4, 20
+	return s
+}
+
+// Apply sets the app theme for this frame from the appearance setting
+// ("auto" follows the system) and returns the palette to draw with.
+func Apply(c *ui.Context, appearance string) *Palette {
+	base := c.Theme()
+	dark := base.Dark
+	switch appearance {
+	case "light":
+		dark = false
+	case "dark":
+		dark = true
+	}
+	p := &Light
+	if dark {
+		p = &Dark
+	}
+	t := *base
+	if dark != base.Dark {
+		if dark {
+			t = *ui.DarkTheme()
+		} else {
+			t = *ui.LightTheme()
+		}
+	}
+	t = *t.WithAccent(p.Primary)
+	t.Dark = dark
+	t.Background = p.Bg
+	t.Surface = p.Field
+	t.SurfaceHover = p.Hover.Mix(p.Line, 0.5)
+	t.SurfacePressed = p.Line
+	t.Border = p.Line
+	t.Text = p.Text
+	t.TextMuted = p.Muted
+	t.AccentText = p.OnPrimary
+	t.InactiveAccent = p.Primary
+	t.Danger = p.Danger
+	t.Focus = p.Accent
+	t.Selection = p.Accent.Alpha(0.28)
+	t.Inverse, t.InverseText = p.ToastBg, p.ToastText
+	t.Radius = 7
+	t.Spacing = 3.5
+	t.FontSize = 13
+	sb := ScrollbarStyle(dark)
+	t.ScrollbarWidth = sb.ThumbWidth
+	t.Scrollbar = sb.Thumb
+	t.ScrollbarStyle = sb
+	if Sans != "" {
+		t.Font = Sans
+	}
+	c.SetTheme(&t)
+	return p
+}
+
+// TileColors are the colors given to bookmarks without an icon.
+var TileColors = []string{"#2b2a27", "#0a6f8e", "#5b4a8a", "#24292f", "#a3262b", "#b2441b", "#2f5d8a", "#7a4a1e", "#b4295e", "#1f5f99", "#2f6fd0", "#b8510f", "#b0302a", "#4f52b2", "#2f62d6", "#b8590f"}
+
+// DefaultIcon picks a letter and a color for a title/URL.
+func DefaultIcon(title, url string) model.Icon {
+	s := strings.TrimSpace(title)
+	if s == "" {
+		s = strings.TrimPrefix(strings.TrimPrefix(url, "https://"), "http://")
+		s = strings.TrimPrefix(s, "www.")
+	}
+	letter := "?"
+	for _, r := range s {
+		letter = strings.ToUpper(string(r))
+		break
+	}
+	h := 0
+	for _, r := range url + title {
+		h = h*31 + int(r)
+	}
+	if h < 0 {
+		h = -h
+	}
+	return model.Icon{Letter: letter, Color: TileColors[h%len(TileColors)]}
+}
+
+var (
+	imgMu    sync.Mutex
+	imgCache = map[string]ui.ImageSource{}
+)
+
+// LoadIcon decodes an icon file once (nil if missing or unreadable).
+func LoadIcon(path string) ui.ImageSource {
+	if path == "" {
+		return nil
+	}
+	imgMu.Lock()
+	defer imgMu.Unlock()
+	if src, ok := imgCache[path]; ok {
+		return src
+	}
+	var src ui.ImageSource
+	if data, err := os.ReadFile(path); err == nil {
+		src, _ = ui.DecodeImage(data)
+	}
+	imgCache[path] = src
+	return src
+}
+
+// Tile draws a bookmark's icon: its image if iconPath loads, else the
+// colored square with its letter. size is in DIPs (22 in rows, 30–46 in
+// grids and panels).
+func Tile(c *ui.Context, icon model.Icon, iconPath string, size float32) ui.Element {
+	radius := size * 0.27
+	if src := LoadIcon(iconPath); src != nil {
+		return ui.Image(c, src).Size(size, size).Radius(radius)
+	}
+	color := icon.Color
+	if color == "" {
+		color = TileColors[0]
+	}
+	letter := icon.Letter
+	if letter == "" {
+		letter = "?"
+	}
+	box := ui.Row(c).Size(size, size).Radius(radius).Background(ui.Hex(color)).
+		Center()
+	box.Children(func() {
+		ui.Text(c, letter).FontSize(size * 0.46).FontWeight(600).TextColor(ui.Hex("#ffffff")).SingleLine()
+	})
+	return box
+}

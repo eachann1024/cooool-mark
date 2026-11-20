@@ -1,0 +1,11 @@
+{
+  "name": "cooool-mark",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "CGO_ENABLED=0 go run .",
+    "check": "go vet ./...",
+    "build": "bun scripts/build-app.mjs",
+    "build:ci": "bun scripts/build-app.mjs --no-install"
+  }
+}
