@@ -9,6 +9,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"cooool-mark/internal/app"
+	"cooool-mark/internal/locales"
 	"cooool-mark/internal/model"
 	"cooool-mark/internal/theme"
 	"cooool-mark/internal/widget"
@@ -56,40 +57,78 @@ func softAccentBg(p *theme.Palette) ui.Color {
 
 func (s *mainState) buildBookmarkMenu(c *ui.Context, m *ui.Menu, b *model.Bookmark) {
 	a := s.app
+	icon := theme.MenuIcon
 
-	if m.Item("打开").Shortcut(0, ui.KeyEnter).Chosen() {
+	if m.Item(locales.ActionOpen()).Icon(icon(theme.IconExternal)).Shortcut(0, ui.KeyEnter).Chosen() {
 		s.activateBookmark(c, b)
 	}
 
-	if m.Item("复制链接").Shortcut(ui.Cmd, ui.KeyC).Chosen() {
+	if m.Item(locales.ActionCopyURL()).Icon(icon(theme.IconLink)).Shortcut(ui.Cmd, ui.KeyC).Chosen() {
 		s.copyBookmarkURL(c, b.ID)
 	}
-	if m.Item("复制为 Markdown").Chosen() {
-		s.copyText(c, "["+b.Title+"]("+b.URL+")", "已复制 Markdown 链接")
+	if m.Item(locales.ActionCopyTitle()).Icon(icon(theme.IconCopy)).Shortcut(ui.Cmd|ui.Shift, ui.KeyC).Chosen() {
+		s.copyBookmarkTitle(c, b.ID)
+	}
+	if m.Item(locales.ActionCopyMarkdown()).Icon(icon(theme.IconMarkdown)).Chosen() {
+		s.copyText(c, "["+b.Title+"]("+b.URL+")", locales.ToastCopiedMarkdown())
 	}
 
 	m.Separator()
 
-	if m.Item("编辑").Shortcut(ui.Cmd, ui.KeyE).Chosen() {
+	if m.Item(locales.ActionEdit()).Icon(icon(theme.IconEdit)).Shortcut(ui.Cmd, ui.KeyE).Chosen() {
 		if a.Win.ShowEditor != nil {
 			a.Win.ShowEditor(app.EditorRequest{ID: b.ID})
 		}
 	}
-	if m.Item("移动到…").Shortcut(ui.Cmd, ui.KeyM).Chosen() {
+	if m.Item(locales.ActionMoveTo()).Icon(icon(theme.IconMove)).Shortcut(ui.Cmd|ui.Shift, ui.KeyM).Chosen() {
 		s.openMoveModal([]string{b.ID})
 	}
 	aiReady := a.AI != nil && a.AI.Status().Ready
-	if m.Item("AI 重新润色").Disabled(!aiReady).Chosen() {
+	if m.Item(locales.ActionAIRePolish()).Icon(icon(theme.IconSparkle)).Disabled(!aiReady).Chosen() {
 		a.Polish(b.ID, true)
 	}
-	if m.Item("重新获取图标").Disabled(a.Fetch == nil).Chosen() {
+	if m.Item(locales.ActionRefreshIcon()).Icon(icon(theme.IconRefresh)).Disabled(a.Fetch == nil).Chosen() {
 		s.refreshBookmarkIcon(b.ID)
+	}
+
+	if a.View == "grid" {
+		m.Separator()
+		s.buildCardSizeMenu(m)
 	}
 
 	m.Separator()
 
-	if m.Item("删除").Danger().Shortcut(0, ui.KeyBackspace).Chosen() {
+	if m.Item(locales.ActionDelete()).Icon(icon(theme.IconTrash)).IconColor(s.pal.Danger).Danger().Shortcut(0, ui.KeyBackspace).Chosen() {
 		a.Delete(b.ID)
+	}
+}
+
+// buildCardSizeMenu adds the "Card Size" submenu (compact / standard /
+// detailed) for the grid view.
+func (s *mainState) buildCardSizeMenu(m *ui.Menu) {
+	m.Submenu(locales.MenuCardSize(), func(sm *ui.Menu) {
+		s.buildCardSizeItems(sm)
+	}).Icon(theme.MenuIcon(theme.IconCardStandard))
+}
+
+// buildCardSizeItems adds the three card-size radio items to m.
+func (s *mainState) buildCardSizeItems(sm *ui.Menu) {
+	a := s.app
+	cur := model.NormalizeCardSize(a.Settings.CardSize)
+	{
+		opts := []struct {
+			id, label string
+			icon      *ui.SVG
+		}{
+			{model.CardCompact, locales.CardSizeCompact(), theme.IconCardCompact},
+			{model.CardStandard, locales.CardSizeStandard(), theme.IconCardStandard},
+			{model.CardDetail, locales.CardSizeDetail(), theme.IconCardDetail},
+		}
+		for _, o := range opts {
+			if sm.Item(o.label).Icon(theme.MenuIcon(o.icon)).Radio(cur == o.id).Chosen() {
+				a.SetCardSize(o.id)
+			}
+		}
 	}
 }
 
@@ -145,7 +184,7 @@ func (s *mainState) buildMoveModal(c *ui.Context, p *theme.Palette) {
 			searchBox.Children(func() {
 				ui.Icon(c, theme.IconSearch).FontSize(13).TextColor(p.Muted).Shrink(0)
 				in = ui.TextInputBase(c, &s.moveFilter).Bind(&s.moveFilterHandle).
-					Placeholder("筛选分组…").Label("筛选目标分组").Grow(1).MinWidth(0).TextColor(p.Text)
+					Placeholder(locales.MainMoveFilterPlaceholder()).Label(locales.MainMoveFilterLabel()).Grow(1).MinWidth(0).TextColor(p.Text)
 			})
 			reveal := false
 			if in.Changed() {
@@ -204,7 +243,7 @@ func (s *mainState) buildMoveModal(c *ui.Context, p *theme.Palette) {
 							row.Background(p.Hover)
 						}
 						row.Children(func() {
-							ui.Text(c, "新建子分组「"+rawFilter+"」…").TextColor(p.AccentText).SingleLine().Grow(1).MinWidth(0)
+							ui.Text(c, locales.MainMoveCreateSub(rawFilter)).TextColor(p.AccentText).SingleLine().Grow(1).MinWidth(0)
 							if on {
 								ui.Text(c, "↵").FontSize(12).TextColor(p.Muted).Shrink(0)
 							}
@@ -215,7 +254,7 @@ func (s *mainState) buildMoveModal(c *ui.Context, p *theme.Palette) {
 					}
 
 					if total == 0 {
-						ui.Text(c, "还没有匹配的分组").FontSize(12).TextColor(p.Muted).Padding(10, 10)
+						ui.Text(c, locales.MainMoveNoMatches()).FontSize(12).TextColor(p.Muted).Padding(10, 10).Selectable()
 					}
 				})
 			})
@@ -292,7 +331,13 @@ func (s *mainState) activateSearchIndex(c *ui.Context, hits []app.Hit, isURL boo
 
 func (s *mainState) copyBookmarkURL(c *ui.Context, id string) {
 	if b := s.app.Store.Lib().Bookmark(id); b != nil && b.URL != "" {
-		s.copyText(c, b.URL, "已复制链接")
+		s.copyText(c, b.URL, locales.ToastCopiedURL())
+	}
+}
+
+func (s *mainState) copyBookmarkTitle(c *ui.Context, id string) {
+	if b := s.app.Store.Lib().Bookmark(id); b != nil && b.Title != "" {
+		s.copyText(c, b.Title, locales.ToastCopiedTitle())
 	}
 }
 
@@ -300,7 +345,7 @@ func (s *mainState) copyText(c *ui.Context, value, success string) {
 	a := s.app
 	c.WriteClipboardThen(value, func(err error) {
 		if err != nil {
-			a.SayErr("复制失败："+err.Error(), "", nil)
+			a.SayErr(locales.ToastCopyFailed(err.Error()), "", nil)
 			return
 		}
 		a.Say(success)
@@ -349,12 +394,12 @@ func (s *mainState) refreshBookmarkIcon(id string) {
 				return
 			}
 			if err != nil || len(meta.Icon) == 0 {
-				a.Say("未获取到图标")
+				a.Say(locales.ToastNoIconFetched())
 				return
 			}
 			imgPath, err := a.Store.SaveIcon(meta.Icon, meta.IconExt)
 			if err != nil {
-				a.Say("保存图标失败")
+				a.Say(locales.ToastSaveIconFailed())
 				return
 			}
 			a.Store.Update(func(l *model.Library) {
@@ -363,7 +408,7 @@ func (s *mainState) refreshBookmarkIcon(id string) {
 					cur.UpdatedAt = time.Now()
 				}
 			})
-			a.Say("已更新图标")
+			a.Say(locales.ToastIconUpdated())
 		})
 	})
 }

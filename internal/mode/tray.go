@@ -8,6 +8,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"cooool-mark/internal/app"
+	"cooool-mark/internal/locales"
 	"cooool-mark/internal/model"
 	"cooool-mark/internal/theme"
 	"cooool-mark/internal/widget"
@@ -21,6 +22,7 @@ type trayMode struct {
 	menu           *mygo.Menu
 	groupID        string
 	searching      bool
+	menuOpen       bool
 	query          string
 	flyoutSearch   ui.Handle
 	detachedSearch ui.Handle
@@ -83,10 +85,10 @@ func newTrayMode(a *app.App) *trayMode {
 		ID:             "cooool-mark-tray",
 		Icon:           trayIconBytes(),
 		IconIsTemplate: runtime.GOOS == "darwin",
-		ToolTip:        "Cooool Mark",
+		ToolTip:        locales.AppName(),
 	})
 	if err != nil {
-		a.SayErr("菜单栏初始化失败："+err.Error(), "", nil)
+		a.SayErr(locales.ModeTrayInitFailed(err.Error()), "", nil)
 		return nil
 	}
 	t.tray = tray
@@ -106,12 +108,32 @@ func newTrayMode(a *app.App) *trayMode {
 	return t
 }
 
+func (t *trayMode) refreshChrome(a *app.App) {
+	if a != nil {
+		t.app = a
+	}
+	t.menu = t.buildMenu()
+	if t.tray != nil {
+		t.tray.SetToolTip(locales.AppName())
+		if runtime.GOOS == "linux" {
+			t.tray.SetMenu(t.menu)
+		}
+	}
+	if t.flyout != nil {
+		t.flyout.Invalidate()
+	}
+	if t.detached != nil {
+		t.detached.SetTitle(locales.AppName())
+		t.detached.Invalidate()
+	}
+}
+
 func (t *trayMode) buildMenu() *mygo.Menu {
 	var items []*mygo.MenuItem
 	if runtime.GOOS == "linux" {
 		items = append(items,
 			&mygo.MenuItem{
-				Label: "打开书签面板",
+				Label: locales.MenuOpenBookmarkPanel(),
 				Click: func(*mygo.MenuItem, *mygo.Window) { t.toggleAttached() },
 			},
 			mygo.Separator(),
@@ -119,7 +141,7 @@ func (t *trayMode) buildMenu() *mygo.Menu {
 	}
 	items = append(items,
 		&mygo.MenuItem{
-			Label: "新建书签",
+			Label: locales.MenuNewBookmark(),
 			Click: func(*mygo.MenuItem, *mygo.Window) {
 				t.hideAttached()
 				if t.app.Win.ShowEditor != nil {
@@ -129,7 +151,23 @@ func (t *trayMode) buildMenu() *mygo.Menu {
 			},
 		},
 		&mygo.MenuItem{
-			Label: "打开主窗口",
+			Label: locales.MenuQuickAddClipboard(),
+			Click: func(*mygo.MenuItem, *mygo.Window) {
+				t.hideAttached()
+				t.app.QuickAddFromClipboard()
+			},
+		},
+		&mygo.MenuItem{
+			Label: locales.MenuQuickSearch(),
+			Click: func(*mygo.MenuItem, *mygo.Window) {
+				t.hideAttached()
+				if t.app.Win.ShowQuickSearch != nil {
+					t.app.Win.ShowQuickSearch()
+				}
+			},
+		},
+		&mygo.MenuItem{
+			Label: locales.MenuOpenMain(),
 			Click: func(*mygo.MenuItem, *mygo.Window) {
 				t.hideAttached()
 				if t.app.Win.ShowMain != nil {
@@ -138,7 +176,7 @@ func (t *trayMode) buildMenu() *mygo.Menu {
 			},
 		},
 		&mygo.MenuItem{
-			Label: "设置…",
+			Label: locales.MenuSettings(),
 			Click: func(*mygo.MenuItem, *mygo.Window) {
 				t.hideAttached()
 				if t.app.Win.ShowSettings != nil {
@@ -148,7 +186,7 @@ func (t *trayMode) buildMenu() *mygo.Menu {
 		},
 		mygo.Separator(),
 		&mygo.MenuItem{
-			Label: "退出",
+			Label: locales.MenuQuit(),
 			Click: func(*mygo.MenuItem, *mygo.Window) { mygo.App.Quit() },
 		},
 	)
@@ -255,7 +293,7 @@ func (t *trayMode) tearOff() {
 		by = wa.Y + 40
 	}
 	w := mygo.NewWindow(mygo.WindowOptions{
-		Title:             "Cooool Mark",
+		Title:             locales.AppName(),
 		Width:             340,
 		Height:            472,
 		X:                 bx,
@@ -312,6 +350,9 @@ func (t *trayMode) selectedGroupSub() (string, string) {
 }
 
 func (t *trayMode) view(c *ui.Context, detached bool) {
+	menuOpenThisFrame := false
+	defer func() { t.menuOpen = menuOpenThisFrame }()
+
 	p := theme.Apply(c, t.app.Settings.Appearance)
 	c.Root().Background(ui.Transparent)
 
@@ -323,12 +364,12 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 	searchH := t.searchHandle(detached)
 	tmplH := t.tmplHandle(detached)
 
-	if c.Shortcut(ui.Cmd, ui.KeyF) && !c.ShortcutRepeated() {
+	if !t.menuOpen && c.Shortcut(ui.Cmd, ui.KeyF) && !c.ShortcutRepeated() {
 		t.searching = true
 		searchH.SelectAll(c)
 	}
 
-	if c.Shortcut(0, ui.KeyEscape) {
+	if !t.menuOpen && c.Shortcut(0, ui.KeyEscape) {
 		if t.tmplID != "" {
 			t.tmplID = ""
 			t.tmplQuery = ""
@@ -347,7 +388,7 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 		}
 	}
 
-	if !t.searching && !searchH.Focused(c) && !tmplH.Focused(c) {
+	if !t.menuOpen && !t.searching && !searchH.Focused(c) && !tmplH.Focused(c) {
 		if ch, ok := widget.TypedSearchKey(c); ok {
 			t.searching = true
 			t.query = ch
@@ -363,8 +404,13 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 		t.groupID = ""
 	}
 
+	reduceTrans := theme.ReduceTransparency()
 	box := ui.Column(c).Fill()
 	switch {
+	case reduceTrans && runtime.GOOS == "windows" && !detached:
+		box.Background(p.Bg)
+	case reduceTrans:
+		box.Background(p.Bg).Radius(14).Border(1, p.Line)
 	case c.Vibrancy():
 		alpha := float32(0.96)
 		if p.Dark {
@@ -383,7 +429,7 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 	if drop, ok := ui.DropData(box, dropOpts); ok {
 		if raw := extractDropURL(drop.Data); raw != "" {
 			gid, sid := t.selectedGroupSub()
-			saveDroppedURL(t.app, raw, gid, sid)
+			t.app.QuickAddToPlace(raw, "", gid, sid, false)
 		}
 	}
 	if dragOver {
@@ -423,16 +469,16 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 					ui.Spacer(c)
 				}
 
-				searchBtn := widget.IconButton(c.Key("tray-search-btn"), p, theme.IconSearch, "搜索书签").Shrink(0)
+				searchBtn := widget.IconButton(c.Key("tray-search-btn"), p, theme.IconSearch, locales.MenuSearchBookmarks()).Shrink(0)
 				if searchBtn.Clicked() {
 					t.searching = true
 					searchH.Focus(c)
 				}
 
-				pinLabel := "撕下成小窗"
+				pinLabel := locales.ActionDetachWindow()
 				pinIcon := theme.IconPin
 				if detached {
-					pinLabel = "收回菜单栏"
+					pinLabel = locales.ActionAttachMenuBar()
 					pinIcon = theme.IconPinFilled
 				}
 				pinBtn := widget.IconButton(c.Key("tray-pin"), p, pinIcon, pinLabel).Shrink(0)
@@ -447,7 +493,7 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 					}
 				}
 				if detached {
-					closeBtn := widget.IconButton(c.Key("tray-close"), p, theme.IconClose, "关闭").Shrink(0)
+					closeBtn := widget.IconButton(c.Key("tray-close"), p, theme.IconClose, locales.ActionClose()).Shrink(0)
 					if closeBtn.Clicked() {
 						if t.detached != nil {
 							t.detached.Close()
@@ -458,7 +504,7 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 			}
 
 			fieldBg := p.Text.Alpha(0.06)
-			if !c.Vibrancy() {
+			if !c.Vibrancy() || reduceTrans {
 				fieldBg = p.Field
 			}
 			focused := searchH.Focused(c)
@@ -473,7 +519,7 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 			sbox.Children(func() {
 				ui.Icon(c, theme.IconSearch).FontSize(14).TextColor(p.Muted).Shrink(0)
 				in := ui.TextInputBase(c.Key("tray-q"), &t.query).Bind(searchH).Grow(1).MinWidth(0).
-					Label("搜索书签").Placeholder("搜索书签").TextColor(p.Text).PlaceholderColor(p.Muted)
+					Label(locales.MainSearchPlaceholder()).Placeholder(locales.MainSearchPlaceholder()).TextColor(p.Text).PlaceholderColor(p.Muted)
 				if in.Changed() {
 					t.flyoutList.ScrollTo(0, ui.Start)
 					t.detachedList.ScrollTo(0, ui.Start)
@@ -489,7 +535,7 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 				}
 				if hasQ {
 					clr := ui.ButtonBase(c.Key("tray-qclr")).Size(18, 18).Radius(5).Center().
-						TextColor(p.Muted).Label("清空搜索").Tooltip("清空搜索").Shrink(0)
+						TextColor(p.Muted).Label(locales.ActionClearSearch()).Tooltip(locales.ActionClearSearch()).Shrink(0)
 					if clr.Hovered() {
 						clr.Background(p.RowSel).TextColor(p.Text)
 					}
@@ -502,7 +548,7 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 					}
 				}
 			})
-			closeSearch := widget.IconButton(c.Key("tray-search-close"), p, theme.IconClose, "退出搜索").Shrink(0)
+			closeSearch := widget.IconButton(c.Key("tray-search-close"), p, theme.IconClose, locales.ActionCloseSearch()).Shrink(0)
 			if closeSearch.Clicked() {
 				t.searching = false
 				t.query = ""
@@ -529,12 +575,12 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 		// Bookmark list
 		items := t.currentItems(lib, q)
 		if len(items) == 0 {
-			msg := "还没有书签"
+			msg := locales.MainNoBookmarks()
 			if q != "" {
-				msg = "还没有匹配的书签"
+				msg = locales.MainNoMatchingBookmarks()
 			}
 			ui.Column(c.Key("tray-empty")).Grow(1).Center().Padding(60, 16).Children(func() {
-				ui.Text(c, msg).Font(theme.Serif).FontSize(15).TextColor(p.Text2).SingleLine()
+				ui.Text(c, msg).Font(theme.TitleFont(c)).FontSize(15).TextColor(p.Text2).SingleLine()
 			})
 		} else {
 			listState := &t.flyoutList
@@ -562,13 +608,27 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 							tmplH.Focus(c)
 						}
 					}
+					bindBookmarkPopoverMenu(c, t.app, btn, b, modeMenuOptions(p), &menuOpenThisFrame,
+						func() {
+							t.openItem(b)
+							if t.tmplID != "" {
+								tmplH.Focus(c)
+							}
+						},
+						func() {
+							if !detached {
+								t.hideAttached()
+							}
+						},
+						nil,
+					)
 				})
 		}
 
 		// Footer bar
 		ui.Row(c.Key("tray-foot")).Height(44).PaddingX(8).Gap(2).AlignItems(ui.Center).
 			BorderWidth(1, 0, 0, 0).BorderColor(p.Line).Children(func() {
-			addBtn := widget.IconButton(c, p, theme.IconPlus, "新建书签")
+			addBtn := widget.IconButton(c, p, theme.IconPlus, locales.MenuNewBookmark())
 			if addBtn.Clicked() {
 				if !detached {
 					t.hideAttached()
@@ -579,7 +639,7 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 				}
 			}
 			ui.Spacer(c)
-			mainBtn := widget.IconButton(c, p, theme.IconExternal, "打开主窗口")
+			mainBtn := widget.IconButton(c, p, theme.IconExternal, locales.MenuOpenMain())
 			if mainBtn.Clicked() {
 				if !detached {
 					t.hideAttached()
@@ -588,7 +648,7 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 					t.app.Win.ShowMain()
 				}
 			}
-			setBtn := widget.IconButton(c, p, theme.IconSettings, "设置")
+			setBtn := widget.IconButton(c, p, theme.IconSettings, locales.SettingsTitle())
 			if setBtn.Clicked() {
 				if !detached {
 					t.hideAttached()

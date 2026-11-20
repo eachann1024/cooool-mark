@@ -1,6 +1,5 @@
 {
   "@@locale": "en",
-
   "appName": "Cooool Mark",
   "defaultGroup": "Favorites",
   "defaultSub": "Common",
@@ -9,10 +8,8 @@
   "untitledFolder": "Untitled Folder",
   "bookmarksTitle": "Bookmarks",
   "htmlExportTitle": "Cooool Mark Bookmarks",
-
   "menuFile": "File",
   "menuView": "View",
-  "menuWindow": "Window",
   "menuHelp": "Help",
   "menuAbout": "About Cooool Mark",
   "menuCheckUpdates": "Check for Updates…",
@@ -28,6 +25,7 @@
   "menuShowNotes": "Show Notes",
   "menuShowTags": "Show Tags",
   "menuOpenMain": "Open Main Window",
+  "menuQuickSearch": "Quick Search",
   "menuSearchBookmarks": "Search Bookmarks",
   "menuOpenBookmarkPanel": "Open Bookmark Panel",
   "menuRevealDataFolder": "Reveal Data Folder",
@@ -37,11 +35,9 @@
   "menuMoreActions": "More Actions",
   "menuAppearance": "Appearance",
   "menuSubActions": "Sub-group Actions",
-
   "appearanceAuto": "Auto",
   "appearanceLight": "Light",
   "appearanceDark": "Dark",
-
   "actionOpen": "Open",
   "actionEdit": "Edit",
   "actionEditExisting": "Edit Existing",
@@ -54,7 +50,6 @@
   "actionClose": "Close",
   "actionRename": "Rename",
   "actionNew": "New",
-  "actionConfirm": "Confirm",
   "actionChange": "Change",
   "actionCopy": "Copy",
   "actionCopyURL": "Copy URL",
@@ -84,15 +79,12 @@
   "actionSwitchToList": "Switch to List",
   "actionClearSearch": "Clear Search",
   "actionCloseSearch": "Close Search",
-  "actionSearch": "Search",
   "actionDownload": "Download",
   "actionPause": "Pause",
   "actionResume": "Resume",
   "actionSelectEllipsis": "Choose…",
   "actionImportEllipsis": "Import…",
   "actionClear": "Clear",
-  "actionRecord": "Record",
-
   "mainSearchPlaceholder": "Search bookmarks",
   "mainGroupNamePlaceholder": "Group name",
   "mainRenameGroupLabel": "Rename group",
@@ -101,7 +93,13 @@
   "mainDropSaveTo": "Drop to save into “{target}”",
   "mainDropMoveTo": "Drop to move into “{target}”",
   "mainDropMoveCount": "Move {count}",
-  "@mainDropMoveCount": { "placeholders": { "count": { "type": "int" } } },
+  "@mainDropMoveCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "mainNoBookmarks": "No bookmarks yet",
   "mainNoGroups": "No groups yet",
   "mainNoSubs": "No sub-groups yet",
@@ -113,11 +111,16 @@
   "mainConnectICloudTip": "Open storage & sync settings",
   "mainAllGroups": "All",
   "mainSearchResults": "{count, plural, =0 {No results} one {# result} other {# results}}",
-  "@mainSearchResults": { "placeholders": { "count": { "type": "int" } } },
+  "@mainSearchResults": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "mainNoMatchingBookmarks": "No matching bookmarks",
   "mainSearchAllGroups": "Search All Groups",
   "mainSearchAllGroupsTip": "Search across all groups",
-  "mainClearSearchTip": "Clear search query",
   "mainSaveThisURL": "Save this URL",
   "mainEditSavedBookmark": "Edit saved bookmark “{title}”",
   "mainExistsInPath": "{url} · Saved in “{path}”",
@@ -129,14 +132,43 @@
   "mainTemplateLabel": "Template query",
   "mainTemplateOpenHint": "↵ Open",
   "mainPolishedBadge": "Polished",
-
+  "mainDropDefaultTarget": "Bookmarks",
+  "searchModalPlaceholder": "Search title, URL, or paste a URL to save…",
+  "searchModalCloseTip": "Return to bookmarks (Esc)",
+  "searchRecentUpdates": "Recently Updated",
+  "searchNotFoundFor": "No results for “{query}”",
+  "searchFooterIdle": "Type keywords or paste a URL",
+  "searchFooterURL": "URL detected · Press Enter to save",
+  "searchFooterMatches": "{count, plural, =0 {No matches} one {# match} other {# matches}}",
+  "@searchFooterMatches": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "searchFooterRecent": "{count, plural, one {# recent bookmark} other {# recent bookmarks}}",
+  "@searchFooterRecent": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "searchFooterHint": "↑↓ Select · ↵ Open · Esc Close",
   "modeNotchTitle": "Cooool Mark Notch",
   "modeEdgeTitle": "Cooool Mark Edge",
+  "modeQuickSearchTitle": "Cooool Mark Quick Search",
+  "quickSearchPlaceholder": "Search bookmarks or enter a URL…",
+  "quickSearchOpenMain": "Open in Main Window",
+  "quickSearchOpenMainTip": "Continue searching in main window",
+  "quickSearchMainBtn": "Main",
+  "quickSearchHintSelect": "Select",
+  "quickSearchHintClearClose": "Clear / Close",
   "modeDropSaveDefault": "Save to Bookmarks",
   "modeDropSaveGroup": "Save to “{name}”",
   "modeDefaultGroup": "Default Group",
   "modeTrayInitFailed": "Failed to initialize menu bar: {err}",
-
   "editorNewTitle": "New Bookmark",
   "editorEditTitle": "Edit Bookmark",
   "editorURLPlaceholder": "Paste a URL or a '{query}' search template",
@@ -196,7 +228,13 @@
   "editorErrDeleted": "This bookmark was deleted. Copy your changes to a new bookmark.",
   "editorErrURLSpace": "URL cannot contain spaces",
   "editorErrURLInvalid": "Please enter a valid URL",
-
+  "editorUnsavedTitle": "Unsaved bookmark changes",
+  "editorUnsavedMsg": "Save or discard your draft before switching to the new bookmark.",
+  "editorUnsavedCloseMsg": "Save or discard your draft before closing.",
+  "editorSaveAndSwitch": "Save & Switch",
+  "editorDiscardAndSwitch": "Discard & Switch",
+  "editorSaveAndClose": "Save & Close",
+  "editorDiscardAndClose": "Discard",
   "settingsTitle": "Settings",
   "settingsPageGeneral": "General",
   "settingsPageAI": "AI Polish",
@@ -205,7 +243,9 @@
   "settingsLanguageSystem": "System Default",
   "settingsOpenAtLogin": "Launch at Login",
   "settingsOpenAtLoginErr": "Unable to update launch at login",
-  "settingsHideDockIcon": "Hide Dock Icon (Menu Bar Only)",
+  "settingsLaunchInBackground": "Launch in Background",
+  "settingsHideDockIcon": "Hide Dock Icon When No Window Is Open",
+  "settingsGlobalSearch": "Global Quick Search",
   "settingsNotifications": "System Notifications",
   "settingsDefaultView": "Default View",
   "settingsViewList": "List",
@@ -228,8 +268,13 @@
   "settingsShortcutUnset": "Not set",
   "settingsShortcutRecordTip": "Click then press modifier + key",
   "settingsShortcutClearTip": "Clear shortcut",
+  "settingsShortcutResetDefault": "Reset Default",
+  "settingsShortcutReserved": "This shortcut is reserved by the app",
+  "settingsShortcutRejected": "Shortcut was rejected by the desktop",
+  "settingsShortcutPending": "Waiting for desktop confirmation…",
   "settingsShortcutFailed": "Unavailable: {err}",
   "settingsIntegrationTitle": "URL Scheme & Integrations",
+  "settingsURLSchemeCopyTip": "Copy example URL",
   "settingsAboutUpdates": "Updates & About",
   "settingsCurrentVersion": "Version {version}",
   "settingsCheckingUpdate": "Checking…",
@@ -239,7 +284,8 @@
   "settingsOpenDownload": "Download Installer",
   "settingsViewRelease": "Release Notes",
   "settingsOpenAbout": "About",
-
+  "aboutTagline": "A fast, calm, local-first desktop bookmark manager.",
+  "aboutCredits": "Open-source · Syncs via iCloud Drive or any folder.",
   "aiEngineLabel": "Polish Engine",
   "aiEngineLocal": "Local Model",
   "aiEngineOpenAI": "OpenAI Compatible",
@@ -247,7 +293,13 @@
   "aiStatusNotReady": "Not ready",
   "aiStatusPaused": "Paused",
   "aiStatusDownloading": "Downloading {pct}%",
-  "@aiStatusDownloading": { "placeholders": { "pct": { "type": "int" } } },
+  "@aiStatusDownloading": {
+    "placeholders": {
+      "pct": {
+        "type": "int"
+      }
+    }
+  },
   "aiStatusReady": "Ready",
   "aiStatusConfigured": "Configured",
   "aiStatusOff": "Disabled",
@@ -276,13 +328,26 @@
   "aiErrLocalNotDownloaded": "Local model is not downloaded",
   "aiErrUnknownModel": "Unknown local model: {name}",
   "aiErrHTTPStatus": "Model download failed (HTTP {code})",
-  "@aiErrHTTPStatus": { "placeholders": { "code": { "type": "int" } } },
+  "@aiErrHTTPStatus": {
+    "placeholders": {
+      "code": {
+        "type": "int"
+      }
+    }
+  },
   "aiErrIncomplete": "Incomplete download ({written} / {total} bytes)",
+  "aiErrDownloadStalled": "Download stalled; retry to resume",
   "aiErrNoOpenAIModel": "OpenAI model name is not set",
   "aiErrNoOpenAIKey": "OpenAI API Key is not configured",
   "aiErrRequestFailed": "Model request failed: {err}",
   "aiErrAPIStatus": "Model API returned {code}: {body}",
-  "@aiErrAPIStatus": { "placeholders": { "code": { "type": "int" } } },
+  "@aiErrAPIStatus": {
+    "placeholders": {
+      "code": {
+        "type": "int"
+      }
+    }
+  },
   "aiErrParseResponse": "Failed to parse model response: {err}",
   "aiErrEmptyResult": "Model returned no result",
   "aiErrNoJSON": "AI did not return a JSON object",
@@ -291,11 +356,16 @@
   "aiErrUnsupportedPlatform": "Unsupported platform: {platform}",
   "aiErrDownloadLlama": "Failed to download llama.cpp: {err}",
   "aiErrDownloadLlamaHTTP": "Failed to download llama.cpp (HTTP {code})",
-  "@aiErrDownloadLlamaHTTP": { "placeholders": { "code": { "type": "int" } } },
+  "@aiErrDownloadLlamaHTTP": {
+    "placeholders": {
+      "code": {
+        "type": "int"
+      }
+    }
+  },
   "aiErrExtractLlama": "Failed to extract llama.cpp: {err}",
   "aiErrNoLlamaBin": "llama-server not found in release archive",
   "aiErrLlamaExited": "llama-server exited unexpectedly",
-
   "storageLocationTitle": "Library Location",
   "storageOpenFolder": "Reveal Folder",
   "storageDefaultDir": "Default data folder",
@@ -325,7 +395,6 @@
   "dataExportJSONFilter": "JSON Backup",
   "dataExportFailed": "Export failed: {err}",
   "dataExportDone": "Exported to {name}",
-
   "importWindowTitle": "Import & Restore",
   "importPickTitle": "Choose Bookmark File",
   "importPickFilter": "Bookmark or Backup Files",
@@ -356,19 +425,52 @@
   "importMergeTip": "Merge same-named groups and skip duplicate URLs",
   "importNothingNew": "No new bookmarks to import",
   "importDoneCount": "{count, plural, one {Imported # bookmark} other {Imported # bookmarks}}",
-  "@importDoneCount": { "placeholders": { "count": { "type": "int" } } },
+  "@importDoneCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "importRestoreFailed": "Restore failed: {err}",
   "importRestoreDone": "{count, plural, one {Restored # bookmark} other {Restored # bookmarks}}",
-  "@importRestoreDone": { "placeholders": { "count": { "type": "int" } } },
+  "@importRestoreDone": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "importErrIsDir": "Cannot import a folder; please choose a bookmark file",
+  "importErrNotRegularFile": "Only regular bookmark files can be imported",
+  "importErrTooLarge": "Bookmark file is too large (max 64 MB)",
+  "importQueueRemaining": "{count, plural, one {# more file queued} other {# more files queued}}",
+  "@importQueueRemaining": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "importErrNoBookmarks": "No bookmarks found in file",
   "importErrParseJSON": "Failed to parse JSON backup: {err}",
   "importErrNewerSchema": "Backup requires a newer version (schema {version})",
-  "@importErrNewerSchema": { "placeholders": { "version": { "type": "int" } } },
+  "@importErrNewerSchema": {
+    "placeholders": {
+      "version": {
+        "type": "int"
+      }
+    }
+  },
   "importErrInvalidBackup": "Not a valid bookmark backup file",
-
   "toastSynced": "{count, plural, one {Merged # bookmark from sync} other {Merged # bookmarks from sync}}",
-  "@toastSynced": { "placeholders": { "count": { "type": "int" } } },
+  "@toastSynced": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "toastSaveLibraryErr": "Unable to save library: {err}",
   "toastSaveSettingsErr": "Unable to save settings: {err}",
   "toastAutoBackupErr": "Auto-backup failed: {err}",
@@ -381,15 +483,27 @@
   "toastTargetSubMissing": "Target sub-group not found",
   "toastMovedTo": "Moved to “{path}”",
   "toastMovedCount": "{count, plural, one {Moved # item} other {Moved # items}}",
-  "@toastMovedCount": { "placeholders": { "count": { "type": "int" } } },
+  "@toastMovedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "toastDeletedOne": "Deleted “{title}”",
   "toastDeletedCount": "{count, plural, one {Deleted # item} other {Deleted # items}}",
-  "@toastDeletedCount": { "placeholders": { "count": { "type": "int" } } },
+  "@toastDeletedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "toastCopiedURL": "URL copied",
   "toastCopiedTitle": "Title copied",
   "toastCopiedMarkdown": "Markdown link copied",
-  "toastCopiedText": "Copied",
   "toastCopyFailed": "Copy failed: {err}",
+  "toastFileMissing": "File not found: {name}",
   "toastNoIconFetched": "No site icon found",
   "toastSaveIconFailed": "Failed to save icon",
   "toastIconUpdated": "Icon updated",
@@ -399,14 +513,23 @@
   "toastUpdateFound": "Cooool Mark v{version} is available",
   "toastUpdateFailed": "Update check failed: {err}",
   "toastDownloadDone": "{name} is ready",
-
   "notifySyncTitle": "Library Synced",
   "notifySyncBody": "{count, plural, one {Merged # new bookmark from sync} other {Merged # new bookmarks from sync}}",
-  "@notifySyncBody": { "placeholders": { "count": { "type": "int" } } },
+  "@notifySyncBody": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "notifyModelReadyTitle": "Local AI Model Ready",
   "notifyModelReadyBody": "{name} finished downloading and is ready to use.",
   "notifyQuickSaveTitle": "Bookmark Saved",
   "notifyQuickSaveBody": "Saved “{title}” to “{path}”",
   "notifyUpdateTitle": "Update Available",
-  "notifyUpdateBody": "Cooool Mark v{version} is now available."
+  "notifyUpdateBody": "Cooool Mark v{version} is now available.",
+  "menuCardSize": "Card Size",
+  "cardSizeCompact": "Compact",
+  "cardSizeStandard": "Standard",
+  "cardSizeDetail": "Detailed"
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"cooool-mark/internal/app"
+	"cooool-mark/internal/locales"
 	"cooool-mark/internal/model"
 	"cooool-mark/internal/theme"
 	"cooool-mark/internal/widget"
@@ -41,6 +42,7 @@ type edgeMode struct {
 	side        string // "left" or "right"
 	groupID     string
 	searching   bool
+	menuOpen    bool
 	query       string
 	searchInput ui.Handle
 	hoverSince  time.Time
@@ -102,7 +104,7 @@ func newEdgeMode(a *app.App, side string) *edgeMode {
 	}
 	x, y, w, h := e.boundsFor(edgeHidden)
 	e.win = mygo.NewWindow(mygo.WindowOptions{
-		Title:             "Cooool Mark 贴边",
+		Title:             locales.ModeEdgeTitle(),
 		X:                 x,
 		Y:                 y,
 		Width:             w,
@@ -124,7 +126,7 @@ func newEdgeMode(a *app.App, side string) *edgeMode {
 	a.AddWindow(e.win)
 	e.win.ShowInactive()
 	e.win.OnBlur(func() {
-		if e.state != edgeHidden && time.Since(e.openedAt) > 150*time.Millisecond {
+		if !e.menuOpen && e.state != edgeHidden && time.Since(e.openedAt) > 150*time.Millisecond {
 			e.collapse()
 		}
 	})
@@ -201,6 +203,7 @@ func (e *edgeMode) setState(st edgeState) {
 	e.leaveSince = time.Time{}
 	e.dragLeftAt = time.Time{}
 	if st == edgeHidden {
+		e.menuOpen = false
 		e.searching = false
 		e.query = ""
 		e.tmplID = ""
@@ -245,6 +248,15 @@ func (e *edgeMode) collapse() {
 }
 
 func (e *edgeMode) view(c *ui.Context) {
+	menuOpenThisFrame := false
+	defer func() {
+		if e.state == edgeHidden {
+			e.menuOpen = false
+			return
+		}
+		e.menuOpen = menuOpenThisFrame
+	}()
+
 	p := theme.Apply(c, e.app.Settings.Appearance)
 	c.Root().Background(ui.Transparent)
 
@@ -253,12 +265,12 @@ func (e *edgeMode) view(c *ui.Context) {
 		e.tmplID = ""
 	}
 
-	if e.state == edgeOut && c.Shortcut(ui.Cmd, ui.KeyF) && !c.ShortcutRepeated() {
+	if !e.menuOpen && e.state == edgeOut && c.Shortcut(ui.Cmd, ui.KeyF) && !c.ShortcutRepeated() {
 		e.searching = true
 		e.searchInput.SelectAll(c)
 	}
 
-	if e.state == edgeOut && c.Shortcut(0, ui.KeyEscape) {
+	if !e.menuOpen && e.state == edgeOut && c.Shortcut(0, ui.KeyEscape) {
 		if e.tmplID != "" {
 			e.tmplID = ""
 			e.tmplQuery = ""
@@ -276,7 +288,7 @@ func (e *edgeMode) view(c *ui.Context) {
 		}
 	}
 
-	if e.state == edgeOut && !e.searching && !e.searchInput.Focused(c) && !e.tmplInput.Focused(c) {
+	if !e.menuOpen && e.state == edgeOut && !e.searching && !e.searchInput.Focused(c) && !e.tmplInput.Focused(c) {
 		if ch, ok := widget.TypedSearchKey(c); ok {
 			e.searching = true
 			e.query = ch
@@ -297,7 +309,7 @@ func (e *edgeMode) view(c *ui.Context) {
 	case edgeDrop:
 		e.viewDrop(c, p, lib)
 	case edgeOut:
-		e.viewPanel(c, p, lib)
+		e.viewPanel(c, p, lib, &menuOpenThisFrame)
 	}
 }
 
@@ -323,13 +335,13 @@ func (e *edgeMode) viewHandle(c *ui.Context, p *theme.Palette) {
 				g := activeGroup(lib, e.groupID)
 				gid, sid = g.ID, firstSubID(g)
 			}
-			saveDroppedURL(e.app, raw, gid, sid)
+			e.app.QuickAddToPlace(raw, "", gid, sid, false)
 		}
 	}
 
 	root.Children(func() {
 		btn := ui.ButtonBase(c.Key("eg-handle")).Size(22, 110).AlignItems(ui.Center).
-			Label("展开书签").Tooltip("展开书签").FocusRing(false)
+			Label(locales.ActionExpandBookmarks()).Tooltip(locales.ActionExpandBookmarks()).FocusRing(false)
 		if e.side == "left" {
 			btn.Justify(ui.Start)
 		} else {
@@ -391,12 +403,13 @@ func (e *edgeMode) viewDrop(c *ui.Context, p *theme.Palette, lib *model.Library)
 				g := activeGroup(lib, e.groupID)
 				gid, sid = g.ID, firstSubID(g)
 			}
-			saveDroppedURL(e.app, raw, gid, sid)
+			e.app.QuickAddToPlace(raw, "", gid, sid, false)
 		}
 		e.collapse()
 		return
 	}
 
+	reduceTrans := theme.ReduceTransparency()
 	root.Children(func() {
 		if len(lib.Groups) == 0 {
 			pill := ui.Row(c.Key("eg-drop-def")).Height(44).PaddingX(18).AlignItems(ui.Center).
@@ -406,7 +419,7 @@ func (e *edgeMode) viewDrop(c *ui.Context, p *theme.Palette, lib *model.Library)
 			} else {
 				pill.Radius(999, 0, 0, 999)
 			}
-			pill.Children(func() { ui.Text(c, "保存到书签").FontWeight(500).SingleLine() })
+			pill.Children(func() { ui.Text(c, locales.ModeDropSaveDefault()).FontWeight(500).SingleLine() })
 			return
 		}
 		for i := range lib.Groups {
@@ -433,7 +446,11 @@ func (e *edgeMode) viewDrop(c *ui.Context, p *theme.Palette, lib *model.Library)
 				pill.Height(48).Padding(0, padR, 0, padL).Background(p.Primary).TextColor(p.OnPrimary).
 					Shadow(hotSX, 8, 30, -12, ui.RGBA(181, 88, 58, 0.7))
 			} else {
-				pill.Height(38).Padding(0, 16).Background(p.Bg.Alpha(0.94)).TextColor(p.Text2).
+				pillBg := p.Bg.Alpha(0.94)
+				if reduceTrans {
+					pillBg = p.Bg
+				}
+				pill.Height(38).Padding(0, 16).Background(pillBg).TextColor(p.Text2).
 					Shadow(sx, 6, 24, -14, ui.RGBA(60, 35, 20, 0.45))
 			}
 			pill.Children(func() {
@@ -444,7 +461,7 @@ func (e *edgeMode) viewDrop(c *ui.Context, p *theme.Palette, lib *model.Library)
 			})
 			if drop, ok := ui.DropData(pill, dropOpts); ok {
 				if raw := extractDropURL(drop.Data); raw != "" {
-					saveDroppedURL(e.app, raw, g.ID, firstSubID(g))
+					e.app.QuickAddToPlace(raw, "", g.ID, firstSubID(g), false)
 				}
 				e.collapse()
 				return
@@ -466,7 +483,7 @@ func (e *edgeMode) viewDrop(c *ui.Context, p *theme.Palette, lib *model.Library)
 	}
 }
 
-func (e *edgeMode) viewPanel(c *ui.Context, p *theme.Palette, lib *model.Library) {
+func (e *edgeMode) viewPanel(c *ui.Context, p *theme.Palette, lib *model.Library, menuOpen *bool) {
 	wrap := ui.Row(c.Key("eg-wrap")).Fill()
 	if e.side == "left" {
 		wrap.Justify(ui.Start).Padding(14, 30, 14, 10)
@@ -479,8 +496,12 @@ func (e *edgeMode) viewPanel(c *ui.Context, p *theme.Palette, lib *model.Library
 		if e.side == "left" {
 			shadowX = 24
 		}
+		panelBg := p.Bg.Alpha(0.97)
+		if theme.ReduceTransparency() {
+			panelBg = p.Bg
+		}
 		panel := ui.Column(c.Key("eg-panel")).Width(edgePanelW).FillHeight().Shrink(0).
-			Background(p.Bg.Alpha(0.97)).Radius(16).Border(1, p.Line).
+			Background(panelBg).Radius(16).Border(1, p.Line).
 			Shadow(shadowX, 0, 60, -28, ui.RGBA(60, 35, 20, 0.5))
 
 		// Slide-in animation from the screen edge
@@ -495,9 +516,9 @@ func (e *edgeMode) viewPanel(c *ui.Context, p *theme.Palette, lib *model.Library
 		slide := panel.AnimateTo("slide", 0, ui.Animation{Spring: ui.SpringOptions{Duration: 320 * time.Millisecond, Bounce: 0.08}})
 		panel.Translate(slide, 0)
 
-		// Collapse if pointer leaves the panel for 600ms (unless typing or viewing a template).
+		// Collapse if pointer leaves the panel for 600ms (unless typing, viewing a template, or a menu is open).
 		_, _, over := wrap.PointerPosition()
-		if over || e.searching || e.query != "" || e.searchInput.Focused(c) || e.tmplID != "" || e.tmplInput.Focused(c) {
+		if over || e.menuOpen || e.searching || e.query != "" || e.searchInput.Focused(c) || e.tmplID != "" || e.tmplInput.Focused(c) {
 			e.leaveSince = time.Time{}
 		} else if delay := 400*time.Millisecond - time.Since(e.openedAt); delay > 0 {
 			c.After(delay)
@@ -525,7 +546,7 @@ func (e *edgeMode) viewPanel(c *ui.Context, p *theme.Palette, lib *model.Library
 					g := activeGroup(lib, e.groupID)
 					gid, sid = g.ID, firstSubID(g)
 				}
-				saveDroppedURL(e.app, raw, gid, sid)
+				e.app.QuickAddToPlace(raw, "", gid, sid, false)
 			}
 		}
 
@@ -558,13 +579,13 @@ func (e *edgeMode) viewPanel(c *ui.Context, p *theme.Palette, lib *model.Library
 						ui.Spacer(c)
 					}
 
-					searchBtn := widget.IconButton(c.Key("eg-search-btn"), p, theme.IconSearch, "搜索书签").Shrink(0)
+					searchBtn := widget.IconButton(c.Key("eg-search-btn"), p, theme.IconSearch, locales.MenuSearchBookmarks()).Shrink(0)
 					if searchBtn.Clicked() {
 						e.searching = true
 						e.searchInput.Focus(c)
 					}
 
-					addBtn := widget.IconButton(c.Key("eg-add"), p, theme.IconPlus, "新建书签").Shrink(0)
+					addBtn := widget.IconButton(c.Key("eg-add"), p, theme.IconPlus, locales.MenuNewBookmark()).Shrink(0)
 					if addBtn.Clicked() {
 						e.collapse()
 						if e.app.Win.ShowEditor != nil {
@@ -580,7 +601,7 @@ func (e *edgeMode) viewPanel(c *ui.Context, p *theme.Palette, lib *model.Library
 					if e.side == "left" {
 						collapseIcon = theme.IconCollapseLeft
 					}
-					hideBtn := widget.IconButton(c.Key("eg-hide"), p, collapseIcon, "收回屏幕边缘").Shrink(0)
+					hideBtn := widget.IconButton(c.Key("eg-hide"), p, collapseIcon, locales.ActionCollapseEdge()).Shrink(0)
 					if hideBtn.Clicked() {
 						e.collapse()
 					}
@@ -599,7 +620,7 @@ func (e *edgeMode) viewPanel(c *ui.Context, p *theme.Palette, lib *model.Library
 				sbox.Children(func() {
 					ui.Icon(c, theme.IconSearch).FontSize(14).TextColor(p.Muted).Shrink(0)
 					in := ui.TextInputBase(c.Key("eg-q"), &e.query).Bind(&e.searchInput).Grow(1).MinWidth(0).
-						Label("搜索书签").Placeholder("搜索书签").TextColor(p.Text).PlaceholderColor(p.Muted)
+						Label(locales.MainSearchPlaceholder()).Placeholder(locales.MainSearchPlaceholder()).TextColor(p.Text).PlaceholderColor(p.Muted)
 					if in.Changed() {
 						e.list.ScrollTo(0, ui.Start)
 					}
@@ -614,7 +635,7 @@ func (e *edgeMode) viewPanel(c *ui.Context, p *theme.Palette, lib *model.Library
 					}
 					if hasQ {
 						clr := ui.ButtonBase(c.Key("eg-qclr")).Size(18, 18).Radius(5).Center().
-							TextColor(p.Muted).Label("清空搜索").Tooltip("清空搜索").Shrink(0)
+							TextColor(p.Muted).Label(locales.ActionClearSearch()).Tooltip(locales.ActionClearSearch()).Shrink(0)
 						if clr.Hovered() {
 							clr.Background(p.RowSel).TextColor(p.Text)
 						}
@@ -626,7 +647,7 @@ func (e *edgeMode) viewPanel(c *ui.Context, p *theme.Palette, lib *model.Library
 						}
 					}
 				})
-				closeSearch := widget.IconButton(c.Key("eg-search-close"), p, theme.IconClose, "退出搜索").Shrink(0)
+				closeSearch := widget.IconButton(c.Key("eg-search-close"), p, theme.IconClose, locales.ActionCloseSearch()).Shrink(0)
 				if closeSearch.Clicked() {
 					e.searching = false
 					e.query = ""
@@ -652,18 +673,18 @@ func (e *edgeMode) viewPanel(c *ui.Context, p *theme.Palette, lib *model.Library
 			// Body: search results OR sub-group sections
 			rows := e.currentRows(lib, q)
 			if len(rows) == 0 {
-				msg := "还没有书签"
+				msg := locales.MainNoBookmarks()
 				size := float32(14)
 				col := p.Muted
 				if q != "" {
-					msg = "还没有匹配的书签"
+					msg = locales.MainNoMatchingBookmarks()
 					size = 15
 					col = p.Text2
 				} else if len(lib.Groups) == 0 {
-					msg = "还没有分组"
+					msg = locales.MainNoGroups()
 				}
 				ui.Column(c.Key("eg-empty")).Grow(1).Center().Padding(60, 16).Children(func() {
-					ui.Text(c, msg).Font(theme.Serif).FontSize(size).TextColor(col).SingleLine()
+					ui.Text(c, msg).Font(theme.TitleFont(c)).FontSize(size).TextColor(col).SingleLine()
 				})
 				return
 			}
@@ -689,7 +710,7 @@ func (e *edgeMode) viewPanel(c *ui.Context, p *theme.Palette, lib *model.Library
 						})
 						return
 					}
-					e.renderRow(c, p, r.b)
+					e.renderRow(c, p, r.b, menuOpen)
 				})
 		})
 	})
@@ -725,7 +746,7 @@ func (e *edgeMode) currentRows(lib *model.Library, q string) []edgeRow {
 	return rows
 }
 
-func (e *edgeMode) renderRow(c *ui.Context, p *theme.Palette, b *model.Bookmark) {
+func (e *edgeMode) renderRow(c *ui.Context, p *theme.Palette, b *model.Bookmark, menuOpen *bool) {
 	row := ui.ButtonBase(c.Key("eg-bm-" + b.ID)).Height(34).PaddingX(8).Gap(10).
 		Radius(8).Justify(ui.Start).AlignItems(ui.Center).Label(b.Title).Tooltip(b.Title)
 	if row.Hovered() {
@@ -741,6 +762,16 @@ func (e *edgeMode) renderRow(c *ui.Context, p *theme.Palette, b *model.Bookmark)
 			e.tmplInput.Focus(c)
 		}
 	}
+	bindBookmarkPopoverMenu(c, e.app, row, b, modeMenuOptions(p), menuOpen,
+		func() {
+			e.openItem(b)
+			if e.tmplID != "" {
+				e.tmplInput.Focus(c)
+			}
+		},
+		e.collapse,
+		nil,
+	)
 }
 
 func (e *edgeMode) openItem(b *model.Bookmark) {

@@ -6,6 +6,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"cooool-mark/internal/app"
+	"cooool-mark/internal/locales"
 	"cooool-mark/internal/theme"
 	"cooool-mark/internal/widget"
 )
@@ -18,13 +19,13 @@ func backToMainButton(c *ui.Context, p *theme.Palette, a *app.App, win *mygo.Win
 		return
 	}
 	b := ui.ButtonBase(c.Key("back-main")).Height(26).Padding(0, 9, 0, 5).Radius(7).Gap(3).AlignItems(ui.Center).
-		TextColor(p.Text2).Label("返回书签").Tooltip("返回书签")
+		TextColor(p.Text2).Label(locales.ActionBackToBookmarks()).Tooltip(locales.ActionBackToBookmarks())
 	if b.Hovered() {
 		b.Background(p.Hover.Mix(p.Line, 0.6))
 	}
 	b.Children(func() {
 		ui.Icon(c, theme.IconBack).FontSize(14)
-		ui.Text(c, "书签").SingleLine()
+		ui.Text(c, locales.BookmarksTitle()).SingleLine()
 	})
 	if b.Clicked() {
 		a.Win.ShowMain()
@@ -47,7 +48,7 @@ func confirmModal(c *ui.Context, p *theme.Palette, open *bool, title, message, c
 			Shadow(0, 24, 64, -16, ui.RGBA(0, 0, 0, 0.32))
 		widget.Title(c, p, title, 17)
 		if message != "" {
-			ui.Text(c, message).TextColor(p.Text2).Wrap()
+			ui.Text(c, message).TextColor(p.Text2).Wrap().Selectable()
 		}
 		ui.Row(c).Gap(8).Justify(ui.End).Margin(6, 0, 0, 0).Children(func() {
 			cancel := widget.Secondary(c.Key("modal-cancel"), p, cancelLabel).AutoFocus()

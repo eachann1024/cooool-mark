@@ -10,6 +10,7 @@ import (
 
 	"cooool-mark/internal/app"
 	"cooool-mark/internal/importer"
+	"cooool-mark/internal/locales"
 	"cooool-mark/internal/model"
 	"cooool-mark/internal/theme"
 	"cooool-mark/internal/widget"
@@ -23,6 +24,8 @@ type importState struct {
 	planRev        int64
 	loading        bool
 	loadingFile    string
+	loadingPath    string
+	queue          []string
 	picking        bool
 	loadSeq        int
 	err            string
@@ -34,14 +37,23 @@ var (
 	importModel *importState
 )
 
+// RefreshChrome updates the import window title and requests a redraw when open.
+func RefreshChrome() {
+	if importWin != nil && !importWin.IsDestroyed() {
+		importWin.SetTitle(locales.ImportWindowTitle())
+		importWin.Invalidate()
+	}
+}
+
 func showImport(a *app.App, path string) {
 	a.PrepareRegularWindow()
-	if importWin != nil {
+	if importWin != nil && !importWin.IsDestroyed() {
+		importWin.SetTitle(locales.ImportWindowTitle())
 		importWin.Show()
 		importWin.Focus()
 		importWin.Invalidate()
 		if path != "" && importModel != nil {
-			importModel.loadFile(path)
+			importModel.enqueue(path)
 		} else if importModel != nil && importModel.plan == nil && !importModel.loading && !importModel.picking && importModel.err == "" {
 			importModel.pickFile()
 		}
@@ -49,7 +61,7 @@ func showImport(a *app.App, path string) {
 	}
 	st := &importState{app: a}
 	w := mygo.NewWindow(mygo.WindowOptions{
-		Title: "导入与恢复", Width: 540, Height: 420, MinWidth: 440, MinHeight: 340,
+		Title: locales.ImportWindowTitle(), Width: 540, Height: 420, MinWidth: 440, MinHeight: 340,
 		StateKey: "manage-import", TitleBarStyle: mygo.TitleBarHiddenInset,
 		TrafficLightPosition: widget.Lights(), TitleBarHeight: widget.HeaderH,
 		Content: ui.View(st.view),
@@ -61,6 +73,8 @@ func showImport(a *app.App, path string) {
 		st.loadSeq++
 		st.loading = false
 		st.loadingFile = ""
+		st.loadingPath = ""
+		st.queue = nil
 		st.picking = false
 		st.confirmRestore = false
 		st.win = nil
@@ -94,12 +108,13 @@ func (s *importState) pickFile() {
 	}
 	s.picking = true
 	s.err = ""
+	startSeq := s.loadSeq
 	s.invalidate()
 	win := s.win
 	go func() {
 		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
-			Parent: win, Title: "选择书签文件",
-			Filters: []mygo.FileFilter{{Name: "书签或备份文件", Extensions: []string{"html", "htm", "json"}}},
+			Parent: win, Title: locales.ImportPickTitle(),
+			Filters: []mygo.FileFilter{{Name: locales.ImportPickFilter(), Extensions: []string{"html", "htm", "json"}}},
 		})
 		s.app.Post(func() {
 			if s.closed || (importModel != nil && importModel != s) {
@@ -107,12 +122,57 @@ func (s *importState) pickFile() {
 			}
 			s.picking = false
 			if err != nil {
-				s.err = "选择文件失败：" + err.Error()
+				s.err = locales.ImportPickFailed(err.Error())
 			} else if len(paths) > 0 {
-				s.loadFile(paths[0])
+				if s.loadSeq != startSeq || s.loading {
+					// Other files arrived (e.g. via drag-drop) while the picker
+					// was open; enqueue instead of clobbering the active task.
+					for _, p := range paths {
+						s.enqueue(p)
+					}
+				} else {
+					s.loadFile(paths[0])
+					for _, extra := range paths[1:] {
+						s.enqueue(extra)
+					}
+				}
 			}
 		})
 	}()
+}
+
+func (s *importState) enqueue(path string) {
+	if strings.TrimSpace(path) == "" {
+		return
+	}
+	clean := filepath.Clean(path)
+	if !s.loading && s.plan == nil {
+		s.loadFile(path)
+		return
+	}
+	if s.loading && s.loadingPath == clean {
+		return
+	}
+	if s.plan != nil && filepath.Clean(s.plan.File) == clean {
+		return
+	}
+	for _, queued := range s.queue {
+		if filepath.Clean(queued) == clean {
+			return
+		}
+	}
+	s.queue = append(s.queue, path)
+	s.invalidate()
+}
+
+func (s *importState) loadNextQueued() bool {
+	if len(s.queue) == 0 {
+		return false
+	}
+	next := s.queue[0]
+	s.queue = s.queue[1:]
+	s.loadFile(next)
+	return true
 }
 
 func (s *importState) loadFile(path string) {
@@ -123,6 +183,7 @@ func (s *importState) loadFile(path string) {
 	s.confirmRestore = false
 	s.loading = true
 	s.loadingFile = filepath.Base(path)
+	s.loadingPath = filepath.Clean(path)
 	s.err = ""
 	s.invalidate()
 	snap, imp := importer.CloneLibrary(s.app.Store.Lib()), s.imp()
@@ -134,8 +195,9 @@ func (s *importState) loadFile(path string) {
 			}
 			s.loading = false
 			s.loadingFile = ""
+			s.loadingPath = ""
 			if err != nil {
-				s.plan, s.err = nil, "读取失败："+err.Error()
+				s.plan, s.err = nil, locales.ImportReadFailed(err.Error())
 				return
 			}
 			s.plan = plan
@@ -159,19 +221,37 @@ func (s *importState) syncPlanStats() {
 func (s *importState) view(c *ui.Context) {
 	p := theme.Apply(c, s.app.Settings.Appearance)
 	s.syncPlanStats()
+	c.OnWindowShortcut(0, ui.KeyEscape, func() {
+		if s.confirmRestore {
+			s.confirmRestore = false
+			return
+		}
+		if s.win != nil {
+			s.win.Close()
+		}
+	})
 	bar := c.TitleBar()
 	leftPad, rightPad := max(bar.Left+12, float32(16)), max(bar.Right+16, float32(16))
 
 	root := ui.Column(c).Fill().Background(p.Bg)
 	var dragOver bool
-	if !s.loading && !s.picking && !s.confirmRestore {
+	if !s.confirmRestore {
 		if files := root.DroppedFiles(); len(files) > 0 {
-			if f := pickDroppedBookmarkFile(files); f != "" {
-				s.loadFile(f)
+			if matched := pickDroppedBookmarkFiles(files); len(matched) > 0 {
+				if s.loading || s.plan != nil {
+					for _, f := range matched {
+						s.enqueue(f)
+					}
+				} else {
+					s.loadFile(matched[0])
+					for _, extra := range matched[1:] {
+						s.enqueue(extra)
+					}
+				}
+			} else if !s.loading && s.plan == nil {
+				s.err = locales.ImportUnsupportedExt()
 			} else {
-				s.plan = nil
-				s.planRev = 0
-				s.err = "仅支持导入 .html、.htm 或 .json 文件"
+				s.app.SayErr(locales.ImportUnsupportedExt(), "", nil)
 			}
 		}
 		dragOver = root.FileDragOver()
@@ -181,7 +261,22 @@ func (s *importState) view(c *ui.Context) {
 		ui.Row(c).Height(widget.BarH(bar)).Shrink(0).AlignItems(ui.Center).Padding(0, rightPad, 0, leftPad).Gap(10).
 			BorderWidth(0, 0, 1, 0).BorderColor(p.Line).DragWindow().Children(func() {
 			backToMainButton(c, p, s.app, s.win)
-			widget.Title(c, p, "导入与恢复", 15).FontWeight(600)
+			widget.Title(c, p, locales.ImportWindowTitle(), 15).FontWeight(600)
+			if len(s.queue) > 0 {
+				ui.Spacer(c)
+				qBtn := ui.ButtonBase(c.Key("queue-next")).Height(24).PaddingX(9).Radius(999).
+					AlignItems(ui.Center).Background(p.AccentBg).TextColor(p.AccentText).
+					Label(locales.ImportQueueRemaining(len(s.queue)))
+				if qBtn.Hovered() {
+					qBtn.Background(p.Accent.Alpha(0.24))
+				}
+				qBtn.Children(func() {
+					ui.Text(c, locales.ImportQueueRemaining(len(s.queue))).FontSize(11.5).FontWeight(500).SingleLine()
+				})
+				if !s.loading && !s.picking && qBtn.Clicked() {
+					s.loadNextQueued()
+				}
+			}
 		})
 		s.body(c, p)
 		s.footer(c, p)
@@ -190,12 +285,12 @@ func (s *importState) view(c *ui.Context) {
 				Radius(12).Background(p.AccentBg.Alpha(0.92)).Border(2, p.Accent).BorderStyle(ui.BorderDashed).
 				PassThrough().Children(func() {
 				ui.Box(c).TextColor(p.AccentText).Children(func() { ui.Icon(c, theme.IconImport).FontSize(26) })
-				ui.Text(c, "松手读取书签文件").FontSize(15).FontWeight(600).TextColor(p.AccentText)
+				ui.Text(c, locales.ImportDropOverlay()).FontSize(15).FontWeight(600).TextColor(p.AccentText)
 			})
 		}
-		if confirmModal(c, p, &s.confirmRestore, "确认覆盖恢复全部数据？",
-			"覆盖前会自动备份当前书签到 backups 目录，此操作将替换现有分组与书签。",
-			"取消", "覆盖恢复", true) == 1 {
+		if confirmModal(c, p, &s.confirmRestore, locales.ImportConfirmRestoreTitle(),
+			locales.ImportConfirmRestoreMsg(),
+			locales.ActionCancel(), locales.ImportConfirmRestoreBtn(), true) == 1 {
 			s.doRestore()
 		}
 		widget.Toast(c, s.app, p, 68)
@@ -215,21 +310,21 @@ func (s *importState) body(c *ui.Context, p *theme.Palette) {
 				ui.Box(c).Size(46, 46).Radius(12).Background(iconBg).Center().TextColor(iconFg).Children(func() { ui.Icon(c, icon).FontSize(22) })
 				switch {
 				case s.loading:
-					widget.Title(c, p, "正在解析书签文件…", 16).FontWeight(600)
+					widget.Title(c, p, locales.ImportParsing(), 16).FontWeight(600).Selectable()
 					if s.loadingFile != "" {
-						ui.Text(c, s.loadingFile).FontSize(12).TextColor(p.Muted).SingleLine().Ellipsis("…")
+						ui.Text(c, s.loadingFile).FontSize(12).TextColor(p.Muted).SingleLine().Ellipsis("…").Selectable()
 					}
 				case s.err != "":
-					widget.Title(c, p, "读取文件失败", 16).FontWeight(600)
-					ui.Text(c, s.err).FontSize(12.5).TextColor(p.Danger).Wrap()
-					btn := widget.Primary(c.Key("repick-file"), p, "重新选择文件").Label("重新选择文件").Disabled(s.picking)
+					widget.Title(c, p, locales.ImportErrorHeading(), 16).FontWeight(600).Selectable()
+					ui.Text(c, s.err).FontSize(12.5).TextColor(p.Danger).Wrap().Selectable()
+					btn := widget.Primary(c.Key("repick-file"), p, locales.ImportRepickFile()).Label(locales.ImportRepickFile()).Disabled(s.picking)
 					if !s.picking && btn.Clicked() {
 						s.pickFile()
 					}
 				default:
-					widget.Title(c, p, "拖入书签文件，或选择文件", 16).FontWeight(600)
-					btn := widget.Primary(c.Key("pick-file"), p, "选择文件").Label("选择文件").
-						Tooltip("选择 .html / .htm / .json 文件").Disabled(s.picking)
+					widget.Title(c, p, locales.ImportEmptyHeading(), 16).FontWeight(600).Selectable()
+					btn := widget.Primary(c.Key("pick-file"), p, locales.ImportPickFile()).Label(locales.ImportPickFile()).
+						Tooltip(locales.ImportPickFileTip()).Disabled(s.picking)
 					if !s.picking && btn.Clicked() {
 						s.pickFile()
 					}
@@ -242,39 +337,39 @@ func (s *importState) body(c *ui.Context, p *theme.Palette) {
 			ui.Row(c).FillWidth().Gap(12).AlignItems(ui.Center).Children(func() {
 				ui.Box(c).Size(36, 36).Radius(9).Background(p.Field).Center().TextColor(p.Muted).Children(func() { ui.Icon(c, theme.IconFile).FontSize(18) })
 				ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
-					ui.Text(c, filepath.Base(plan.File)).FontSize(14).FontWeight(600).TextColor(p.Text).SingleLine().Ellipsis("…")
-					kind := "浏览器书签文件"
+					ui.Text(c, filepath.Base(plan.File)).FontSize(14).FontWeight(600).TextColor(p.Text).SingleLine().Ellipsis("…").Selectable()
+					kind := locales.ImportKindBrowser()
 					if plan.Backup != nil {
-						kind = "Cooool Mark JSON 备份"
+						kind = locales.ImportKindBackup()
 					}
-					ui.Text(c, kind).FontSize(12).TextColor(p.Muted).SingleLine()
+					ui.Text(c, kind).FontSize(12).TextColor(p.Muted).SingleLine().Selectable()
 				})
-				changeBtn := widget.Secondary(c.Key("change-file"), p, "换一个").Height(26).PaddingX(9).Radius(6).
-					Label("更换文件").Tooltip("重新选择书签或备份文件").Disabled(s.picking || s.loading)
+				changeBtn := widget.Secondary(c.Key("change-file"), p, locales.ActionChange()).Height(26).PaddingX(9).Radius(6).
+					Label(locales.ActionChange()).Tooltip(locales.ImportChangeFileTip()).Disabled(s.picking || s.loading)
 				if !s.picking && !s.loading && changeBtn.Clicked() {
 					s.pickFile()
 				}
 			})
 			ui.Box(c).Height(1).FillWidth().Background(p.LineSoft)
 			ui.Row(c).FillWidth().Gap(10).Children(func() {
-				for _, st := range [][2]string{{"文件夹数", fmt.Sprintf("%d", countFolders(plan.Folders))}, {"书签数", fmt.Sprintf("%d", plan.Total)}, {"重复数", fmt.Sprintf("%d", plan.Dups)}} {
+				for _, st := range [][2]string{{locales.ImportStatFolders(), fmt.Sprintf("%d", countFolders(plan.Folders))}, {locales.ImportStatBookmarks(), fmt.Sprintf("%d", plan.Total)}, {locales.ImportStatDups(), fmt.Sprintf("%d", plan.Dups)}} {
 					ui.Column(c).Grow(1).Basis(0).Padding(12, 10).Gap(4).Radius(9).Background(p.Bg).Border(1, p.LineSoft).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, st[1]).FontSize(18).FontWeight(600).TextColor(p.Text).SingleLine()
-						ui.Text(c, st[0]).FontSize(11.5).TextColor(p.Muted).SingleLine()
+						ui.Text(c, st[1]).FontSize(18).FontWeight(600).TextColor(p.Text).SingleLine().Selectable()
+						ui.Text(c, st[0]).FontSize(11.5).TextColor(p.Muted).SingleLine().Selectable()
 					})
 				}
 			})
 			if s.err != "" {
-				ui.Text(c, s.err).FontSize(12).TextColor(p.Danger).Wrap()
+				ui.Text(c, s.err).FontSize(12).TextColor(p.Danger).Wrap().Selectable()
 			}
 			if plan.Total == 0 {
-				msg := "此文件中没有可导入的书签"
+				msg := locales.ImportNoneAvailable()
 				if plan.Backup != nil {
-					msg = "此备份不包含书签，仍可覆盖恢复或更换文件"
+					msg = locales.ImportBackupEmpty()
 				}
-				ui.Text(c, msg).FontSize(12).TextColor(p.Muted).Wrap()
+				ui.Text(c, msg).FontSize(12).TextColor(p.Muted).Wrap().Selectable()
 			} else if plan.Total <= plan.Dups {
-				ui.Text(c, "所有书签均已存在于书签库中，无需重复导入").FontSize(12).TextColor(p.Muted).Wrap()
+				ui.Text(c, locales.ImportAllExist()).FontSize(12).TextColor(p.Muted).Wrap().Selectable()
 			}
 		})
 	})
@@ -284,20 +379,20 @@ func (s *importState) footer(c *ui.Context, p *theme.Palette) {
 	ui.Row(c).FillWidth().Shrink(0).AlignItems(ui.Center).Padding(11, 20).Gap(8).
 		Background(p.Sidebar).BorderWidth(1, 0, 0, 0).BorderColor(p.Line).Children(func() {
 		ui.Spacer(c)
-		if widget.Secondary(c.Key("import-cancel"), p, "取消").Label("取消").Clicked() && s.win != nil {
+		if widget.Secondary(c.Key("import-cancel"), p, locales.ActionCancel()).Label(locales.ActionCancel()).Clicked() && s.win != nil {
 			s.win.Close()
 		}
 		if s.plan != nil && s.plan.Backup != nil {
 			canRestore := !s.loading && !s.picking
-			restoreBtn := widget.Danger(c.Key("import-restore"), p, "覆盖恢复", false).
-				Label("覆盖恢复").Tooltip("用此备份覆盖恢复全部数据").Disabled(!canRestore)
+			restoreBtn := widget.Danger(c.Key("import-restore"), p, locales.ImportConfirmRestoreBtn(), false).
+				Label(locales.ImportConfirmRestoreBtn()).Tooltip(locales.ImportRestoreTip()).Disabled(!canRestore)
 			if canRestore && restoreBtn.Clicked() {
 				s.confirmRestore = true
 			}
 		}
 		canMerge := s.plan != nil && !s.loading && !s.picking && s.plan.Total > s.plan.Dups
-		mergeBtn := widget.Primary(c.Key("import-merge"), p, "导入（自动去重合并）").Label("导入（自动去重合并）").
-			Tooltip("同名分组自动合并并跳过重复网址").Disabled(!canMerge)
+		mergeBtn := widget.Primary(c.Key("import-merge"), p, locales.ImportMergeBtn()).Label(locales.ImportMergeBtn()).
+			Tooltip(locales.ImportMergeTip()).Disabled(!canMerge)
 		if canMerge && mergeBtn.Clicked() {
 			var added []string
 			s.app.Store.Update(func(l *model.Library) {
@@ -305,10 +400,10 @@ func (s *importState) footer(c *ui.Context, p *theme.Palette) {
 			})
 			if len(added) == 0 {
 				s.syncPlanStats()
-				s.app.Say("没有新的书签可导入")
+				s.app.Say(locales.ImportNothingNew())
 				return
 			}
-			s.finish(fmt.Sprintf("已导入 %d 个书签", len(added)))
+			s.finish(locales.ImportDoneCount(len(added)))
 		}
 	})
 }
@@ -318,15 +413,18 @@ func (s *importState) doRestore() {
 		return
 	}
 	if err := s.app.Store.Replace(importer.CloneLibrary(s.plan.Backup)); err != nil {
-		s.app.SayErr("恢复失败："+err.Error(), "", nil)
+		s.app.SayErr(locales.ImportRestoreFailed(err.Error()), "", nil)
 		return
 	}
-	s.finish(fmt.Sprintf("已恢复 %d 个书签", len(s.app.Store.Lib().Live())))
+	s.finish(locales.ImportRestoreDone(len(s.app.Store.Lib().Live())))
 }
 
 func (s *importState) finish(msg string) {
 	s.app.EnsurePlace()
 	s.app.Say(msg)
+	if s.loadNextQueued() {
+		return
+	}
 	if s.app.Win.ShowMain != nil {
 		s.app.Win.ShowMain()
 	}
@@ -343,11 +441,12 @@ func countFolders(folders []*app.ImportFolder) int {
 	return n
 }
 
-func pickDroppedBookmarkFile(files []string) string {
+func pickDroppedBookmarkFiles(files []string) []string {
+	var out []string
 	for _, f := range files {
 		if ext := strings.ToLower(filepath.Ext(f)); ext == ".html" || ext == ".htm" || ext == ".json" {
-			return f
+			out = append(out, f)
 		}
 	}
-	return ""
+	return out
 }

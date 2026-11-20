@@ -42,9 +42,10 @@ function stagePayload(root, binary) {
     "[Desktop Entry]",
     "Type=Application",
     "Name=Cooool Mark",
-    "Exec=cooool-mark",
+    "Exec=cooool-mark %U",
     "Icon=cooool-mark",
     "Categories=Utility;",
+    "MimeType=x-scheme-handler/coooolmark;text/html;application/json;",
     "Terminal=false",
     "",
   ].join("\n"));

@@ -23,6 +23,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"cooool-mark/internal/locales"
 	"cooool-mark/internal/model"
 )
 
@@ -82,8 +83,8 @@ func Fresh() *model.Library {
 		SchemaVersion: model.SchemaVersion,
 		UpdatedAt:     now,
 		Groups: []model.Group{{
-			ID: model.NewID(), Name: "收藏", UpdatedAt: now,
-			Subs: []model.Sub{{ID: model.NewID(), Name: "常用", UpdatedAt: now}},
+			ID: model.NewID(), Name: locales.DefaultGroup(), UpdatedAt: now,
+			Subs: []model.Sub{{ID: model.NewID(), Name: locales.DefaultSub(), UpdatedAt: now}},
 		}},
 	}
 }

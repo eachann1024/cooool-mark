@@ -93,6 +93,10 @@ type AI interface {
 	Remove(model string) error
 	// OnChange is called (any goroutine) when Status changes.
 	OnChange(fn func())
+	// OnDownloadComplete is called (any goroutine) when a local model finishes downloading.
+	OnDownloadComplete(fn func(modelName string))
+	// Close stops active downloads and any running local llama-server child process.
+	Close()
 }
 
 // ImportFolder is a folder of an imported file, shown as a tree with

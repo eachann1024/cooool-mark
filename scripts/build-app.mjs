@@ -159,7 +159,14 @@ function goBuild({ goos, goarch, outFile, profile, tempDir }) {
   if (tempDir) env.TMPDIR = tempDir;
 
   const version = readAppVersion();
-  const ldflags = [`-X cooool-mark/internal/app.BuildVersion=${version}`];
+  const ldflags = [
+    `-X cooool-mark/internal/app.BuildVersion=${version}`,
+    `-X 'github.com/egoist/mygo.packageName=${appName}'`,
+    `-X github.com/egoist/mygo.packageVersion=${version}`,
+    `-X github.com/egoist/mygo.packageIdentifier=${bundleId}`,
+    `-X github.com/egoist/mygo.packageURLSchemes=coooolmark`,
+    `-X github.com/egoist/mygo.packageFileExtensions=html,htm,json`,
+  ];
   if (profile === "release" || goos !== "darwin") ldflags.push("-s", "-w");
   if (goos === "windows") ldflags.push("-H=windowsgui");
 
@@ -218,12 +225,56 @@ function plistXml(version) {
   <string>${bundleId}</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
+  <key>CFBundleLocalizations</key>
+  <array>
+    <string>en</string>
+    <string>zh-Hans</string>
+  </array>
   <key>CFBundleName</key>
   <string>${appName}</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
   <string>${version}</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>${bundleId}.url</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>coooolmark</string>
+      </array>
+    </dict>
+  </array>
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>HTML Bookmarks</string>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
+      <key>LSHandlerRank</key>
+      <string>Alternate</string>
+      <key>CFBundleTypeExtensions</key>
+      <array>
+        <string>html</string>
+        <string>htm</string>
+      </array>
+    </dict>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>Cooool Mark Backup</string>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
+      <key>LSHandlerRank</key>
+      <string>Alternate</string>
+      <key>CFBundleTypeExtensions</key>
+      <array>
+        <string>json</string>
+      </array>
+    </dict>
+  </array>
   <key>CFBundleVersion</key>
   <string>${version}</string>
   <key>LSMinimumSystemVersion</key>

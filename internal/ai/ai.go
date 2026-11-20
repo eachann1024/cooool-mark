@@ -14,19 +14,23 @@ import (
 	"github.com/egoist/mygo/netproxy"
 
 	"cooool-mark/internal/app"
+	"cooool-mark/internal/locales"
 	"cooool-mark/internal/model"
 )
 
 const defaultPolishTimeout = 60 * time.Second
 
 type engine struct {
-	a         *app.App
-	mu        sync.Mutex
-	settings  model.Settings
-	listeners []func()
-	downloads sync.Mutex
-	dl        *downloadState
-	llama     *llamaManager
+	a              *app.App
+	ctx            context.Context
+	cancel         context.CancelFunc
+	mu             sync.Mutex
+	settings       model.Settings
+	listeners      []func()
+	onDownloadDone []func(string)
+	downloads      sync.Mutex
+	dl             *downloadState
+	llama          *llamaManager
 }
 
 // New returns the AI service.
@@ -35,8 +39,11 @@ func New(a *app.App) app.AI {
 	if a != nil {
 		s = a.Settings
 	}
+	ctx, cancel := context.WithCancel(context.Background())
 	e := &engine{
 		a:        a,
+		ctx:      ctx,
+		cancel:   cancel,
 		settings: s,
 	}
 	e.llama = newLlamaManager(e)
@@ -50,6 +57,34 @@ func (e *engine) OnChange(fn func()) {
 	e.mu.Lock()
 	e.listeners = append(e.listeners, fn)
 	e.mu.Unlock()
+}
+
+func (e *engine) OnDownloadComplete(fn func(modelName string)) {
+	if fn == nil {
+		return
+	}
+	e.mu.Lock()
+	e.onDownloadDone = append(e.onDownloadDone, fn)
+	e.mu.Unlock()
+}
+
+func (e *engine) notifyDownloadComplete(modelName string) {
+	e.mu.Lock()
+	fns := append(([]func(string))(nil), e.onDownloadDone...)
+	e.mu.Unlock()
+	for _, fn := range fns {
+		fn(modelName)
+	}
+}
+
+func (e *engine) Close() {
+	if e.cancel != nil {
+		e.cancel()
+	}
+	e.Pause()
+	if e.llama != nil {
+		e.llama.close()
+	}
 }
 
 func (e *engine) notify() {
@@ -85,16 +120,16 @@ func (e *engine) Status() app.AIStatus {
 
 	switch s.AIEngine {
 	case model.AIOff, "":
-		return app.AIStatus{Engine: model.AIOff, EngineName: "未启用"}
+		return app.AIStatus{Engine: model.AIOff, EngineName: locales.AiStatusOff()}
 
 	case model.AILocal:
 		spec := resolveModelSpec(s.LocalModel)
 		return e.localStatusFor(spec)
 
 	case model.AIOpenAI:
-		name := "OpenAI 兼容"
+		name := locales.AiEngineOpenAI()
 		if m := strings.TrimSpace(s.OpenAIModel); m != "" {
-			name = "OpenAI（" + m + "）"
+			name = locales.AiOpenAINamed(m)
 		}
 		rawURL := strings.TrimSpace(s.OpenAIURL)
 		rawModel := strings.TrimSpace(s.OpenAIModel)
@@ -102,10 +137,10 @@ func (e *engine) Status() app.AIStatus {
 		errMsg := ""
 		switch {
 		case !ready:
-			errMsg = "请配置 OpenAI API 地址和模型名称"
+			errMsg = locales.AiErrConfigureOpenAI()
 		case !isValidHTTPURL(rawURL):
 			ready = false
-			errMsg = "API 地址需以 http:// 或 https:// 开头"
+			errMsg = locales.AiErrURLScheme()
 		}
 		return app.AIStatus{
 			Engine:     model.AIOpenAI,
@@ -115,30 +150,37 @@ func (e *engine) Status() app.AIStatus {
 		}
 
 	default:
-		return app.AIStatus{Engine: model.AIOff, EngineName: "未启用"}
+		return app.AIStatus{Engine: model.AIOff, EngineName: locales.AiStatusOff()}
 	}
 }
 
 func (e *engine) Polish(ctx context.Context, in app.PolishInput) (app.Polish, error) {
+	if e.ctx.Err() != nil {
+		return app.Polish{}, e.ctx.Err()
+	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	var cancel context.CancelFunc
 	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
-		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, defaultPolishTimeout)
-		defer cancel()
+	} else {
+		ctx, cancel = context.WithCancel(ctx)
 	}
+	defer cancel()
+	stopCancel := context.AfterFunc(e.ctx, cancel)
+	defer stopCancel()
 
 	s := e.currentSettings()
 	switch s.AIEngine {
 	case model.AIOff, "":
-		return app.Polish{}, errors.New("AI 润色未启用")
+		return app.Polish{}, errors.New(locales.AiErrNotEnabled())
 
 	case model.AILocal:
 		spec := resolveModelSpec(s.LocalModel)
 		path, ok := modelFileIfReady(spec)
 		if !ok {
-			return app.Polish{}, errors.New("本地模型尚未下载")
+			return app.Polish{}, errors.New(locales.AiErrLocalNotDownloaded())
 		}
 		return e.llama.polish(ctx, s, path, in)
 

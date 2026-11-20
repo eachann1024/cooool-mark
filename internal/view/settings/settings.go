@@ -2,31 +2,30 @@
 package settings
 
 import (
+	"path/filepath"
 	"slices"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
 	"cooool-mark/internal/app"
+	"cooool-mark/internal/locales"
 	"cooool-mark/internal/theme"
 	"cooool-mark/internal/widget"
 )
 
-const openAISecretKey = "openai-key"
-
 type pageMeta struct {
 	id    string
-	label string
+	label func() string
 	icon  *ui.SVG
 }
 
 var pages = []pageMeta{
-	{id: "general", label: "通用", icon: theme.IconSettings},
-	{id: "ai", label: "AI 润色", icon: theme.IconSparkle},
-	{id: "data", label: "存储与数据", icon: theme.IconCloud},
+	{id: "general", label: locales.SettingsPageGeneral, icon: theme.IconSettings},
+	{id: "ai", label: locales.SettingsPageAI, icon: theme.IconSparkle},
+	{id: "data", label: locales.SettingsPageData, icon: theme.IconCloud},
 }
 
 type state struct {
@@ -34,7 +33,8 @@ type state struct {
 	win  *mygo.Window
 	page string
 
-	openAtLogin bool
+	openAtLogin   bool
+	recordingSlot string
 
 	openAIKey      string
 	openAIKeyReady bool
@@ -44,16 +44,72 @@ type state struct {
 	keySeq    int
 }
 
-var cur *state
-var keyWriteVersion atomic.Uint64
-var keyWriteMu sync.Mutex
+var (
+	cur *state
+
+	// keySyncMu protects only the in-memory single-flight worker state (never
+	// held across OS credential store I/O), preventing both flush-vs-goroutine
+	// races and re-entrant quit deadlocks.
+	keySyncMu     sync.Mutex
+	keyWantValid  bool
+	keyWantVal    string
+	keyWantVer    uint64
+	keyWorkerBusy bool
+	keyWorkerDone chan struct{}
+)
+
+// RefreshChrome updates the settings window title and contents after locale changes.
+func RefreshChrome() {
+	if cur != nil && cur.win != nil && !cur.win.IsDestroyed() {
+		cur.win.SetTitle(locales.SettingsTitle())
+		cur.win.Invalidate()
+	}
+}
+
+// Export opens a native save dialog to export bookmarks as "html" or "json".
+func Export(a *app.App, format string) {
+	if a == nil || a.Import == nil {
+		return
+	}
+	var parent *mygo.Window
+	if cur != nil && cur.win != nil && !cur.win.IsDestroyed() {
+		parent = cur.win
+	}
+	name := "bookmarks.html"
+	filter := mygo.FileFilter{Name: locales.DataExportHTMLFilter(), Extensions: []string{"html", "htm"}}
+	title := locales.DataExportHTMLTitle()
+	if format == "json" {
+		name = "cooool-mark-backup.json"
+		filter = mygo.FileFilter{Name: locales.DataExportJSONFilter(), Extensions: []string{"json"}}
+		title = locales.DataExportJSONTitle()
+	}
+	go func() {
+		path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
+			Parent:      parent,
+			Title:       title,
+			DefaultPath: name,
+			Filters:     []mygo.FileFilter{filter},
+		})
+		if err != nil || path == "" {
+			return
+		}
+		a.Post(func() {
+			if err := a.Import.Export(a.Store.Lib(), path, format); err != nil {
+				a.SayErr(locales.DataExportFailed(err.Error()), "", nil)
+			} else {
+				a.Say(locales.DataExportDone(filepath.Base(path)))
+			}
+		})
+	}()
+}
 
 // Show opens the settings window at page. Main thread.
 func Show(a *app.App, page string) {
 	a.PrepareRegularWindow()
 	page = normalizePage(page)
-	if cur != nil && cur.win != nil {
+	if cur != nil && cur.win != nil && !cur.win.IsDestroyed() {
 		cur.page = page
+		cur.setRecording("")
 		cur.openAtLogin = mygo.App.OpenAtLogin()
 		cur.win.Show()
 		cur.win.Focus()
@@ -70,7 +126,7 @@ func Show(a *app.App, page string) {
 	s.loadAsync()
 
 	w := mygo.NewWindow(mygo.WindowOptions{
-		Title:                "设置",
+		Title:                locales.SettingsTitle(),
 		Width:                840,
 		Height:               600,
 		MinWidth:             720,
@@ -106,16 +162,16 @@ func normalizePage(page string) string {
 func pageTitle(id string) string {
 	for _, p := range pages {
 		if p.id == id {
-			return p.label
+			return p.label()
 		}
 	}
-	return "设置"
+	return locales.SettingsTitle()
 }
 
 func (s *state) loadAsync() {
 	a := s.a
 	go func() {
-		raw, err := mygo.Secrets.Get(openAISecretKey)
+		raw, err := app.LoadOpenAIKey()
 		a.Post(func() {
 			if cur != s {
 				return
@@ -128,7 +184,20 @@ func (s *state) loadAsync() {
 	}()
 }
 
+func (s *state) setRecording(slot string) {
+	if s.recordingSlot == slot {
+		return
+	}
+	wasRecording := s.recordingSlot != ""
+	s.recordingSlot = slot
+	nowRecording := slot != ""
+	if wasRecording != nowRecording && s.a != nil && s.a.Win.SetShortcutsPaused != nil {
+		s.a.Win.SetShortcutsPaused(nowRecording)
+	}
+}
+
 func (s *state) cleanup() {
+	s.setRecording("")
 	if s.saveTimer != nil {
 		s.saveTimer.Stop()
 		s.saveTimer = nil
@@ -183,7 +252,6 @@ func (s *state) scheduleKeySave() {
 	}
 	s.keySeq++
 	seq := s.keySeq
-	version := keyWriteVersion.Add(1)
 	val := s.openAIKey
 	a := s.a
 	s.keyTimer = time.AfterFunc(450*time.Millisecond, func() {
@@ -192,7 +260,7 @@ func (s *state) scheduleKeySave() {
 				return
 			}
 			s.keyTimer = nil
-			go s.persistOpenAIKey(val, version)
+			enqueueKeyPersist(a, val)
 		})
 	})
 }
@@ -201,18 +269,15 @@ func (s *state) flushKeySave() {
 	if !s.openAIKeyReady || s.keyTimer == nil {
 		return
 	}
-	if s.keyTimer != nil {
-		s.keyTimer.Stop()
-		s.keyTimer = nil
-	}
+	s.keyTimer.Stop()
+	s.keyTimer = nil
 	s.keySeq++
-	val := s.openAIKey
-	version := keyWriteVersion.Add(1)
-	go s.persistOpenAIKey(val, version)
+	enqueueKeyPersist(s.a, s.openAIKey)
 }
 
-// Flush synchronously persists any debounced settings or API key edits
-// before the app quits. Main thread.
+// Flush flushes any pending debounced settings edits and queues any pending
+// API key change to the background worker without blocking the main thread
+// (safe during OnBeforeQuit where nested event loops may run).
 func Flush() {
 	if s := cur; s != nil {
 		if s.saveTimer != nil {
@@ -224,54 +289,89 @@ func Flush() {
 			s.keyTimer.Stop()
 			s.keyTimer = nil
 			s.keySeq++
-			val := s.openAIKey
-			version := keyWriteVersion.Add(1)
-			_ = writeOpenAIKeySync(val, version)
+			enqueueKeyPersist(s.a, s.openAIKey)
 		}
 	}
-	// Wait for any in-flight background keychain write to finish before exit.
-	keyWriteMu.Lock()
-	keyWriteMu.Unlock()
 }
 
-func writeOpenAIKeySync(val string, version uint64) error {
-	keyWriteMu.Lock()
-	defer keyWriteMu.Unlock()
-	if keyWriteVersion.Load() != version {
-		return nil
-	}
-	if val == "" {
-		return mygo.Secrets.Delete(openAISecretKey)
-	}
-	return mygo.Secrets.Set(openAISecretKey, []byte(val))
-}
-
-func (s *state) persistOpenAIKey(val string, version uint64) {
-	keyWriteMu.Lock()
-	if keyWriteVersion.Load() != version {
-		keyWriteMu.Unlock()
+// FlushWait flushes pending settings/API key edits and waits for the
+// background credential worker to finish writing the latest key. Call from
+// OnWillQuit after the quit sequence has committed (non-reentrant). When
+// sessionEnding is true (OS logout/shutdown), the wait is bounded so shutdown
+// is never hung by a credential prompt.
+func FlushWait(sessionEnding bool) {
+	Flush()
+	keySyncMu.Lock()
+	done := keyWorkerDone
+	busy := keyWorkerBusy
+	keySyncMu.Unlock()
+	if !busy || done == nil {
 		return
 	}
-	var err error
-	if val == "" {
-		err = mygo.Secrets.Delete(openAISecretKey)
-	} else {
-		err = mygo.Secrets.Set(openAISecretKey, []byte(val))
+	if sessionEnding {
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+		}
+		return
 	}
-	keyWriteMu.Unlock()
-	a := s.a
-	a.Post(func() {
-		if keyWriteVersion.Load() != version {
+	<-done
+}
+
+func enqueueKeyPersist(a *app.App, val string) {
+	keySyncMu.Lock()
+	keyWantValid = true
+	keyWantVal = val
+	keyWantVer++
+	start := !keyWorkerBusy
+	if start {
+		keyWorkerBusy = true
+		keyWorkerDone = make(chan struct{})
+	}
+	keySyncMu.Unlock()
+	if start {
+		go runKeyWorker(a)
+	}
+}
+
+func runKeyWorker(a *app.App) {
+	for {
+		keySyncMu.Lock()
+		if !keyWantValid {
+			keyWorkerBusy = false
+			done := keyWorkerDone
+			keyWorkerDone = nil
+			keySyncMu.Unlock()
+			if done != nil {
+				close(done)
+			}
 			return
 		}
-		if err != nil {
-			a.SayErr("无法保存 API Key", "重试", func() { go s.persistOpenAIKey(val, version) })
-			return
+		val := keyWantVal
+		ver := keyWantVer
+		keyWantValid = false
+		keySyncMu.Unlock()
+
+		err := app.SaveOpenAIKey(val)
+		if a == nil {
+			continue
 		}
-		if a.AI != nil {
-			a.AI.Configure(a.Settings)
-		}
-	})
+		a.Post(func() {
+			keySyncMu.Lock()
+			latest := keyWantVer
+			keySyncMu.Unlock()
+			if latest != ver {
+				return
+			}
+			if err != nil {
+				a.SayErr(locales.AiKeySaveErr(), locales.ActionRetry(), func() { enqueueKeyPersist(a, val) })
+				return
+			}
+			if a.AI != nil {
+				a.AI.Configure(a.Settings)
+			}
+		})
+	}
 }
 
 func (s *state) view(c *ui.Context) {
@@ -295,13 +395,13 @@ func (s *state) sidebar(c *ui.Context, p *theme.Palette, bar ui.TitleBar) {
 			ui.Spacer(c)
 			if s.a.Win.ShowMain != nil {
 				back := ui.ButtonBase(c).Height(26).Padding(0, 8, 0, 4).Radius(7).AlignItems(ui.Center).Gap(3).
-					TextColor(p.Text2).Cursor(ui.CursorPointer).Label("返回书签").Tooltip("返回书签")
+					TextColor(p.Text2).Cursor(ui.CursorPointer).Label(locales.ActionBackToBookmarks()).Tooltip(locales.ActionBackToBookmarks())
 				if back.Hovered() {
 					back.Background(p.SideSel)
 				}
 				back.Children(func() {
 					ui.Icon(c, theme.IconBack).FontSize(14)
-					ui.Text(c, "书签").FontSize(13).SingleLine()
+					ui.Text(c, locales.BookmarksTitle()).FontSize(13).SingleLine()
 				})
 				if back.Clicked() {
 					s.a.Win.ShowMain()
@@ -332,7 +432,7 @@ func (s *state) sidebar(c *ui.Context, p *theme.Palette, bar ui.TitleBar) {
 							textColor = p.Text
 						}
 						ui.Icon(c, pg.icon).FontSize(14).TextColor(iconColor).Shrink(0)
-						txt := ui.Text(c, pg.label).FontSize(13).TextColor(textColor).Grow(1).SingleLine()
+						txt := ui.Text(c, pg.label()).FontSize(13).TextColor(textColor).Grow(1).SingleLine()
 						if on {
 							txt.FontWeight(500)
 						}
@@ -343,6 +443,7 @@ func (s *state) sidebar(c *ui.Context, p *theme.Palette, bar ui.TitleBar) {
 						}
 					})
 					if row.Clicked() && s.page != pg.id {
+						s.setRecording("")
 						s.page = pg.id
 					}
 				}

@@ -11,6 +11,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"cooool-mark/internal/app"
+	"cooool-mark/internal/locales"
 	"cooool-mark/internal/model"
 	"cooool-mark/internal/theme"
 )
@@ -26,7 +27,7 @@ func (s *state) pageAI(c *ui.Context, p *theme.Palette) {
 	a := s.a
 
 	engineVals := []string{model.AILocal, model.AIOpenAI, model.AIOff}
-	engineLabels := []string{"本地模型", "OpenAI 兼容", "关闭"}
+	engineLabels := []string{locales.AiEngineLocal(), locales.AiEngineOpenAI(), locales.AiEngineOff()}
 
 	card(c, p, func() {
 		idx := slices.Index(engineVals, a.Settings.AIEngine)
@@ -34,8 +35,8 @@ func (s *state) pageAI(c *ui.Context, p *theme.Palette) {
 			idx = len(engineVals) - 1
 		}
 		ui.Column(c).FillWidth().Padding(11, 16).Gap(8).Children(func() {
-			ui.Text(c, "润色引擎").FontSize(13).TextColor(p.Text).SingleLine()
-			if segmented(c, p, &idx, "润色引擎", engineLabels, true, false).Changed() && idx >= 0 && idx < len(engineVals) {
+			ui.Text(c, locales.AiEngineLabel()).FontSize(13).TextColor(p.Text).SingleLine()
+			if segmented(c, p, &idx, locales.AiEngineLabel(), engineLabels, true, false).Changed() && idx >= 0 && idx < len(engineVals) {
 				a.Settings.AIEngine = engineVals[idx]
 				s.saveNow()
 			}
@@ -50,25 +51,25 @@ func (s *state) pageAI(c *ui.Context, p *theme.Palette) {
 		ui.Row(c).FillWidth().Padding(11, 16).Gap(10).AlignItems(ui.Center).Children(func() {
 			green := readyGreen(p)
 			dotColor := p.Muted
-			statusText := "未就绪"
+			statusText := locales.AiStatusNotReady()
 			switch {
 			case st.Paused && st.Err == "":
 				dotColor = p.Accent
-				statusText = "下载已暂停"
+				statusText = locales.AiStatusPaused()
 			case st.Downloading:
 				dotColor = p.Accent
-				statusText = fmt.Sprintf("正在下载 %.0f%%", st.Progress*100)
+				statusText = locales.AiStatusDownloading(int(st.Progress * 100))
 			case st.Ready:
 				dotColor = green
-				statusText = "已就绪"
+				statusText = locales.AiStatusReady()
 				if st.Engine == model.AIOpenAI {
-					statusText = "已配置"
+					statusText = locales.AiStatusConfigured()
 				}
 			case st.Err != "":
 				dotColor = p.Danger
 				statusText = st.Err
 			case a.Settings.AIEngine == model.AIOff || a.Settings.AIEngine == "":
-				statusText = "已关闭"
+				statusText = locales.AiStatusOff()
 			}
 			ui.Box(c).Size(8, 8).Radius(4).Background(dotColor).Shrink(0)
 			name := st.EngineName
@@ -82,7 +83,7 @@ func (s *state) pageAI(c *ui.Context, p *theme.Palette) {
 			} else if st.Ready {
 				txtColor = green
 			}
-			statusEl := ui.Text(c, statusText).FontSize(12).TextColor(txtColor).SingleLine().MaxWidth(320)
+			statusEl := ui.Text(c, statusText).FontSize(12).TextColor(txtColor).SingleLine().MaxWidth(320).Selectable()
 			if st.Err != "" {
 				statusEl.Tooltip(statusText)
 			}
@@ -98,18 +99,18 @@ func (s *state) pageAI(c *ui.Context, p *theme.Palette) {
 	})
 
 	card(c, p, func() {
-		switchRow(c, p, "保存新书签后自动 AI 润色", &a.Settings.AIAutoPolish, s.saveNow)
+		switchRow(c, p, locales.AiAutoPolish(), &a.Settings.AIAutoPolish, s.saveNow)
 	})
 }
 
 func engineDisplayName(engine string) string {
 	switch engine {
 	case model.AILocal:
-		return "本地模型"
+		return locales.AiEngineLocal()
 	case model.AIOpenAI:
-		return "OpenAI 兼容"
+		return locales.AiEngineOpenAI()
 	case model.AIOff, "":
-		return "已关闭"
+		return locales.AiStatusOff()
 	default:
 		return engine
 	}
@@ -165,7 +166,7 @@ func (s *state) localModelsSection(c *ui.Context, p *theme.Palette) {
 								badgeBg, badgeFg = ui.Hex("#1e3325"), ui.Hex("#6bc484")
 							}
 							ui.Box(c).Padding(1, 6).Radius(5).Background(badgeBg).Children(func() {
-								ui.Text(c, "已就绪").FontSize(11).TextColor(badgeFg).SingleLine()
+								ui.Text(c, locales.AiStatusReady()).FontSize(11).TextColor(badgeFg).SingleLine()
 							})
 						}
 					})
@@ -175,12 +176,12 @@ func (s *state) localModelsSection(c *ui.Context, p *theme.Palette) {
 					}
 
 					if isDown {
-						label, tip := "暂停", "暂停下载 "+m.name
+						label, tip := locales.ActionPause(), locales.AiPauseTip(m.name)
 						if st.Paused {
 							if st.Err != "" {
-								label, tip = "重试", "重试下载 "+m.name
+								label, tip = locales.ActionRetry(), locales.AiRetryTip(m.name)
 							} else {
-								label, tip = "继续", "继续下载 "+m.name
+								label, tip = locales.ActionResume(), locales.AiResumeTip(m.name)
 							}
 						}
 						if btnSecondary(c, p, label).Tooltip(tip).Clicked() && a.AI != nil {
@@ -194,15 +195,15 @@ func (s *state) localModelsSection(c *ui.Context, p *theme.Palette) {
 								a.AI.Pause()
 							}
 						}
-						if btnDanger(c, p, "删除").Tooltip("删除 "+m.name+" 的下载文件").Clicked() && a.AI != nil {
+						if btnDanger(c, p, locales.ActionDelete()).Tooltip(locales.AiRemovePartialTip(m.name)).Clicked() && a.AI != nil {
 							s.removeModel(m.id)
 						}
 					} else if isReady {
-						if btnDanger(c, p, "删除").Tooltip("删除本地模型 "+m.name).Clicked() && a.AI != nil {
+						if btnDanger(c, p, locales.ActionDelete()).Tooltip(locales.AiRemoveModelTip(m.name)).Clicked() && a.AI != nil {
 							s.removeModel(m.id)
 						}
 					} else {
-						if btnPrimary(c, p, "下载").Tooltip("下载本地模型 "+m.name).Clicked() && a.AI != nil {
+						if btnPrimary(c, p, locales.ActionDownload()).Tooltip(locales.AiDownloadModelTip(m.name)).Clicked() && a.AI != nil {
 							if a.Settings.LocalModel != m.id {
 								a.Settings.LocalModel = m.id
 								s.saveNow()
@@ -214,22 +215,18 @@ func (s *state) localModelsSection(c *ui.Context, p *theme.Palette) {
 
 				if isDown {
 					ui.Column(c).FillWidth().Gap(4).Children(func() {
-						ui.Progress(c, st.Progress).FillWidth().Label("下载 " + m.name)
+						ui.Progress(c, st.Progress).FillWidth().Label(locales.AiDownloadLabel(m.name))
 						ui.Row(c).FillWidth().Gap(8).Children(func() {
 							pct := int(st.Progress * 100)
-							prefix := "下载中"
 							prefixColor := p.Muted
+							statusLine := fmt.Sprintf("%s · %d%%", locales.AiDownloadingShort(), pct)
 							if st.Err != "" {
-								prefix = "下载失败：" + st.Err
 								prefixColor = p.Danger
+								statusLine = fmt.Sprintf("%d%% · %s", pct, locales.AiDownloadFailedPrefix(st.Err))
 							} else if st.Paused {
-								prefix = "已暂停"
+								statusLine = fmt.Sprintf("%s · %d%%", locales.AiStatusPaused(), pct)
 							}
-							statusLine := fmt.Sprintf("%s · %d%%", prefix, pct)
-							if st.Err != "" {
-								statusLine = fmt.Sprintf("%d%% · %s", pct, prefix)
-							}
-							errEl := ui.Text(c, statusLine).FontSize(11.5).TextColor(prefixColor).Grow(1).MinWidth(0).SingleLine()
+							errEl := ui.Text(c, statusLine).FontSize(11.5).TextColor(prefixColor).Grow(1).MinWidth(0).SingleLine().Selectable()
 							if st.Err != "" {
 								errEl.Tooltip(st.Err)
 							}
@@ -239,7 +236,7 @@ func (s *state) localModelsSection(c *ui.Context, p *theme.Palette) {
 						})
 					})
 				} else if st.Err != "" {
-					ui.Text(c, "下载失败："+st.Err).FontSize(11.5).TextColor(p.Danger).SingleLine().Tooltip(st.Err)
+					ui.Text(c, locales.AiDownloadFailedPrefix(st.Err)).FontSize(11.5).TextColor(p.Danger).Wrap().Selectable().Tooltip(st.Err)
 				}
 			})
 		}
@@ -250,7 +247,7 @@ func (s *state) startDownload(modelID string) {
 	a := s.a
 	go func() {
 		if err := a.AI.Download(modelID); err != nil {
-			a.Post(func() { a.SayErr("下载失败："+err.Error(), "", nil) })
+			a.Post(func() { a.SayErr(locales.AiDownloadErrToast(err.Error()), "", nil) })
 		}
 	}()
 }
@@ -259,7 +256,7 @@ func (s *state) removeModel(modelID string) {
 	a := s.a
 	go func() {
 		if err := a.AI.Remove(modelID); err != nil {
-			a.Post(func() { a.SayErr("删除失败："+err.Error(), "", nil) })
+			a.Post(func() { a.SayErr(locales.AiRemoveErrToast(err.Error()), "", nil) })
 		}
 	}()
 }
@@ -283,12 +280,12 @@ func (s *state) openAISection(c *ui.Context, p *theme.Palette) {
 	a := s.a
 	keyPH := "sk-..."
 	if !s.openAIKeyReady {
-		keyPH = "正在读取…"
+		keyPH = locales.AiKeyLoading()
 	}
 	ui.Column(c).FillWidth().Padding(12, 16).Gap(10).Children(func() {
-		labeledInput(c, p, "openai-url", "API 地址", &a.Settings.OpenAIURL, "https://api.openai.com/v1", false, false, s.onOpenAIChanged, s.flushSave)
-		labeledInput(c, p, "openai-model", "模型名称", &a.Settings.OpenAIModel, "gpt-4o-mini", false, false, s.onOpenAIChanged, s.flushSave)
-		labeledInput(c, p, "openai-key", "API Key", &s.openAIKey, keyPH, true, !s.openAIKeyReady, s.scheduleKeySave, s.flushKeySave)
+		labeledInput(c, p, "openai-url", locales.AiOpenAIURL(), &a.Settings.OpenAIURL, "https://api.openai.com/v1", false, false, s.onOpenAIChanged, s.flushSave)
+		labeledInput(c, p, "openai-model", locales.AiOpenAIModel(), &a.Settings.OpenAIModel, "gpt-4o-mini", false, false, s.onOpenAIChanged, s.flushSave)
+		labeledInput(c, p, "openai-key", locales.AiOpenAIKey(), &s.openAIKey, keyPH, true, !s.openAIKeyReady, s.scheduleKeySave, s.flushKeySave)
 	})
 }
 
@@ -349,19 +346,19 @@ func (s *state) storageCard(c *ui.Context, p *theme.Palette) {
 	localPath, _ := a.LibraryDir(model.StorageLocal, "")
 	localDisplay := shortenPath(localPath)
 	if localDisplay == "" {
-		localDisplay = "默认数据目录"
+		localDisplay = locales.StorageDefaultDir()
 	}
 
 	icloudDir := app.ICloudDir()
 	icloudFull := ""
-	icloudDisplay := "未检测到 iCloud Drive"
+	icloudDisplay := locales.StorageICloudMissing()
 	if icloudDir != "" {
 		icloudFull = filepath.Join(icloudDir, "Cooool Mark")
-		icloudDisplay = "iCloud Drive › Cooool Mark"
+		icloudDisplay = locales.StorageICloud() + " › " + locales.AppName()
 	}
 
 	folderFull := a.Settings.StorageFolder
-	folderDisplay := "未选择文件夹"
+	folderDisplay := locales.StorageFolderUnset()
 	if folderFull != "" {
 		folderDisplay = shortenPath(folderFull)
 	}
@@ -371,16 +368,16 @@ func (s *state) storageCard(c *ui.Context, p *theme.Palette) {
 		disabled                        bool
 	}
 	opts := []storageOpt{
-		{id: model.StorageLocal, name: "仅存本机", displayPath: localDisplay, fullPath: localPath},
-		{id: model.StorageICloud, name: "iCloud Drive", displayPath: icloudDisplay, fullPath: icloudFull, disabled: icloudDir == ""},
-		{id: model.StorageFolder, name: "自选文件夹", displayPath: folderDisplay, fullPath: folderFull},
+		{id: model.StorageLocal, name: locales.StorageLocal(), displayPath: localDisplay, fullPath: localPath},
+		{id: model.StorageICloud, name: locales.StorageICloud(), displayPath: icloudDisplay, fullPath: icloudFull, disabled: icloudDir == ""},
+		{id: model.StorageFolder, name: locales.StorageFolder(), displayPath: folderDisplay, fullPath: folderFull},
 	}
 
 	card(c, p, func() {
 		ui.Column(c).FillWidth().Padding(12, 16).Gap(8).Children(func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "数据存放位置").FontSize(13).FontWeight(500).Grow(1).SingleLine()
-				if btnSecondaryCompact(c, p, "打开文件夹").Clicked() {
+				ui.Text(c, locales.StorageLocationTitle()).FontSize(13).FontWeight(500).Grow(1).SingleLine()
+				if btnSecondaryCompact(c, p, locales.StorageOpenFolder()).Clicked() {
 					target := filepath.Join(a.Store.Dir(), "bookmarks.json")
 					if _, err := os.Stat(target); err != nil {
 						target = a.Store.Dir()
@@ -405,58 +402,60 @@ func (s *state) storageCard(c *ui.Context, p *theme.Palette) {
 					row.Tooltip(opt.fullPath)
 				}
 				row.Children(func() {
-					pick := ui.ButtonBase(c).Row().Grow(1).MinWidth(0).Gap(10).AlignItems(ui.Center)
-					if !opt.disabled {
-						pick.Cursor(ui.CursorPointer)
-					} else {
-						pick.TextColor(p.Muted)
-					}
-					pick.Children(func() {
-						dot := ui.Box(c).Size(14, 14).Radius(7).Shrink(0)
-						if on {
-							dot.Border(4, p.Primary).Background(p.OnPrimary)
+					ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
+						pick := ui.ButtonBase(c).Row().FillWidth().Gap(10).AlignItems(ui.Center)
+						if !opt.disabled {
+							pick.Cursor(ui.CursorPointer)
 						} else {
-							dot.Border(1.5, p.Muted).Background(p.Surface)
+							pick.TextColor(p.Muted)
 						}
-						ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
+						pick.Children(func() {
+							dot := ui.Box(c).Size(14, 14).Radius(7).Shrink(0)
+							if on {
+								dot.Border(4, p.Primary).Background(p.OnPrimary)
+							} else {
+								dot.Border(1.5, p.Muted).Background(p.Surface)
+							}
 							ui.Text(c, opt.name).FontSize(13).FontWeight(500).SingleLine()
-							ui.Text(c, opt.displayPath).FontSize(12).TextColor(p.Muted).SingleLine().TruncateMiddle()
+						})
+						if pick.Clicked() {
+							switch opt.id {
+							case model.StorageLocal:
+								if !on {
+									if err := a.SetStorage(model.StorageLocal, ""); err != nil {
+										a.SayErr(locales.StorageSwitchFailed(err.Error()), "", nil)
+									} else {
+										a.Say(locales.StorageSwitchedLocal())
+									}
+								}
+							case model.StorageICloud:
+								if opt.disabled {
+									a.SayErr(locales.StorageICloudErr(), "", nil)
+								} else if !on {
+									if err := a.SetStorage(model.StorageICloud, ""); err != nil {
+										a.SayErr(locales.StorageSwitchFailed(err.Error()), "", nil)
+									} else {
+										a.Say(locales.StorageSwitchedICloud())
+									}
+								}
+							case model.StorageFolder:
+								if a.Settings.StorageFolder == "" {
+									s.pickStorageFolder()
+								} else if !on {
+									if err := a.SetStorage(model.StorageFolder, a.Settings.StorageFolder); err != nil {
+										a.SayErr(locales.StorageSwitchFailed(err.Error()), "", nil)
+									} else {
+										a.Say(locales.StorageSwitchedFolder())
+									}
+								}
+							}
+						}
+						ui.Box(c).FillWidth().Padding(0, 0, 0, 24).Children(func() {
+							ui.Text(c, opt.displayPath).FontSize(12).TextColor(p.Muted).SingleLine().TruncateMiddle().Selectable()
 						})
 					})
-					if pick.Clicked() {
-						switch opt.id {
-						case model.StorageLocal:
-							if !on {
-								if err := a.SetStorage(model.StorageLocal, ""); err != nil {
-									a.SayErr("切换失败："+err.Error(), "", nil)
-								} else {
-									a.Say("已切换为本机存储")
-								}
-							}
-						case model.StorageICloud:
-							if opt.disabled {
-								a.SayErr("当前设备未检测到 iCloud Drive", "", nil)
-							} else if !on {
-								if err := a.SetStorage(model.StorageICloud, ""); err != nil {
-									a.SayErr("切换失败："+err.Error(), "", nil)
-								} else {
-									a.Say("已切换为 iCloud Drive")
-								}
-							}
-						case model.StorageFolder:
-							if a.Settings.StorageFolder == "" {
-								s.pickStorageFolder()
-							} else if !on {
-								if err := a.SetStorage(model.StorageFolder, a.Settings.StorageFolder); err != nil {
-									a.SayErr("切换失败："+err.Error(), "", nil)
-								} else {
-									a.Say("已切换为自选文件夹")
-								}
-							}
-						}
-					}
 					if opt.id == model.StorageFolder {
-						if btnSecondaryCompact(c, p, "选择…").Clicked() {
+						if btnSecondaryCompact(c, p, locales.ActionSelectEllipsis()).Clicked() {
 							s.pickStorageFolder()
 						}
 					}
@@ -471,7 +470,7 @@ func (s *state) pickStorageFolder() {
 	go func() {
 		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
 			Parent:            win,
-			Title:             "选择同步文件夹",
+			Title:             locales.StoragePickFolderTitle(),
 			Directory:         true,
 			CreateDirectories: true,
 		})
@@ -481,9 +480,9 @@ func (s *state) pickStorageFolder() {
 		dir := paths[0]
 		a.Post(func() {
 			if err := a.SetStorage(model.StorageFolder, dir); err != nil {
-				a.SayErr("切换失败："+err.Error(), "", nil)
+				a.SayErr(locales.StorageSwitchFailed(err.Error()), "", nil)
 			} else {
-				a.Say("已切换为自选文件夹")
+				a.Say(locales.StorageSwitchedFolder())
 			}
 		})
 	}()
@@ -494,73 +493,40 @@ func (s *state) pageData(c *ui.Context, p *theme.Palette) {
 
 	a := s.a
 	card(c, p, func() {
-		switchRow(c, p, "每天自动备份快照", &a.Settings.AutoBackup, a.SaveSettings)
+		switchRow(c, p, locales.DataAutoBackup(), &a.Settings.AutoBackup, a.SaveSettings)
 
-		settingRow(c, p, "导入书签或恢复备份", func() {
-			if btnSecondary(c, p, "导入…").Clicked() && a.Win.ShowImport != nil {
+		settingRow(c, p, locales.DataImportRow(), func() {
+			if btnSecondary(c, p, locales.ActionImportEllipsis()).Clicked() && a.Win.ShowImport != nil {
 				a.Win.ShowImport("")
 			}
 		})
 
-		settingRow(c, p, "导出书签", func() {
+		settingRow(c, p, locales.DataExportRow(), func() {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 				if btnSecondary(c, p, "HTML").Clicked() {
-					s.exportBookmarks("html")
+					Export(a, "html")
 				}
 				if btnSecondary(c, p, "JSON").Clicked() {
-					s.exportBookmarks("json")
+					Export(a, "json")
 				}
 			})
 		})
 
-		settingRow(c, p, "本地备份", func() {
+		settingRow(c, p, locales.DataBackupRow(), func() {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				if btnSecondary(c, p, "立即备份").Clicked() {
+				if btnSecondary(c, p, locales.DataBackupNow()).Clicked() {
 					if _, err := a.Store.Backup("manual"); err != nil {
-						a.SayErr("备份失败："+err.Error(), "", nil)
+						a.SayErr(locales.DataBackupFailed(err.Error()), "", nil)
 					} else {
-						a.Say("已创建备份")
+						a.Say(locales.DataBackupDone())
 					}
 				}
-				if btnSecondary(c, p, "打开备份文件夹").Clicked() {
+				if btnSecondary(c, p, locales.DataOpenBackups()).Clicked() {
 					s.openBackupsFolder()
 				}
 			})
 		})
 	})
-}
-
-func (s *state) exportBookmarks(format string) {
-	a, win := s.a, s.win
-	if a.Import == nil {
-		return
-	}
-	name := "bookmarks.html"
-	filter := mygo.FileFilter{Name: "HTML 书签", Extensions: []string{"html", "htm"}}
-	title := "导出 HTML 书签"
-	if format == "json" {
-		name = "cooool-mark-backup.json"
-		filter = mygo.FileFilter{Name: "JSON 备份", Extensions: []string{"json"}}
-		title = "导出 JSON 备份"
-	}
-	go func() {
-		path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
-			Parent:      win,
-			Title:       title,
-			DefaultPath: name,
-			Filters:     []mygo.FileFilter{filter},
-		})
-		if err != nil || path == "" {
-			return
-		}
-		a.Post(func() {
-			if err := a.Import.Export(a.Store.Lib(), path, format); err != nil {
-				a.SayErr("导出失败："+err.Error(), "", nil)
-			} else {
-				a.Say("已导出到 " + filepath.Base(path))
-			}
-		})
-	}()
 }
 
 func (s *state) openBackupsFolder() {

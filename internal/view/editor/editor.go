@@ -13,6 +13,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"cooool-mark/internal/app"
+	"cooool-mark/internal/locales"
 	"cooool-mark/internal/model"
 	"cooool-mark/internal/theme"
 	"cooool-mark/internal/widget"
@@ -23,12 +24,53 @@ var (
 	edSt  *state
 )
 
+// RefreshChrome updates the editor window title and triggers a redraw when open.
+func RefreshChrome() {
+	if edWin != nil && !edWin.IsDestroyed() && edSt != nil {
+		edWin.SetTitle(edSt.windowTitle())
+		edWin.Invalidate()
+	}
+}
+
+// AllowClose bypasses the unsaved-draft confirmation when the OS session is ending.
+func AllowClose() {
+	if edSt != nil {
+		edSt.forceClose = true
+	}
+}
+
+// PromptUnsavedOnQuit checks before any windows are closed during app quit
+// whether the editor holds an unsaved draft. When true, it focuses the editor
+// with the close confirmation dialog and returns true so OnBeforeQuit can
+// cancel the quit without closing other windows (like Main or Import).
+func PromptUnsavedOnQuit() bool {
+	if edWin == nil || edWin.IsDestroyed() || edSt == nil || edSt.forceClose || !edSt.hasPendingDraft() {
+		return false
+	}
+	edSt.newSubFocused = false
+	edSt.confirmSwitch = false
+	edSt.confirmClose = true
+	edSt.quitAfterClose = true
+	edWin.Show()
+	edWin.Focus()
+	edWin.Invalidate()
+	return true
+}
+
 // Show opens the editor for req (req.ID == "" adds a bookmark). Main thread.
 func Show(a *app.App, req app.EditorRequest) {
 	a.PrepareRegularWindow()
-	if edWin != nil && edSt != nil {
-		edSt.load(req)
-		edWin.SetTitle(edSt.windowTitle())
+	if edWin != nil && !edWin.IsDestroyed() && edSt != nil {
+		if edSt.hasPendingDraft() {
+			edSt.pendingReqs = append(edSt.pendingReqs, req)
+			edSt.newSubFocused = false
+			edSt.confirmClose = false
+			edSt.quitAfterClose = false
+			edSt.confirmSwitch = true
+		} else {
+			edSt.load(req)
+			edWin.SetTitle(edSt.windowTitle())
+		}
 		edWin.Show()
 		edWin.Focus()
 		edWin.Invalidate()
@@ -49,11 +91,23 @@ func Show(a *app.App, req app.EditorRequest) {
 		TitleBarStyle:        mygo.TitleBarHiddenInset,
 		TrafficLightPosition: widget.Lights(),
 		TitleBarHeight:       widget.HeaderH,
-		Content:              ui.View(st.view),
+		Content: ui.View(func(c *ui.Context) {
+			c.OnWindowShortcut(ui.Cmd, ui.KeyS, st.save)
+			st.view(c)
+		}),
 	})
 	edWin = w
 	st.win = w
 	a.AddRegularWindow(w)
+	w.OnClose(func(e *mygo.CloseEvent) {
+		if !st.forceClose && st.hasPendingDraft() {
+			e.PreventDefault()
+			st.newSubFocused = false
+			st.confirmSwitch = false
+			st.confirmClose = true
+			st.invalidate()
+		}
+	})
 	w.OnClosed(func() {
 		st.closed = true
 		st.cancelAll()
@@ -63,6 +117,16 @@ func Show(a *app.App, req app.EditorRequest) {
 			edSt = nil
 		}
 	})
+}
+
+type editorSnapshot struct {
+	url     string
+	title   string
+	note    string
+	tags    []string
+	groupID string
+	subID   string
+	iconImg string
 }
 
 type state struct {
@@ -82,6 +146,15 @@ type state struct {
 	createdAt time.Time
 	order     float64
 	polished  bool
+
+	// Draft protection & queued incoming requests
+	fromExternal   bool
+	baseline       editorSnapshot
+	pendingReqs    []app.EditorRequest
+	confirmSwitch  bool
+	confirmClose   bool
+	quitAfterClose bool
+	forceClose     bool
 
 	// Tag / sub-group inline drafts
 	tagDraft      string
@@ -122,9 +195,9 @@ func newState(a *app.App) *state {
 
 func (s *state) windowTitle() string {
 	if s.id == "" {
-		return "新建书签"
+		return locales.EditorNewTitle()
 	}
-	return "编辑书签"
+	return locales.EditorEditTitle()
 }
 
 func (s *state) cancelFetch() {
@@ -156,9 +229,82 @@ func (s *state) cancelAll() {
 	s.cancelAI()
 }
 
+func (s *state) snapshot() editorSnapshot {
+	return editorSnapshot{
+		url:     strings.TrimSpace(s.url),
+		title:   strings.TrimSpace(s.title),
+		note:    strings.TrimSpace(s.note),
+		tags:    slices.Clone(s.tags),
+		groupID: s.groupID,
+		subID:   s.subID,
+		iconImg: s.icon.Image,
+	}
+}
+
+func (s *state) isDirty() bool {
+	if strings.TrimSpace(s.url) != s.baseline.url ||
+		strings.TrimSpace(s.title) != s.baseline.title ||
+		strings.TrimSpace(s.note) != s.baseline.note ||
+		!slices.Equal(s.tags, s.baseline.tags) ||
+		s.groupID != s.baseline.groupID ||
+		s.subID != s.baseline.subID ||
+		s.icon.Image != s.baseline.iconImg ||
+		strings.TrimSpace(s.tagDraft) != "" ||
+		(s.addingSub && strings.TrimSpace(s.newSubName) != "") {
+		return true
+	}
+	return false
+}
+
+func (s *state) hasPendingDraft() bool {
+	return s.isDirty()
+}
+
+func (s *state) requestClose() {
+	if s.hasPendingDraft() {
+		s.newSubFocused = false
+		s.confirmSwitch = false
+		s.confirmClose = true
+		s.quitAfterClose = false
+		s.invalidate()
+		return
+	}
+	s.forceClose = true
+	s.close()
+}
+
+func (s *state) finishClose() {
+	quit := s.quitAfterClose
+	s.quitAfterClose = false
+	s.forceClose = true
+	s.close()
+	if quit {
+		mygo.App.Quit()
+	}
+}
+
+func (s *state) advancePending() bool {
+	if len(s.pendingReqs) == 0 {
+		return false
+	}
+	next := s.pendingReqs[0]
+	s.pendingReqs = s.pendingReqs[1:]
+	s.confirmSwitch = false
+	s.confirmClose = false
+	s.load(next)
+	if s.win != nil {
+		s.win.SetTitle(s.windowTitle())
+	}
+	s.invalidate()
+	return true
+}
+
 func (s *state) load(req app.EditorRequest) {
 	s.cancelAll()
 	s.sessionSeq++
+	s.fromExternal = req.FromExternal
+	s.confirmClose = false
+	s.forceClose = false
 	s.addingSub = false
 	s.newSubName = ""
 	s.newSubFocused = false
@@ -194,6 +340,7 @@ func (s *state) load(req app.EditorRequest) {
 				}
 			}
 			s.ensureValidPlace()
+			s.baseline = s.snapshot()
 			s.needFocus = &s.titleHandle
 			return
 		}
@@ -216,10 +363,19 @@ func (s *state) load(req app.EditorRequest) {
 	s.ensureValidPlace()
 
 	s.icon = theme.DefaultIcon(s.title, s.url)
+	// For a new bookmark, compare against an empty draft so any prefilled URL
+	// or title (from drag-drop, clipboard, or deep link) is protected until
+	// explicitly saved or discarded.
+	s.baseline = editorSnapshot{
+		groupID: s.groupID,
+		subID:   s.subID,
+	}
 
 	if s.url != "" {
 		s.needFocus = &s.titleHandle
-		if looksLikeURL(s.url) {
+		// External deep-link drafts require explicit user confirmation before
+		// making outbound network/WebView/AI requests.
+		if !req.FromExternal && looksLikeURL(s.url) {
 			s.startFetch(s.url, false, true, false)
 		}
 	} else {
@@ -298,12 +454,12 @@ func (s *state) scheduleDebouncedFetch() {
 
 func (s *state) startFetch(rawURL string, forceMeta, runAI, iconOnly bool) {
 	if s.a.Fetch == nil {
-		s.fetchErr = "当前无法读取网页"
+		s.fetchErr = locales.EditorErrFetchUnavailable()
 		return
 	}
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL == "" {
-		s.fetchErr = "请输入网址"
+		s.fetchErr = locales.EditorErrEnterURL()
 		s.needFocus = &s.urlHandle
 		return
 	}
@@ -329,11 +485,11 @@ func (s *state) startFetch(rawURL string, forceMeta, runAI, iconOnly bool) {
 			s.fetchingIcon = false
 			if err != nil {
 				if errors.Is(err, context.DeadlineExceeded) {
-					s.fetchErr = "读取网页超时"
+					s.fetchErr = locales.EditorErrFetchTimeout()
 				} else if iconOnly {
-					s.fetchErr = "抓取图标失败"
+					s.fetchErr = locales.EditorErrFetchIconFailed()
 				} else {
-					s.fetchErr = "读取网页失败"
+					s.fetchErr = locales.EditorErrFetchFailed()
 				}
 				s.invalidate()
 				return
@@ -353,17 +509,17 @@ func (s *state) startFetch(rawURL string, forceMeta, runAI, iconOnly bool) {
 			if len(meta.Icon) > 0 {
 				if _, decErr := ui.DecodeImage(meta.Icon); decErr != nil {
 					if iconOnly {
-						s.fetchErr = "站点图标格式不支持"
+						s.fetchErr = locales.EditorErrIconFormat()
 					}
 				} else if rel, saveErr := s.a.Store.SaveIcon(meta.Icon, meta.IconExt); saveErr != nil {
 					if iconOnly {
-						s.fetchErr = "保存图标失败"
+						s.fetchErr = locales.EditorErrSaveIcon()
 					}
 				} else {
 					s.icon.Image = rel
 				}
 			} else if iconOnly {
-				s.fetchErr = "未获取到站点图标"
+				s.fetchErr = locales.EditorErrNoIcon()
 			}
 			if s.icon.Image == "" {
 				s.icon = theme.DefaultIcon(s.title, s.url)
@@ -390,7 +546,7 @@ func (s *state) startAI(force bool) {
 	u := strings.TrimSpace(s.url)
 	if u == "" {
 		if force {
-			s.aiErr = "请先输入网址"
+			s.aiErr = locales.EditorErrEnterURLFirst()
 			s.needFocus = &s.urlHandle
 		}
 		return
@@ -424,9 +580,9 @@ func (s *state) startAI(force bool) {
 			if err != nil {
 				if !errors.Is(err, context.Canceled) {
 					if errors.Is(err, context.DeadlineExceeded) {
-						s.aiErr = "AI 润色超时"
+						s.aiErr = locales.EditorErrAITimeout()
 					} else {
-						s.aiErr = "AI 润色失败：" + err.Error()
+						s.aiErr = locales.EditorErrAIFailed(err.Error())
 					}
 				}
 				s.invalidate()
@@ -551,22 +707,27 @@ func (s *state) commitNewSub() {
 	}
 }
 
-func (s *state) save() {
+func (s *state) doSave() bool {
+	u, errMsg := validateSaveURL(s.url)
+	if errMsg != "" {
+		s.saveErr = errMsg
+		s.needFocus = &s.urlHandle
+		s.invalidate()
+		return false
+	}
+	if s.id != "" && s.a.Store.Lib().Bookmark(s.id) == nil {
+		s.saveErr = locales.EditorErrDeleted()
+		s.invalidate()
+		return false
+	}
+	s.saveErr = ""
+
 	if s.addingSub {
 		s.commitNewSub()
 	}
 	if strings.TrimSpace(s.tagDraft) != "" {
 		s.commitTagDraft()
 	}
-
-	u, errMsg := validateSaveURL(s.url)
-	if errMsg != "" {
-		s.saveErr = errMsg
-		s.needFocus = &s.urlHandle
-		s.invalidate()
-		return
-	}
-	s.saveErr = ""
 
 	title := strings.TrimSpace(s.title)
 	if title == "" {
@@ -594,10 +755,21 @@ func (s *state) save() {
 		Polished:  s.polished,
 	}
 	if s.a.SaveBookmark(bm) == "" {
-		s.saveErr = "这条书签已被删除，请将修改复制到新书签"
+		s.saveErr = locales.EditorErrDeleted()
 		s.invalidate()
+		return false
+	}
+	return true
+}
+
+func (s *state) save() {
+	if !s.doSave() {
 		return
 	}
+	if s.advancePending() {
+		return
+	}
+	s.forceClose = true
 	s.close()
 }
 
@@ -606,16 +778,17 @@ func (s *state) deleteCurrent() {
 		return
 	}
 	s.a.Delete(s.id)
+	s.forceClose = true
 	s.close()
 }
 
 func validateSaveURL(raw string) (string, string) {
 	u := strings.TrimSpace(raw)
 	if u == "" {
-		return "", "请输入网址"
+		return "", locales.EditorErrEnterURL()
 	}
 	if strings.ContainsAny(u, " \t\n\r") {
-		return "", "网址不能包含空格"
+		return "", locales.EditorErrURLSpace()
 	}
 	low := strings.ToLower(u)
 	if !strings.Contains(u, "://") && !strings.HasPrefix(low, "about:") && !strings.HasPrefix(low, "file:") && !strings.HasPrefix(low, "javascript:") {
@@ -625,7 +798,7 @@ func validateSaveURL(raw string) (string, string) {
 	if strings.HasPrefix(low, "http://") || strings.HasPrefix(low, "https://") {
 		parsed, err := url.Parse(u)
 		if err != nil || parsed.Host == "" {
-			return "", "请输入有效网址"
+			return "", locales.EditorErrURLInvalid()
 		}
 	}
 	return u, ""

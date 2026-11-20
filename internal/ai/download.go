@@ -11,37 +11,44 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/egoist/mygo"
+
 	"cooool-mark/internal/app"
+	"cooool-mark/internal/locales"
 	"cooool-mark/internal/model"
 )
 
+const downloadStallTimeout = 45 * time.Second
+
 type modelSpec struct {
-	id       string
-	label    string
-	filename string
-	url      string
+	id          string
+	displayName string
+	filename    string
+	url         string
 }
 
 var localModelSpecs = []modelSpec{
 	{
-		id:       "qwen3.5-0.8b",
-		label:    "Qwen3.5-0.8B（本地）",
-		filename: "Qwen3.5-0.8B-Q4_K_M.gguf",
-		url:      "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf",
+		id:          "qwen3.5-0.8b",
+		displayName: "Qwen3.5-0.8B",
+		filename:    "Qwen3.5-0.8B-Q4_K_M.gguf",
+		url:         "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf",
 	},
 	{
-		id:       "qwen3.5-2b",
-		label:    "Qwen3.5-2B（本地）",
-		filename: "Qwen3.5-2B-Q4_K_M.gguf",
-		url:      "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf",
+		id:          "qwen3.5-2b",
+		displayName: "Qwen3.5-2B",
+		filename:    "Qwen3.5-2B-Q4_K_M.gguf",
+		url:         "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf",
 	},
 	{
-		id:       "qwen3.5-4b",
-		label:    "Qwen3.5-4B（本地）",
-		filename: "Qwen3.5-4B-Q4_K_M.gguf",
-		url:      "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf",
+		id:          "qwen3.5-4b",
+		displayName: "Qwen3.5-4B",
+		filename:    "Qwen3.5-4B-Q4_K_M.gguf",
+		url:         "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf",
 	},
 }
 
@@ -65,15 +72,44 @@ func lookupModelSpec(name string) (modelSpec, bool) {
 	return modelSpec{}, false
 }
 
+type dlErrKind int
+
+const (
+	dlErrNone dlErrKind = iota
+	dlErrRaw
+	dlErrHTTPStatus
+	dlErrIncomplete
+	dlErrStalled
+)
+
 type downloadState struct {
 	modelID     string
 	downloading bool
 	paused      bool
 	downloaded  int64
 	total       int64
-	errMsg      string
+	errKind     dlErrKind
+	errCode     int
+	errWritten  int64
+	errTotal    int64
+	errRaw      string
 	cancel      context.CancelFunc
 	done        chan struct{}
+}
+
+func (d downloadState) localizedErr() string {
+	switch d.errKind {
+	case dlErrHTTPStatus:
+		return locales.AiErrHTTPStatus(d.errCode)
+	case dlErrIncomplete:
+		return locales.AiErrIncomplete(strconv.FormatInt(d.errWritten, 10), strconv.FormatInt(d.errTotal, 10))
+	case dlErrStalled:
+		return locales.AiErrDownloadStalled()
+	case dlErrRaw:
+		return d.errRaw
+	default:
+		return ""
+	}
 }
 
 type partMeta struct {
@@ -138,7 +174,7 @@ func (e *engine) LocalModelStatus(modelName string) app.AIStatus {
 func (e *engine) localStatusFor(spec modelSpec) app.AIStatus {
 	st := app.AIStatus{
 		Engine:     "local",
-		EngineName: spec.label,
+		EngineName: locales.AiLocalSuffix(spec.displayName),
 	}
 	if _, ok := modelFileIfReady(spec); ok {
 		st.Ready = true
@@ -160,7 +196,7 @@ func (e *engine) localStatusFor(spec modelSpec) app.AIStatus {
 		st.Paused = snap.paused
 		st.Downloaded = snap.downloaded
 		st.Total = snap.total
-		st.Err = snap.errMsg
+		st.Err = snap.localizedErr()
 		if snap.total > 0 {
 			st.Progress = float64(snap.downloaded) / float64(snap.total)
 			if st.Progress > 1 {
@@ -194,7 +230,7 @@ func (e *engine) Download(modelName string) error {
 	}
 	spec, ok := lookupModelSpec(modelName)
 	if !ok {
-		return fmt.Errorf("未知的本地模型: %s", modelName)
+		return errors.New(locales.AiErrUnknownModel(modelName))
 	}
 	if _, ready := modelFileIfReady(spec); ready {
 		e.notify()
@@ -233,7 +269,11 @@ func (e *engine) Download(modelName string) error {
 	if info, err := os.Stat(partPath); err == nil && !info.IsDir() {
 		existingSize = info.Size()
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	parentCtx := context.Background()
+	if e.ctx != nil {
+		parentCtx = e.ctx
+	}
+	ctx, cancel := context.WithCancel(parentCtx)
 	dl := &downloadState{
 		modelID:     spec.id,
 		downloading: true,
@@ -251,6 +291,8 @@ func (e *engine) Download(modelName string) error {
 	go func() {
 		defer close(dl.done)
 		defer cancel()
+		releaseAwake := mygo.Power.KeepAwake("Downloading local AI model", false)
+		defer releaseAwake()
 		e.runDownload(ctx, dl, s, spec, finalPath, partPath, metaPath)
 	}()
 	return nil
@@ -281,7 +323,7 @@ func (e *engine) Remove(modelName string) error {
 	}
 	spec, ok := lookupModelSpec(modelName)
 	if !ok {
-		return fmt.Errorf("未知的本地模型: %s", modelName)
+		return errors.New(locales.AiErrUnknownModel(modelName))
 	}
 
 	e.downloads.Lock()
@@ -322,21 +364,69 @@ func (e *engine) runDownload(
 	spec modelSpec,
 	finalPath, partPath, metaPath string,
 ) {
-	fail := func(err error) {
+	dlCtx, dlCancel := context.WithCancel(ctx)
+	defer dlCancel()
+
+	// Use monotonic elapsed durations from dlStart so system wall-clock jumps
+	// cannot trigger false stall timeouts.
+	dlStart := time.Now()
+	var lastActivity atomic.Int64
+	lastActivity.Store(0)
+	var stalled atomic.Bool
+
+	watchDone := make(chan struct{})
+	stopWatch := sync.OnceFunc(func() { close(watchDone) })
+	defer stopWatch()
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-watchDone:
+				return
+			case <-dlCtx.Done():
+				return
+			case <-ticker.C:
+				if time.Since(dlStart)-time.Duration(lastActivity.Load()) >= downloadStallTimeout {
+					stalled.Store(true)
+					dlCancel()
+					return
+				}
+			}
+		}
+	}()
+
+	failState := func(kind dlErrKind, code int, written, total int64, raw string) {
 		e.mu.Lock()
 		if e.dl == dl {
 			dl.downloading = false
-			if ctx.Err() == context.Canceled {
+			if ctx.Err() != nil {
 				dl.paused = true
-				dl.errMsg = ""
+				dl.errKind = dlErrNone
+				dl.errCode, dl.errWritten, dl.errTotal, dl.errRaw = 0, 0, 0, ""
+			} else if stalled.Load() {
+				dl.paused = dl.downloaded > 0
+				dl.errKind = dlErrStalled
+				dl.errCode, dl.errWritten, dl.errTotal, dl.errRaw = 0, 0, 0, ""
 			} else {
 				dl.paused = dl.downloaded > 0
-				dl.errMsg = err.Error()
+				dl.errKind = kind
+				dl.errCode = code
+				dl.errWritten = written
+				dl.errTotal = total
+				dl.errRaw = raw
 			}
 			dl.cancel = nil
 		}
 		e.mu.Unlock()
 		e.notify()
+	}
+	fail := func(err error) {
+		raw := ""
+		if err != nil {
+			raw = err.Error()
+		}
+		failState(dlErrRaw, 0, 0, 0, raw)
 	}
 
 	var offset int64
@@ -344,7 +434,7 @@ func (e *engine) runDownload(
 		offset = info.Size()
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, spec.url, nil)
+	req, err := http.NewRequestWithContext(dlCtx, http.MethodGet, spec.url, nil)
 	if err != nil {
 		fail(err)
 		return
@@ -360,8 +450,9 @@ func (e *engine) runDownload(
 		return
 	}
 	defer resp.Body.Close()
-	if ctx.Err() != nil {
-		fail(ctx.Err())
+	lastActivity.Store(int64(time.Since(dlStart)))
+	if dlCtx.Err() != nil {
+		fail(dlCtx.Err())
 		return
 	}
 
@@ -387,15 +478,16 @@ func (e *engine) runDownload(
 				return
 			}
 			_ = os.Remove(metaPath)
-			e.finishDownload(dl, crTotal)
+			e.finishDownload(dl, spec, crTotal)
 			return
 		}
 		if offset == 0 {
-			fail(fmt.Errorf("下载模型失败（HTTP %d）", resp.StatusCode))
+			failState(dlErrHTTPStatus, resp.StatusCode, 0, 0, "")
 			return
 		}
 		// Restart from byte 0 if range was invalid.
 		resp.Body.Close()
+		stopWatch()
 		_ = os.Remove(partPath)
 		_ = os.Remove(metaPath)
 		e.mu.Lock()
@@ -408,7 +500,7 @@ func (e *engine) runDownload(
 		return
 
 	default:
-		fail(fmt.Errorf("下载模型失败（HTTP %d）", resp.StatusCode))
+		failState(dlErrHTTPStatus, resp.StatusCode, 0, 0, "")
 		return
 	}
 
@@ -435,6 +527,7 @@ func (e *engine) runDownload(
 	for {
 		n, readErr := resp.Body.Read(buf)
 		if n > 0 {
+			lastActivity.Store(int64(time.Since(dlStart)))
 			if _, wErr := f.Write(buf[:n]); wErr != nil {
 				_ = f.Close()
 				fail(wErr)
@@ -465,12 +558,12 @@ func (e *engine) runDownload(
 		fail(err)
 		return
 	}
-	if ctx.Err() != nil {
-		fail(ctx.Err())
+	if dlCtx.Err() != nil {
+		fail(dlCtx.Err())
 		return
 	}
 	if total > 0 && written != total {
-		fail(fmt.Errorf("下载不完整（%d / %d 字节）", written, total))
+		failState(dlErrIncomplete, 0, written, total, "")
 		return
 	}
 	if err := os.Rename(partPath, finalPath); err != nil {
@@ -478,7 +571,7 @@ func (e *engine) runDownload(
 		return
 	}
 	_ = os.Remove(metaPath)
-	e.finishDownload(dl, written)
+	e.finishDownload(dl, spec, written)
 }
 
 func (e *engine) restartFromZero(
@@ -491,18 +584,20 @@ func (e *engine) restartFromZero(
 	e.runDownload(ctx, dl, s, spec, finalPath, partPath, metaPath)
 }
 
-func (e *engine) finishDownload(dl *downloadState, total int64) {
+func (e *engine) finishDownload(dl *downloadState, spec modelSpec, total int64) {
 	e.mu.Lock()
 	if e.dl == dl {
 		dl.downloading = false
 		dl.paused = false
 		dl.downloaded = total
 		dl.total = total
-		dl.errMsg = ""
+		dl.errKind = dlErrNone
+		dl.errCode, dl.errWritten, dl.errTotal, dl.errRaw = 0, 0, 0, ""
 		dl.cancel = nil
 	}
 	e.mu.Unlock()
 	e.notify()
+	e.notifyDownloadComplete(spec.displayName)
 }
 
 func parseTotalFromContentRange(header string) int64 {

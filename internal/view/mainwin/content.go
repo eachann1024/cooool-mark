@@ -4,10 +4,12 @@ import (
 	"cmp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 
 	"cooool-mark/internal/app"
+	"cooool-mark/internal/locales"
 	"cooool-mark/internal/model"
 	"cooool-mark/internal/theme"
 	"cooool-mark/internal/widget"
@@ -330,18 +332,18 @@ func (s *mainState) buildBrowseBody(c *ui.Context, p *theme.Palette) {
 				ui.Row(c).Size(52, 52).Radius(14).Background(p.AccentBg).Center().Children(func() {
 					ui.Icon(c, theme.IconEmptyBookmarks).FontSize(24).TextColor(p.AccentText)
 				})
-				widget.Title(c, p, "还没有书签", 20)
+				widget.Title(c, p, locales.MainNoBookmarks(), 20).Selectable()
 				ui.Row(c).Wrap().Center().Gap(8).Children(func() {
-					bNew := widget.Primary(c, p, "新建书签").Label("新建书签").Tooltip("新建书签")
+					bNew := widget.Primary(c, p, locales.MenuNewBookmark()).Label(locales.MenuNewBookmark()).Tooltip(locales.MenuNewBookmark())
 					if bNew.Clicked() && a.Win.ShowEditor != nil {
 						a.Win.ShowEditor(app.EditorRequest{GroupID: a.Group, SubID: a.Sub})
 					}
-					bImp := widget.Secondary(c, p, "导入书签").Label("导入书签").Tooltip("从浏览器或文件导入书签")
+					bImp := widget.Secondary(c, p, locales.MenuImport()).Label(locales.MenuImport()).Tooltip(locales.MainImportTip())
 					if bImp.Clicked() && a.Win.ShowImport != nil {
 						a.Win.ShowImport("")
 					}
 					if a.Win.ShowSettings != nil {
-						bCloud := widget.Secondary(c, p, "连 iCloud 目录").Label("连 iCloud 目录").Tooltip("前往存储与同步设置")
+						bCloud := widget.Secondary(c, p, locales.MainConnectICloud()).Label(locales.MainConnectICloud()).Tooltip(locales.MainConnectICloudTip())
 						if bCloud.Clicked() {
 							a.Win.ShowSettings("data")
 						}
@@ -355,9 +357,9 @@ func (s *mainState) buildBrowseBody(c *ui.Context, p *theme.Palette) {
 	if g == nil || len(g.Subs) == 0 || (!hasGroupBookmark(lib, g.ID) && len(g.Subs) <= 1) {
 		s.scrollToSub = ""
 		s.cursorScrollMoved = false
-		title := "还没有分组"
+		title := locales.MainNoGroups()
 		if g != nil {
-			title = "「" + g.Name + "」还没有书签"
+			title = locales.MainGroupNoBookmarks(g.Name)
 		}
 		ui.Column(c).Grow(1).Center().Padding(24).Children(func() {
 			card := ui.Column(c).MaxWidth(380).Padding(28, 32).Radius(14).
@@ -374,32 +376,32 @@ func (s *mainState) buildBrowseBody(c *ui.Context, p *theme.Palette) {
 			}
 			card.Children(func() {
 				if dragOver && g != nil {
-					ui.Text(c, "松手移入「"+g.Name+"」").FontSize(14).FontWeight(600).TextColor(p.AccentText)
+					ui.Text(c, locales.MainDropMoveTo(g.Name)).FontSize(14).FontWeight(600).TextColor(p.AccentText)
 					return
 				}
 				ui.Row(c).Size(52, 52).Radius(14).Background(p.Field).Center().Children(func() {
 					ui.Icon(c, theme.IconEmptyFolder).FontSize(24).TextColor(p.Muted)
 				})
-				widget.Title(c, p, title, 20)
+				widget.Title(c, p, title, 20).Selectable()
 				ui.Row(c).Wrap().Center().Gap(8).Children(func() {
 					if g == nil {
-						bGrp := widget.Primary(c, p, "新建分组").Label("新建分组").Tooltip("新建分组")
+						bGrp := widget.Primary(c, p, locales.ActionNewGroup()).Label(locales.ActionNewGroup()).Tooltip(locales.ActionNewGroup())
 						if bGrp.Clicked() {
 							s.startAddGroup(c)
 						}
 					} else {
-						bNew := widget.Primary(c, p, "新建书签").Label("新建书签").Tooltip("新建书签")
+						bNew := widget.Primary(c, p, locales.MenuNewBookmark()).Label(locales.MenuNewBookmark()).Tooltip(locales.MenuNewBookmark())
 						if bNew.Clicked() && a.Win.ShowEditor != nil {
 							a.Win.ShowEditor(app.EditorRequest{GroupID: a.Group, SubID: a.Sub})
 						}
 						if len(g.Subs) == 0 {
-							bSub := widget.Secondary(c, p, "新建子分组").Label("新建子分组").Tooltip("新建子分组")
+							bSub := widget.Secondary(c, p, locales.ActionNewSub()).Label(locales.ActionNewSub()).Tooltip(locales.ActionNewSub())
 							if bSub.Clicked() {
 								s.startAddSub(c)
 							}
 						}
 					}
-					bImp := widget.Secondary(c, p, "导入书签").Label("导入书签").Tooltip("导入书签")
+					bImp := widget.Secondary(c, p, locales.MenuImport()).Label(locales.MenuImport()).Tooltip(locales.MainImportTip())
 					if bImp.Clicked() && a.Win.ShowImport != nil {
 						a.Win.ShowImport("")
 					}
@@ -410,14 +412,13 @@ func (s *mainState) buildBrowseBody(c *ui.Context, p *theme.Palette) {
 	}
 
 	const (
-		gridGap      = float32(8)
-		minCardW     = float32(168)
-		cardH        = float32(56)
-		gridTileSize = float32(32)
 		listTileSize = float32(22)
 		minH         = float32(40)
 		padY         = float32(6)
 	)
+	cardSize := model.NormalizeCardSize(a.Settings.CardSize)
+	spec := gridCardSpecFor(cardSize)
+	gridGap, minCardW := spec.gap, spec.minW
 	cols := 1
 	if a.View == "grid" {
 		availW := s.contentHandle.Bounds(c).W - 48
@@ -546,7 +547,7 @@ func (s *mainState) buildBrowseBody(c *ui.Context, p *theme.Palette) {
 				ui.Column(c).FillWidth().Padding(0, 24, bottom, 24).Gap(6).Children(func() {
 					ui.Grid(c).Columns(cols).Gap(gridGap).Children(func() {
 						for _, b := range r.items {
-							s.buildBookmarkGridCard(c, p, g, r.sub, b, cardH, gridTileSize)
+							s.buildBookmarkGridCard(c, p, g, r.sub, b, cardSize, spec)
 						}
 					})
 					for _, b := range r.items {
@@ -570,7 +571,7 @@ func (s *mainState) buildEmptySubCard(c *ui.Context, p *theme.Palette, g *model.
 	if over {
 		empty.Background(softAccentBg(p)).Border(1.5, p.Accent).BorderStyle(ui.BorderDashed)
 		empty.Children(func() {
-			ui.Text(c, "松手移入「"+sub.Name+"」").FontSize(12.5).FontWeight(500).TextColor(p.AccentText)
+			ui.Text(c, locales.MainDropMoveTo(sub.Name)).FontSize(12.5).FontWeight(500).TextColor(p.AccentText)
 		})
 		return
 	}
@@ -580,9 +581,9 @@ func (s *mainState) buildEmptySubCard(c *ui.Context, p *theme.Palette, g *model.
 			ui.Row(c).Size(32, 32).Radius(8).Background(p.Field).Center().Shrink(0).Children(func() {
 				ui.Icon(c, theme.IconEmptyFolder).FontSize(15).TextColor(p.Muted)
 			})
-			ui.Text(c, "「"+sub.Name+"」还没有书签").FontSize(13).TextColor(p.Text2).SingleLine()
+			ui.Text(c, locales.MainSubNoBookmarks(sub.Name)).FontSize(13).TextColor(p.Text2).SingleLine().Selectable()
 		})
-		addBtn := ui.ButtonBase(c).Label("新建书签").Tooltip("在「" + sub.Name + "」中新建书签").
+		addBtn := ui.ButtonBase(c).Label(locales.MenuNewBookmark()).Tooltip(locales.MainSubNewBookmarkTip(sub.Name)).
 			Height(28).PaddingX(11).Radius(7).Gap(5).AlignItems(ui.Center).
 			Background(p.Field).TextColor(p.Text).Shrink(0)
 		if addBtn.Hovered() {
@@ -590,7 +591,7 @@ func (s *mainState) buildEmptySubCard(c *ui.Context, p *theme.Palette, g *model.
 		}
 		addBtn.Children(func() {
 			ui.Icon(c, theme.IconPlus).FontSize(13).Shrink(0)
-			ui.Text(c, "新建书签").FontSize(12.5).SingleLine()
+			ui.Text(c, locales.MenuNewBookmark()).FontSize(12.5).SingleLine()
 		})
 		if addBtn.Clicked() && a.Win.ShowEditor != nil {
 			a.Win.ShowEditor(app.EditorRequest{GroupID: g.ID, SubID: sub.ID})
@@ -613,55 +614,26 @@ func rowIconAction(c *ui.Context, p *theme.Palette, icon *ui.SVG, label string, 
 
 func (s *mainState) buildBookmarkHoverActions(c *ui.Context, p *theme.Palette, b *model.Bookmark, menuOpen *bool, size, iconSize float32) {
 	a := s.app
-	openBtn := rowIconAction(c, p, theme.IconExternal, "打开", size, iconSize, false)
+	openBtn := rowIconAction(c, p, theme.IconExternal, locales.ActionOpen(), size, iconSize, false)
 	if openBtn.Clicked() {
 		s.activateBookmark(c, b)
 	}
-	editBtn := rowIconAction(c, p, theme.IconEdit, "编辑", size, iconSize, false)
+	editBtn := rowIconAction(c, p, theme.IconEdit, locales.ActionEdit(), size, iconSize, false)
 	if editBtn.Clicked() && a.Win.ShowEditor != nil {
 		a.Win.ShowEditor(app.EditorRequest{ID: b.ID})
 	}
-	moveBtn := rowIconAction(c, p, theme.IconMove, "移动到…", size, iconSize, false)
+	moveBtn := rowIconAction(c, p, theme.IconMove, locales.ActionMoveTo(), size, iconSize, false)
 	if moveBtn.Clicked() {
 		s.openMoveModal([]string{b.ID})
 	}
-	delBtn := rowIconAction(c, p, theme.IconTrash, "删除", size, iconSize, true)
+	delBtn := rowIconAction(c, p, theme.IconTrash, locales.ActionDelete(), size, iconSize, true)
 	if delBtn.Clicked() {
 		a.Delete(b.ID)
 	}
-	moreBtn := rowIconAction(c, p, theme.IconMore, "更多操作", size, iconSize, false)
+	moreBtn := rowIconAction(c, p, theme.IconMore, locales.MenuMoreActions(), size, iconSize, false)
 	moreBtn.PopoverMenuButton(func(m *ui.Menu) {
 		s.buildBookmarkMenu(c, m, b)
 	}, menuButtonOptions(p, menuOpen, true))
-}
-
-func (s *mainState) buildGridHoverActions(c *ui.Context, p *theme.Palette, b *model.Bookmark, menuOpen *bool, size, iconSize float32) {
-	a := s.app
-	openBtn := rowIconAction(c, p, theme.IconExternal, "打开", size, iconSize, false)
-	if openBtn.Clicked() {
-		s.activateBookmark(c, b)
-	}
-	editBtn := rowIconAction(c, p, theme.IconEdit, "编辑", size, iconSize, false)
-	if editBtn.Clicked() && a.Win.ShowEditor != nil {
-		a.Win.ShowEditor(app.EditorRequest{ID: b.ID})
-	}
-	moreBtn := rowIconAction(c, p, theme.IconMore, "更多操作", size, iconSize, false)
-	moreBtn.PopoverMenuButton(func(m *ui.Menu) {
-		s.buildBookmarkMenu(c, m, b)
-	}, menuButtonOptions(p, menuOpen, true))
-}
-
-func (s *mainState) buildGridHoverToolbar(c *ui.Context, p *theme.Palette, b *model.Bookmark, menuOpen *bool) {
-	shadow := ui.RGBA(0, 0, 0, 0.14)
-	if p.Dark {
-		shadow = ui.RGBA(0, 0, 0, 0.45)
-	}
-	ui.Row(c).Absolute().Top(13).Right(8).Padding(2).Radius(8).Gap(1).
-		Background(p.Surface).Border(1, p.Line).
-		Shadow(0, 4, 12, -4, shadow).
-		Children(func() {
-			s.buildGridHoverActions(c, p, b, menuOpen, 24, 13)
-		})
 }
 
 func (s *mainState) buildBookmarkListRow(c *ui.Context, p *theme.Palette, g *model.Group, sub model.Sub, b *model.Bookmark, tileSize, minH, padY float32) {
@@ -754,15 +726,40 @@ func (s *mainState) buildBookmarkListRow(c *ui.Context, p *theme.Palette, g *mod
 	})
 }
 
-func (s *mainState) buildBookmarkGridCard(c *ui.Context, p *theme.Palette, g *model.Group, sub model.Sub, b *model.Bookmark, cardH, tileSize float32) {
+// gridCardSpec is the geometry of one grid card size.
+type gridCardSpec struct {
+	minW, h, gap, tile float32
+	padX, padY, radius float32
+	titleSize          float32
+}
+
+func gridCardSpecFor(size string) gridCardSpec {
+	switch size {
+	case model.CardCompact:
+		return gridCardSpec{minW: 150, h: 42, gap: 6, tile: 22, padX: 10, padY: 0, radius: 9, titleSize: 13}
+	case model.CardDetail:
+		return gridCardSpec{minW: 280, h: 112, gap: 12, tile: 40, padX: 16, padY: 14, radius: 13, titleSize: 14.5}
+	default:
+		return gridCardSpec{minW: 220, h: 70, gap: 10, tile: 34, padX: 14, padY: 8, radius: 11, titleSize: 14}
+	}
+}
+
+func (s *mainState) buildBookmarkGridCard(c *ui.Context, p *theme.Palette, g *model.Group, sub model.Sub, b *model.Bookmark, size string, spec gridCardSpec) {
 	a := s.app
 	keyC := c.Key("grid-bm-" + b.ID)
 	selected := s.cursorID == b.ID
 	_, polished := a.PolishedAt[b.ID]
 
-	card := ui.Row(keyC).MinWidth(0).MinHeight(cardH).Padding(8, 12).Radius(10).
-		AlignItems(ui.Center).Role(ui.RoleOption).Label(b.Title).AccessSelected(selected)
-	menuOpen := ui.Local(card, "gridMenuOpen", func() bool { return false })
+	card := ui.Row(keyC).MinWidth(0).Height(spec.h).Padding(spec.padY, spec.padX).Radius(spec.radius).
+		Role(ui.RoleOption).Label(b.Title).AccessSelected(selected).Cursor(ui.CursorPointer)
+	if size == model.CardDetail {
+		card.AlignItems(ui.Start)
+	} else {
+		card.AlignItems(ui.Center)
+	}
+	if dom := shortDomain(b.URL); dom != "" {
+		card.Tooltip(b.Title + " · " + dom)
+	}
 
 	_, dragOver := ui.DragOver[dragPayload](card)
 	if drop, ok := ui.Drop[dragPayload](card); ok {
@@ -770,7 +767,6 @@ func (s *mainState) buildBookmarkGridCard(c *ui.Context, p *theme.Palette, g *mo
 	}
 
 	hovered := card.Hovered()
-	activeHover := hovered || *menuOpen
 	switch {
 	case dragOver:
 		card.Background(softAccentBg(p)).Border(2, p.Accent).BorderStyle(ui.BorderDashed)
@@ -778,8 +774,8 @@ func (s *mainState) buildBookmarkGridCard(c *ui.Context, p *theme.Palette, g *mo
 		card.Background(softAccentBg(p)).Border(1, p.Accent)
 	case polished:
 		card.Background(softAccentBg(p)).Border(1, p.Line)
-	case activeHover:
-		card.Background(p.Hover).Border(1, p.Line.Mix(p.Text, 0.06))
+	case hovered:
+		card.Background(p.Hover).Border(1, p.Line.Mix(p.Text, 0.08))
 	default:
 		card.Background(p.Surface).Border(1, p.Line)
 	}
@@ -790,54 +786,99 @@ func (s *mainState) buildBookmarkGridCard(c *ui.Context, p *theme.Palette, g *mo
 		card.Opacity(0.45)
 	}
 
-	subText := shortDomain(b.URL)
-	if a.Settings.ShowNote && strings.TrimSpace(b.Note) != "" {
-		subText = strings.TrimSpace(b.Note)
+	domain := shortDomain(b.URL)
+	note := strings.TrimSpace(b.Note)
+
+	titleRow := func(maxLines int, weight int) {
+		ui.Row(c).Gap(5).AlignItems(ui.Start).FillWidth().MinWidth(0).Children(func() {
+			t := ui.Text(c, b.Title).FontSize(spec.titleSize).FontWeight(weight).TextColor(p.Text).Shrink(1).MinWidth(0)
+			if maxLines <= 1 {
+				t.SingleLine()
+			} else {
+				t.MaxLines(maxLines).Ellipsis("…").LineHeight(1.3)
+			}
+			if b.IsTemplate() {
+				ui.Icon(c, theme.IconBraces).FontSize(12).TextColor(p.Primary).Shrink(0).Margin(2, 0, 0, 0)
+			}
+			if polished {
+				polishedBadge(c, p)
+			}
+		})
 	}
 
-	var mainArea ui.Element
 	card.Children(func() {
-		mainArea = ui.Row(c).Grow(1).MinWidth(0).Gap(10).AlignItems(ui.Center)
-		mainArea.Children(func() {
-			s.buildTile(c, b, tileSize)
+		gap := float32(12)
+		if size == model.CardCompact {
+			gap = 9
+		} else if size == model.CardDetail {
+			gap = 14
+		}
+		ui.Row(c).Grow(1).MinWidth(0).FillHeight().Gap(gap).AlignItems(ui.Center).Children(func() {
+			switch size {
+			case model.CardCompact:
+				s.buildTile(c, b, spec.tile)
+				titleRow(1, 500)
 
-			textCol := ui.Column(c).Grow(1).MinWidth(0).Gap(2)
-			if activeHover {
-				textCol.Padding(0, 84, 0, 0)
-			}
-			textCol.Children(func() {
-				ui.Row(c).Gap(5).AlignItems(ui.Center).FillWidth().MinWidth(0).Children(func() {
-					ui.Text(c, b.Title).FontSize(13.5).FontWeight(500).TextColor(p.Text).SingleLine().Shrink(1).MinWidth(0)
-					if b.IsTemplate() {
-						ui.Icon(c, theme.IconBraces).FontSize(12).TextColor(p.Primary).Shrink(0)
-					}
-					if polished {
-						polishedBadge(c, p)
+			case model.CardDetail:
+				ui.Column(c).FillHeight().Shrink(0).Children(func() { s.buildTile(c, b, spec.tile) })
+				// Title + note at the top; the domain row always sits on the
+				// bottom edge, leaving blank space when the text is short.
+				ui.Column(c).Grow(1).MinWidth(0).FillHeight().Justify(ui.SpaceBetween).Children(func() {
+					ui.Column(c).FillWidth().MinWidth(0).Gap(4).Children(func() {
+						titleRow(2, 600)
+						if note != "" {
+							ui.Text(c, note).FontSize(12.5).TextColor(p.Text2).MaxLines(2).Ellipsis("…").LineHeight(1.4)
+						}
+					})
+					if domain != "" {
+						ui.Row(c).Gap(5).AlignItems(ui.Center).MinWidth(0).FillWidth().Children(func() {
+							ui.Icon(c, theme.IconGlobe).FontSize(11).TextColor(p.Muted).Shrink(0)
+							ui.Text(c, domain).FontSize(12).TextColor(p.Muted).SingleLine().Shrink(1).MinWidth(0)
+						})
 					}
 				})
 
-				if subText != "" {
-					ui.Text(c, subText).FontSize(12).TextColor(p.Muted).SingleLine()
+			default:
+				s.buildTile(c, b, spec.tile)
+				subText := domain
+				if a.Settings.ShowNote && note != "" {
+					subText = note
 				}
-
-				if a.Settings.ShowTags && len(b.Tags) > 0 {
-					ui.Row(c).Wrap().Gap(4).Margin(2, 0, 0, 0).Children(func() {
-						for _, tg := range b.Tags {
-							ui.Row(c).Height(18).PaddingX(6).Radius(5).Background(p.Field).AlignItems(ui.Center).Children(func() {
-								ui.Text(c, tg).FontSize(11).TextColor(p.Muted).SingleLine()
-							})
-						}
-					})
-				}
-			})
+				ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
+					titleRow(2, 500)
+					if subText != "" {
+						ui.Text(c, subText).FontSize(12).TextColor(p.Muted).SingleLine()
+					}
+				})
+			}
 		})
-
-		if activeHover {
-			s.buildGridHoverToolbar(c, p, b, menuOpen)
-		}
 	})
 
-	s.bindBookmarkRowEvents(c, p, mainArea, card, b)
+	s.bindGridCardEvents(c, p, card, b)
+}
+
+// bindGridCardEvents: a single click opens the bookmark, a right click
+// shows the bookmark menu. Selection follows the clicked card.
+func (s *mainState) bindGridCardEvents(c *ui.Context, p *theme.Palette, card ui.Element, b *model.Bookmark) {
+	a := s.app
+	if card.Clicked() {
+		s.cursorID = b.ID
+		if b.SubID != "" {
+			a.SetSub(b.SubID)
+		}
+		s.stopBrowseFollow()
+		s.contentHandle.Focus(c)
+		// A double click delivers two clicks: open once.
+		now := time.Now()
+		if s.lastOpenID != b.ID || now.Sub(s.lastOpenAt) > 600*time.Millisecond {
+			s.lastOpenID, s.lastOpenAt = b.ID, now
+			s.activateBookmark(c, b)
+		}
+	}
+	card.PopoverMenu(func(m *ui.Menu) {
+		s.cursorID = b.ID
+		s.buildBookmarkMenu(c, m, b)
+	}, menuOptions(p))
 }
 
 func (s *mainState) bindBookmarkRowEvents(c *ui.Context, p *theme.Palette, clickEl, menuEl ui.Element, b *model.Bookmark) {
@@ -882,11 +923,11 @@ func (s *mainState) buildTemplatePrompt(c *ui.Context, p *theme.Palette, b *mode
 	revealed := ui.Local(box, "revealed", func() bool { return false })
 	box.Children(func() {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Padding(0, 0, 0, 34).Children(func() {
-			ui.Text(c, "query").FontSize(12).TextColor(p.Muted).Shrink(0)
+			ui.Text(c, locales.MainTemplateLabel()).FontSize(12).TextColor(p.Muted).Shrink(0)
 			in := ui.TextInputBase(c, &s.tplQuery).Bind(&s.tplInputHandle).
-				Placeholder("输入参数，回车打开").Label("输入参数").Grow(1).MinWidth(0).
+				Placeholder(locales.MainTemplatePlaceholder()).Label(locales.MainTemplateLabel()).Grow(1).MinWidth(0).
 				Height(30).PaddingX(9).Radius(7).Background(p.Surface).Border(1.5, p.Accent).TextColor(p.Text)
-			ui.Text(c, "↵ 打开").FontSize(12).TextColor(p.Muted).Shrink(0)
+			ui.Text(c, locales.MainTemplateOpenHint()).FontSize(12).TextColor(p.Muted).Shrink(0)
 			if !*revealed {
 				in.ScrollIntoView()
 				*revealed = true
@@ -907,7 +948,7 @@ func (s *mainState) buildTemplatePrompt(c *ui.Context, p *theme.Palette, b *mode
 			preview := strings.TrimPrefix(strings.TrimPrefix(b.URL, "https://"), "http://")
 			before, after, found := strings.Cut(preview, "{query}")
 			if !found {
-				ui.Text(c, preview).FontSize(12).TextColor(p.Muted).SingleLine()
+				ui.Text(c, preview).FontSize(12).TextColor(p.Muted).SingleLine().Selectable()
 				return
 			}
 			q := s.tplQuery
@@ -918,7 +959,7 @@ func (s *mainState) buildTemplatePrompt(c *ui.Context, p *theme.Palette, b *mode
 				ui.Span{Text: before, Color: p.Muted, Size: 12},
 				ui.Span{Text: q, Color: p.AccentText, Size: 12, Weight: 500},
 				ui.Span{Text: after, Color: p.Muted, Size: 12},
-			).SingleLine()
+			).SingleLine().Selectable()
 		})
 	})
 }
@@ -976,11 +1017,11 @@ func (s *mainState) buildPasteURLCard(c *ui.Context, p *theme.Palette, lib *mode
 		card.Border(1, p.Accent.Alpha(0.45))
 	}
 
-	title := "保存这个网址"
+	title := locales.MainSaveThisURL()
 	subtitle := raw
 	if existing != nil {
-		title = "编辑已保存的书签「" + existing.Title + "」"
-		subtitle = raw + " · 已存在于「" + a.PathOf(existing) + "」"
+		title = locales.MainEditSavedBookmark(existing.Title)
+		subtitle = locales.MainExistsInPath(raw, a.PathOf(existing))
 	}
 
 	card.Children(func() {
@@ -1008,7 +1049,7 @@ func (s *mainState) buildPasteURLCard(c *ui.Context, p *theme.Palette, lib *mode
 
 func polishedBadge(c *ui.Context, p *theme.Palette) {
 	ui.Row(c).Height(18).PaddingX(6).Radius(5).Background(p.Surface).AlignItems(ui.Center).Shrink(0).Children(func() {
-		ui.Text(c, "已润色").FontSize(11).TextColor(p.AccentText).SingleLine()
+		ui.Text(c, locales.MainPolishedBadge()).FontSize(11).TextColor(p.AccentText).SingleLine()
 	})
 }
 

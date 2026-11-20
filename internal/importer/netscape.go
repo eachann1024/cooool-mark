@@ -2,6 +2,7 @@ package importer
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	stdhtml "html"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"golang.org/x/net/html"
 
 	"cooool-mark/internal/app"
+	"cooool-mark/internal/locales"
 	"cooool-mark/internal/model"
 )
 
@@ -87,7 +89,7 @@ func parseNetscapeHTML(data []byte) (*app.ImportPlan, error) {
 				if hasPending {
 					name := strings.TrimSpace(pendingFolder)
 					if name == "" {
-						name = "未命名文件夹"
+						name = locales.UntitledFolder()
 					}
 					f := &app.ImportFolder{Name: name, Checked: true}
 					parent := stack[len(stack)-1]
@@ -151,9 +153,10 @@ func parseNetscapeHTML(data []byte) (*app.ImportPlan, error) {
 
 	folders := root.Children
 	if len(root.Items) > 0 {
+		ungroupedName := locales.Ungrouped()
 		var ungrouped *app.ImportFolder
 		for _, f := range folders {
-			if f.Name == "未分组" {
+			if f.Name == ungroupedName {
 				ungrouped = f
 				break
 			}
@@ -162,7 +165,7 @@ func parseNetscapeHTML(data []byte) (*app.ImportPlan, error) {
 			ungrouped.Items = append(ungrouped.Items, root.Items...)
 		} else {
 			folders = append(folders, &app.ImportFolder{
-				Name:    "未分组",
+				Name:    ungroupedName,
 				Items:   root.Items,
 				Checked: true,
 			})
@@ -170,7 +173,7 @@ func parseNetscapeHTML(data []byte) (*app.ImportPlan, error) {
 	}
 
 	if !hasAnyBookmark(folders) {
-		return nil, fmt.Errorf("未在文件中找到书签")
+		return nil, errors.New(locales.ImportErrNoBookmarks())
 	}
 
 	return &app.ImportPlan{
@@ -205,10 +208,11 @@ func parseAddDate(raw string) time.Time {
 
 func exportNetscapeHTML(lib *model.Library, path string) error {
 	var b strings.Builder
+	exportTitle := stdhtml.EscapeString(locales.HtmlExportTitle())
 	b.WriteString("<!DOCTYPE NETSCAPE-Bookmark-file-1>\n")
 	b.WriteString("<META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=UTF-8\">\n")
-	b.WriteString("<TITLE>Cooool Mark 书签</TITLE>\n")
-	b.WriteString("<H1>Cooool Mark 书签</H1>\n")
+	fmt.Fprintf(&b, "<TITLE>%s</TITLE>\n", exportTitle)
+	fmt.Fprintf(&b, "<H1>%s</H1>\n", exportTitle)
 	b.WriteString("<DL><p>\n")
 
 	seen := map[string]bool{}
@@ -239,7 +243,7 @@ func exportNetscapeHTML(lib *model.Library, path string) error {
 		}
 	}
 	if len(orphans) > 0 {
-		b.WriteString("    <DT><H3>未分组</H3>\n")
+		fmt.Fprintf(&b, "    <DT><H3>%s</H3>\n", stdhtml.EscapeString(locales.Ungrouped()))
 		b.WriteString("    <DL><p>\n")
 		for _, bm := range orphans {
 			title := bm.Title

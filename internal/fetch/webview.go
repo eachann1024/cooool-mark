@@ -3,6 +3,7 @@ package fetch
 import (
 	"context"
 	"errors"
+	"net/url"
 	"sync"
 	"time"
 
@@ -21,6 +22,11 @@ func fetchWithWebView(ctx context.Context, targetURL string) (webMeta, error) {
 	if !mygo.App.IsReady() {
 		return webMeta{}, errors.New("webview unavailable before app ready")
 	}
+	cleanURL, err := normalizeFetchURL(targetURL)
+	if err != nil {
+		return webMeta{}, err
+	}
+	targetURL = cleanURL
 
 	wctx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
@@ -33,16 +39,58 @@ func fetchWithWebView(ctx context.Context, targetURL string) (webMeta, error) {
 		Page: mygo.PageOptions{
 			Session:   mygo.NewEphemeralSession(),
 			UserAgent: defaultUserAgent,
+			Untrusted: true,
 		},
 	})
 	defer w.Close()
 
+	// Never allow a background metadata fetch page to open popups or hand off
+	// URLs to the system browser.
+	w.Page().SetWindowOpenHandler(func(mygo.WindowOpenRequest) *mygo.WindowOptions {
+		return nil
+	})
+
 	var (
 		doneOnce sync.Once
 		failOnce sync.Once
+		navMu    sync.Mutex
+		navCount int
 		loaded   = make(chan struct{})
 		failed   = make(chan error, 1)
 	)
+	fail := func(err error) {
+		failOnce.Do(func() {
+			failed <- err
+		})
+	}
+
+	offNav := w.Page().OnWillNavigate(func(e *mygo.NavigateEvent) {
+		if e == nil {
+			return
+		}
+		if _, err := normalizeFetchURL(e.URL); err != nil {
+			e.PreventDefault()
+			fail(errRedirectBlocked)
+			return
+		}
+		navMu.Lock()
+		navCount++
+		count := navCount
+		navMu.Unlock()
+		if count > 10 {
+			e.PreventDefault()
+			fail(errRedirectBlocked)
+		}
+	})
+	defer offNav()
+
+	offDL := w.Page().OnWillDownload(func(e *mygo.DownloadEvent) {
+		if e != nil {
+			e.PreventDefault()
+		}
+		fail(errors.New("webview download blocked"))
+	})
+	defer offDL()
 
 	offLoad := w.Page().OnDidFinishLoad(func() {
 		doneOnce.Do(func() { close(loaded) })
@@ -50,13 +98,11 @@ func fetchWithWebView(ctx context.Context, targetURL string) (webMeta, error) {
 	defer offLoad()
 
 	offFail := w.Page().OnDidFailLoad(func(le *mygo.LoadError) {
-		failOnce.Do(func() {
-			if le != nil {
-				failed <- errors.New(le.Description)
-			} else {
-				failed <- errors.New("webview load failed")
-			}
-		})
+		if le != nil {
+			fail(errors.New(le.Description))
+		} else {
+			fail(errors.New("webview load failed"))
+		}
 	})
 	defer offFail()
 
@@ -124,8 +170,15 @@ func readWebViewDOM(ctx context.Context, p *mygo.Page) (webMeta, error) {
 	if !ok {
 		return webMeta{}, nil
 	}
+	finalURL := ""
+	if rawFinal := strVal(m["url"]); rawFinal != "" {
+		if norm, err := normalizeFetchURL(rawFinal); err == nil {
+			finalURL = norm
+		}
+	}
+	baseURL, _ := url.Parse(finalURL)
 	out := webMeta{
-		FinalURL:    strVal(m["url"]),
+		FinalURL:    finalURL,
 		Title:       collapseSpaces(strVal(m["title"])),
 		Description: collapseSpaces(strVal(m["desc"])),
 		SiteName:    collapseSpaces(strVal(m["site"])),
@@ -137,7 +190,7 @@ func readWebViewDOM(ctx context.Context, p *mygo.Page) (webMeta, error) {
 				continue
 			}
 			rel := strVal(lm["rel"])
-			href := strVal(lm["href"])
+			href := resolveURL(baseURL, strVal(lm["href"]))
 			typ := strVal(lm["type"])
 			sizes := strVal(lm["sizes"])
 			if cand, ok := classifyLinkIcon(rel, href, typ, sizes); ok {

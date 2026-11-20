@@ -134,16 +134,6 @@ func (msgs Messages) MenuView() string {
 	return Catalog.Format(msgs.locale, "menuView", nil)
 }
 
-// MenuWindow says "Window"
-// in the language the app shows.
-func MenuWindow() string { return In(i18n.Locale()).MenuWindow() }
-
-// MenuWindow says "Window"
-// in the language of msgs.
-func (msgs Messages) MenuWindow() string {
-	return Catalog.Format(msgs.locale, "menuWindow", nil)
-}
-
 // MenuHelp says "Help"
 // in the language the app shows.
 func MenuHelp() string { return In(i18n.Locale()).MenuHelp() }
@@ -292,6 +282,16 @@ func MenuOpenMain() string { return In(i18n.Locale()).MenuOpenMain() }
 // in the language of msgs.
 func (msgs Messages) MenuOpenMain() string {
 	return Catalog.Format(msgs.locale, "menuOpenMain", nil)
+}
+
+// MenuQuickSearch says "Quick Search"
+// in the language the app shows.
+func MenuQuickSearch() string { return In(i18n.Locale()).MenuQuickSearch() }
+
+// MenuQuickSearch says "Quick Search"
+// in the language of msgs.
+func (msgs Messages) MenuQuickSearch() string {
+	return Catalog.Format(msgs.locale, "menuQuickSearch", nil)
 }
 
 // MenuSearchBookmarks says "Search Bookmarks"
@@ -532,16 +532,6 @@ func ActionNew() string { return In(i18n.Locale()).ActionNew() }
 // in the language of msgs.
 func (msgs Messages) ActionNew() string {
 	return Catalog.Format(msgs.locale, "actionNew", nil)
-}
-
-// ActionConfirm says "Confirm"
-// in the language the app shows.
-func ActionConfirm() string { return In(i18n.Locale()).ActionConfirm() }
-
-// ActionConfirm says "Confirm"
-// in the language of msgs.
-func (msgs Messages) ActionConfirm() string {
-	return Catalog.Format(msgs.locale, "actionConfirm", nil)
 }
 
 // ActionChange says "Change"
@@ -834,16 +824,6 @@ func (msgs Messages) ActionCloseSearch() string {
 	return Catalog.Format(msgs.locale, "actionCloseSearch", nil)
 }
 
-// ActionSearch says "Search"
-// in the language the app shows.
-func ActionSearch() string { return In(i18n.Locale()).ActionSearch() }
-
-// ActionSearch says "Search"
-// in the language of msgs.
-func (msgs Messages) ActionSearch() string {
-	return Catalog.Format(msgs.locale, "actionSearch", nil)
-}
-
 // ActionDownload says "Download"
 // in the language the app shows.
 func ActionDownload() string { return In(i18n.Locale()).ActionDownload() }
@@ -902,16 +882,6 @@ func ActionClear() string { return In(i18n.Locale()).ActionClear() }
 // in the language of msgs.
 func (msgs Messages) ActionClear() string {
 	return Catalog.Format(msgs.locale, "actionClear", nil)
-}
-
-// ActionRecord says "Record"
-// in the language the app shows.
-func ActionRecord() string { return In(i18n.Locale()).ActionRecord() }
-
-// ActionRecord says "Record"
-// in the language of msgs.
-func (msgs Messages) ActionRecord() string {
-	return Catalog.Format(msgs.locale, "actionRecord", nil)
 }
 
 // MainSearchPlaceholder says "Search bookmarks"
@@ -1134,16 +1104,6 @@ func (msgs Messages) MainSearchAllGroupsTip() string {
 	return Catalog.Format(msgs.locale, "mainSearchAllGroupsTip", nil)
 }
 
-// MainClearSearchTip says "Clear search query"
-// in the language the app shows.
-func MainClearSearchTip() string { return In(i18n.Locale()).MainClearSearchTip() }
-
-// MainClearSearchTip says "Clear search query"
-// in the language of msgs.
-func (msgs Messages) MainClearSearchTip() string {
-	return Catalog.Format(msgs.locale, "mainClearSearchTip", nil)
-}
-
 // MainSaveThisURL says "Save this URL"
 // in the language the app shows.
 func MainSaveThisURL() string { return In(i18n.Locale()).MainSaveThisURL() }
@@ -1258,6 +1218,106 @@ func (msgs Messages) MainPolishedBadge() string {
 	return Catalog.Format(msgs.locale, "mainPolishedBadge", nil)
 }
 
+// MainDropDefaultTarget says "Bookmarks"
+// in the language the app shows.
+func MainDropDefaultTarget() string { return In(i18n.Locale()).MainDropDefaultTarget() }
+
+// MainDropDefaultTarget says "Bookmarks"
+// in the language of msgs.
+func (msgs Messages) MainDropDefaultTarget() string {
+	return Catalog.Format(msgs.locale, "mainDropDefaultTarget", nil)
+}
+
+// SearchModalPlaceholder says "Search title, URL, or paste a URL to save…"
+// in the language the app shows.
+func SearchModalPlaceholder() string { return In(i18n.Locale()).SearchModalPlaceholder() }
+
+// SearchModalPlaceholder says "Search title, URL, or paste a URL to save…"
+// in the language of msgs.
+func (msgs Messages) SearchModalPlaceholder() string {
+	return Catalog.Format(msgs.locale, "searchModalPlaceholder", nil)
+}
+
+// SearchModalCloseTip says "Return to bookmarks (Esc)"
+// in the language the app shows.
+func SearchModalCloseTip() string { return In(i18n.Locale()).SearchModalCloseTip() }
+
+// SearchModalCloseTip says "Return to bookmarks (Esc)"
+// in the language of msgs.
+func (msgs Messages) SearchModalCloseTip() string {
+	return Catalog.Format(msgs.locale, "searchModalCloseTip", nil)
+}
+
+// SearchRecentUpdates says "Recently Updated"
+// in the language the app shows.
+func SearchRecentUpdates() string { return In(i18n.Locale()).SearchRecentUpdates() }
+
+// SearchRecentUpdates says "Recently Updated"
+// in the language of msgs.
+func (msgs Messages) SearchRecentUpdates() string {
+	return Catalog.Format(msgs.locale, "searchRecentUpdates", nil)
+}
+
+// SearchNotFoundFor says "No results for “{query}”"
+// in the language the app shows.
+func SearchNotFoundFor(query string) string { return In(i18n.Locale()).SearchNotFoundFor(query) }
+
+// SearchNotFoundFor says "No results for “{query}”"
+// in the language of msgs.
+func (msgs Messages) SearchNotFoundFor(query string) string {
+	return Catalog.Format(msgs.locale, "searchNotFoundFor", map[string]any{"query": query})
+}
+
+// SearchFooterIdle says "Type keywords or paste a URL"
+// in the language the app shows.
+func SearchFooterIdle() string { return In(i18n.Locale()).SearchFooterIdle() }
+
+// SearchFooterIdle says "Type keywords or paste a URL"
+// in the language of msgs.
+func (msgs Messages) SearchFooterIdle() string {
+	return Catalog.Format(msgs.locale, "searchFooterIdle", nil)
+}
+
+// SearchFooterURL says "URL detected · Press Enter to save"
+// in the language the app shows.
+func SearchFooterURL() string { return In(i18n.Locale()).SearchFooterURL() }
+
+// SearchFooterURL says "URL detected · Press Enter to save"
+// in the language of msgs.
+func (msgs Messages) SearchFooterURL() string {
+	return Catalog.Format(msgs.locale, "searchFooterURL", nil)
+}
+
+// SearchFooterMatches says "{count, plural, =0 {No matches} one {# match} other {# matches}}"
+// in the language the app shows.
+func SearchFooterMatches(count int) string { return In(i18n.Locale()).SearchFooterMatches(count) }
+
+// SearchFooterMatches says "{count, plural, =0 {No matches} one {# match} other {# matches}}"
+// in the language of msgs.
+func (msgs Messages) SearchFooterMatches(count int) string {
+	return Catalog.Format(msgs.locale, "searchFooterMatches", map[string]any{"count": count})
+}
+
+// SearchFooterRecent says "{count, plural, one {# recent bookmark} other {# recent bookmarks}}"
+// in the language the app shows.
+func SearchFooterRecent(count int) string { return In(i18n.Locale()).SearchFooterRecent(count) }
+
+// SearchFooterRecent says "{count, plural, one {# recent bookmark} other {# recent bookmarks}}"
+// in the language of msgs.
+func (msgs Messages) SearchFooterRecent(count int) string {
+	return Catalog.Format(msgs.locale, "searchFooterRecent", map[string]any{"count": count})
+}
+
+// SearchFooterHint says "↑↓ Select · ↵ Open · Esc Close"
+// in the language the app shows.
+func SearchFooterHint() string { return In(i18n.Locale()).SearchFooterHint() }
+
+// SearchFooterHint says "↑↓ Select · ↵ Open · Esc Close"
+// in the language of msgs.
+func (msgs Messages) SearchFooterHint() string {
+	return Catalog.Format(msgs.locale, "searchFooterHint", nil)
+}
+
 // ModeNotchTitle says "Cooool Mark Notch"
 // in the language the app shows.
 func ModeNotchTitle() string { return In(i18n.Locale()).ModeNotchTitle() }
@@ -1276,6 +1336,76 @@ func ModeEdgeTitle() string { return In(i18n.Locale()).ModeEdgeTitle() }
 // in the language of msgs.
 func (msgs Messages) ModeEdgeTitle() string {
 	return Catalog.Format(msgs.locale, "modeEdgeTitle", nil)
+}
+
+// ModeQuickSearchTitle says "Cooool Mark Quick Search"
+// in the language the app shows.
+func ModeQuickSearchTitle() string { return In(i18n.Locale()).ModeQuickSearchTitle() }
+
+// ModeQuickSearchTitle says "Cooool Mark Quick Search"
+// in the language of msgs.
+func (msgs Messages) ModeQuickSearchTitle() string {
+	return Catalog.Format(msgs.locale, "modeQuickSearchTitle", nil)
+}
+
+// QuickSearchPlaceholder says "Search bookmarks or enter a URL…"
+// in the language the app shows.
+func QuickSearchPlaceholder() string { return In(i18n.Locale()).QuickSearchPlaceholder() }
+
+// QuickSearchPlaceholder says "Search bookmarks or enter a URL…"
+// in the language of msgs.
+func (msgs Messages) QuickSearchPlaceholder() string {
+	return Catalog.Format(msgs.locale, "quickSearchPlaceholder", nil)
+}
+
+// QuickSearchOpenMain says "Open in Main Window"
+// in the language the app shows.
+func QuickSearchOpenMain() string { return In(i18n.Locale()).QuickSearchOpenMain() }
+
+// QuickSearchOpenMain says "Open in Main Window"
+// in the language of msgs.
+func (msgs Messages) QuickSearchOpenMain() string {
+	return Catalog.Format(msgs.locale, "quickSearchOpenMain", nil)
+}
+
+// QuickSearchOpenMainTip says "Continue searching in main window"
+// in the language the app shows.
+func QuickSearchOpenMainTip() string { return In(i18n.Locale()).QuickSearchOpenMainTip() }
+
+// QuickSearchOpenMainTip says "Continue searching in main window"
+// in the language of msgs.
+func (msgs Messages) QuickSearchOpenMainTip() string {
+	return Catalog.Format(msgs.locale, "quickSearchOpenMainTip", nil)
+}
+
+// QuickSearchMainBtn says "Main"
+// in the language the app shows.
+func QuickSearchMainBtn() string { return In(i18n.Locale()).QuickSearchMainBtn() }
+
+// QuickSearchMainBtn says "Main"
+// in the language of msgs.
+func (msgs Messages) QuickSearchMainBtn() string {
+	return Catalog.Format(msgs.locale, "quickSearchMainBtn", nil)
+}
+
+// QuickSearchHintSelect says "Select"
+// in the language the app shows.
+func QuickSearchHintSelect() string { return In(i18n.Locale()).QuickSearchHintSelect() }
+
+// QuickSearchHintSelect says "Select"
+// in the language of msgs.
+func (msgs Messages) QuickSearchHintSelect() string {
+	return Catalog.Format(msgs.locale, "quickSearchHintSelect", nil)
+}
+
+// QuickSearchHintClearClose says "Clear / Close"
+// in the language the app shows.
+func QuickSearchHintClearClose() string { return In(i18n.Locale()).QuickSearchHintClearClose() }
+
+// QuickSearchHintClearClose says "Clear / Close"
+// in the language of msgs.
+func (msgs Messages) QuickSearchHintClearClose() string {
+	return Catalog.Format(msgs.locale, "quickSearchHintClearClose", nil)
 }
 
 // ModeDropSaveDefault says "Save to Bookmarks"
@@ -1910,6 +2040,76 @@ func (msgs Messages) EditorErrURLInvalid() string {
 	return Catalog.Format(msgs.locale, "editorErrURLInvalid", nil)
 }
 
+// EditorUnsavedTitle says "Unsaved bookmark changes"
+// in the language the app shows.
+func EditorUnsavedTitle() string { return In(i18n.Locale()).EditorUnsavedTitle() }
+
+// EditorUnsavedTitle says "Unsaved bookmark changes"
+// in the language of msgs.
+func (msgs Messages) EditorUnsavedTitle() string {
+	return Catalog.Format(msgs.locale, "editorUnsavedTitle", nil)
+}
+
+// EditorUnsavedMsg says "Save or discard your draft before switching to the new bookmark."
+// in the language the app shows.
+func EditorUnsavedMsg() string { return In(i18n.Locale()).EditorUnsavedMsg() }
+
+// EditorUnsavedMsg says "Save or discard your draft before switching to the new bookmark."
+// in the language of msgs.
+func (msgs Messages) EditorUnsavedMsg() string {
+	return Catalog.Format(msgs.locale, "editorUnsavedMsg", nil)
+}
+
+// EditorUnsavedCloseMsg says "Save or discard your draft before closing."
+// in the language the app shows.
+func EditorUnsavedCloseMsg() string { return In(i18n.Locale()).EditorUnsavedCloseMsg() }
+
+// EditorUnsavedCloseMsg says "Save or discard your draft before closing."
+// in the language of msgs.
+func (msgs Messages) EditorUnsavedCloseMsg() string {
+	return Catalog.Format(msgs.locale, "editorUnsavedCloseMsg", nil)
+}
+
+// EditorSaveAndSwitch says "Save & Switch"
+// in the language the app shows.
+func EditorSaveAndSwitch() string { return In(i18n.Locale()).EditorSaveAndSwitch() }
+
+// EditorSaveAndSwitch says "Save & Switch"
+// in the language of msgs.
+func (msgs Messages) EditorSaveAndSwitch() string {
+	return Catalog.Format(msgs.locale, "editorSaveAndSwitch", nil)
+}
+
+// EditorDiscardAndSwitch says "Discard & Switch"
+// in the language the app shows.
+func EditorDiscardAndSwitch() string { return In(i18n.Locale()).EditorDiscardAndSwitch() }
+
+// EditorDiscardAndSwitch says "Discard & Switch"
+// in the language of msgs.
+func (msgs Messages) EditorDiscardAndSwitch() string {
+	return Catalog.Format(msgs.locale, "editorDiscardAndSwitch", nil)
+}
+
+// EditorSaveAndClose says "Save & Close"
+// in the language the app shows.
+func EditorSaveAndClose() string { return In(i18n.Locale()).EditorSaveAndClose() }
+
+// EditorSaveAndClose says "Save & Close"
+// in the language of msgs.
+func (msgs Messages) EditorSaveAndClose() string {
+	return Catalog.Format(msgs.locale, "editorSaveAndClose", nil)
+}
+
+// EditorDiscardAndClose says "Discard"
+// in the language the app shows.
+func EditorDiscardAndClose() string { return In(i18n.Locale()).EditorDiscardAndClose() }
+
+// EditorDiscardAndClose says "Discard"
+// in the language of msgs.
+func (msgs Messages) EditorDiscardAndClose() string {
+	return Catalog.Format(msgs.locale, "editorDiscardAndClose", nil)
+}
+
 // SettingsTitle says "Settings"
 // in the language the app shows.
 func SettingsTitle() string { return In(i18n.Locale()).SettingsTitle() }
@@ -1990,14 +2190,34 @@ func (msgs Messages) SettingsOpenAtLoginErr() string {
 	return Catalog.Format(msgs.locale, "settingsOpenAtLoginErr", nil)
 }
 
-// SettingsHideDockIcon says "Hide Dock Icon (Menu Bar Only)"
+// SettingsLaunchInBackground says "Launch in Background"
+// in the language the app shows.
+func SettingsLaunchInBackground() string { return In(i18n.Locale()).SettingsLaunchInBackground() }
+
+// SettingsLaunchInBackground says "Launch in Background"
+// in the language of msgs.
+func (msgs Messages) SettingsLaunchInBackground() string {
+	return Catalog.Format(msgs.locale, "settingsLaunchInBackground", nil)
+}
+
+// SettingsHideDockIcon says "Hide Dock Icon When No Window Is Open"
 // in the language the app shows.
 func SettingsHideDockIcon() string { return In(i18n.Locale()).SettingsHideDockIcon() }
 
-// SettingsHideDockIcon says "Hide Dock Icon (Menu Bar Only)"
+// SettingsHideDockIcon says "Hide Dock Icon When No Window Is Open"
 // in the language of msgs.
 func (msgs Messages) SettingsHideDockIcon() string {
 	return Catalog.Format(msgs.locale, "settingsHideDockIcon", nil)
+}
+
+// SettingsGlobalSearch says "Global Quick Search"
+// in the language the app shows.
+func SettingsGlobalSearch() string { return In(i18n.Locale()).SettingsGlobalSearch() }
+
+// SettingsGlobalSearch says "Global Quick Search"
+// in the language of msgs.
+func (msgs Messages) SettingsGlobalSearch() string {
+	return Catalog.Format(msgs.locale, "settingsGlobalSearch", nil)
 }
 
 // SettingsNotifications says "System Notifications"
@@ -2220,6 +2440,46 @@ func (msgs Messages) SettingsShortcutClearTip() string {
 	return Catalog.Format(msgs.locale, "settingsShortcutClearTip", nil)
 }
 
+// SettingsShortcutResetDefault says "Reset Default"
+// in the language the app shows.
+func SettingsShortcutResetDefault() string { return In(i18n.Locale()).SettingsShortcutResetDefault() }
+
+// SettingsShortcutResetDefault says "Reset Default"
+// in the language of msgs.
+func (msgs Messages) SettingsShortcutResetDefault() string {
+	return Catalog.Format(msgs.locale, "settingsShortcutResetDefault", nil)
+}
+
+// SettingsShortcutReserved says "This shortcut is reserved by the app"
+// in the language the app shows.
+func SettingsShortcutReserved() string { return In(i18n.Locale()).SettingsShortcutReserved() }
+
+// SettingsShortcutReserved says "This shortcut is reserved by the app"
+// in the language of msgs.
+func (msgs Messages) SettingsShortcutReserved() string {
+	return Catalog.Format(msgs.locale, "settingsShortcutReserved", nil)
+}
+
+// SettingsShortcutRejected says "Shortcut was rejected by the desktop"
+// in the language the app shows.
+func SettingsShortcutRejected() string { return In(i18n.Locale()).SettingsShortcutRejected() }
+
+// SettingsShortcutRejected says "Shortcut was rejected by the desktop"
+// in the language of msgs.
+func (msgs Messages) SettingsShortcutRejected() string {
+	return Catalog.Format(msgs.locale, "settingsShortcutRejected", nil)
+}
+
+// SettingsShortcutPending says "Waiting for desktop confirmation…"
+// in the language the app shows.
+func SettingsShortcutPending() string { return In(i18n.Locale()).SettingsShortcutPending() }
+
+// SettingsShortcutPending says "Waiting for desktop confirmation…"
+// in the language of msgs.
+func (msgs Messages) SettingsShortcutPending() string {
+	return Catalog.Format(msgs.locale, "settingsShortcutPending", nil)
+}
+
 // SettingsShortcutFailed says "Unavailable: {err}"
 // in the language the app shows.
 func SettingsShortcutFailed(err string) string { return In(i18n.Locale()).SettingsShortcutFailed(err) }
@@ -2238,6 +2498,16 @@ func SettingsIntegrationTitle() string { return In(i18n.Locale()).SettingsIntegr
 // in the language of msgs.
 func (msgs Messages) SettingsIntegrationTitle() string {
 	return Catalog.Format(msgs.locale, "settingsIntegrationTitle", nil)
+}
+
+// SettingsURLSchemeCopyTip says "Copy example URL"
+// in the language the app shows.
+func SettingsURLSchemeCopyTip() string { return In(i18n.Locale()).SettingsURLSchemeCopyTip() }
+
+// SettingsURLSchemeCopyTip says "Copy example URL"
+// in the language of msgs.
+func (msgs Messages) SettingsURLSchemeCopyTip() string {
+	return Catalog.Format(msgs.locale, "settingsURLSchemeCopyTip", nil)
 }
 
 // SettingsAboutUpdates says "Updates & About"
@@ -2334,6 +2604,26 @@ func SettingsOpenAbout() string { return In(i18n.Locale()).SettingsOpenAbout() }
 // in the language of msgs.
 func (msgs Messages) SettingsOpenAbout() string {
 	return Catalog.Format(msgs.locale, "settingsOpenAbout", nil)
+}
+
+// AboutTagline says "A fast, calm, local-first desktop bookmark manager."
+// in the language the app shows.
+func AboutTagline() string { return In(i18n.Locale()).AboutTagline() }
+
+// AboutTagline says "A fast, calm, local-first desktop bookmark manager."
+// in the language of msgs.
+func (msgs Messages) AboutTagline() string {
+	return Catalog.Format(msgs.locale, "aboutTagline", nil)
+}
+
+// AboutCredits says "Open-source · Syncs via iCloud Drive or any folder."
+// in the language the app shows.
+func AboutCredits() string { return In(i18n.Locale()).AboutCredits() }
+
+// AboutCredits says "Open-source · Syncs via iCloud Drive or any folder."
+// in the language of msgs.
+func (msgs Messages) AboutCredits() string {
+	return Catalog.Format(msgs.locale, "aboutCredits", nil)
 }
 
 // AiEngineLabel says "Polish Engine"
@@ -2696,6 +2986,16 @@ func AiErrIncomplete(written string, total string) string {
 // in the language of msgs.
 func (msgs Messages) AiErrIncomplete(written string, total string) string {
 	return Catalog.Format(msgs.locale, "aiErrIncomplete", map[string]any{"written": written, "total": total})
+}
+
+// AiErrDownloadStalled says "Download stalled; retry to resume"
+// in the language the app shows.
+func AiErrDownloadStalled() string { return In(i18n.Locale()).AiErrDownloadStalled() }
+
+// AiErrDownloadStalled says "Download stalled; retry to resume"
+// in the language of msgs.
+func (msgs Messages) AiErrDownloadStalled() string {
+	return Catalog.Format(msgs.locale, "aiErrDownloadStalled", nil)
 }
 
 // AiErrNoOpenAIModel says "OpenAI model name is not set"
@@ -3472,6 +3772,36 @@ func (msgs Messages) ImportErrIsDir() string {
 	return Catalog.Format(msgs.locale, "importErrIsDir", nil)
 }
 
+// ImportErrNotRegularFile says "Only regular bookmark files can be imported"
+// in the language the app shows.
+func ImportErrNotRegularFile() string { return In(i18n.Locale()).ImportErrNotRegularFile() }
+
+// ImportErrNotRegularFile says "Only regular bookmark files can be imported"
+// in the language of msgs.
+func (msgs Messages) ImportErrNotRegularFile() string {
+	return Catalog.Format(msgs.locale, "importErrNotRegularFile", nil)
+}
+
+// ImportErrTooLarge says "Bookmark file is too large (max 64 MB)"
+// in the language the app shows.
+func ImportErrTooLarge() string { return In(i18n.Locale()).ImportErrTooLarge() }
+
+// ImportErrTooLarge says "Bookmark file is too large (max 64 MB)"
+// in the language of msgs.
+func (msgs Messages) ImportErrTooLarge() string {
+	return Catalog.Format(msgs.locale, "importErrTooLarge", nil)
+}
+
+// ImportQueueRemaining says "{count, plural, one {# more file queued} other {# more files queued}}"
+// in the language the app shows.
+func ImportQueueRemaining(count int) string { return In(i18n.Locale()).ImportQueueRemaining(count) }
+
+// ImportQueueRemaining says "{count, plural, one {# more file queued} other {# more files queued}}"
+// in the language of msgs.
+func (msgs Messages) ImportQueueRemaining(count int) string {
+	return Catalog.Format(msgs.locale, "importQueueRemaining", map[string]any{"count": count})
+}
+
 // ImportErrNoBookmarks says "No bookmarks found in file"
 // in the language the app shows.
 func ImportErrNoBookmarks() string { return In(i18n.Locale()).ImportErrNoBookmarks() }
@@ -3692,16 +4022,6 @@ func (msgs Messages) ToastCopiedMarkdown() string {
 	return Catalog.Format(msgs.locale, "toastCopiedMarkdown", nil)
 }
 
-// ToastCopiedText says "Copied"
-// in the language the app shows.
-func ToastCopiedText() string { return In(i18n.Locale()).ToastCopiedText() }
-
-// ToastCopiedText says "Copied"
-// in the language of msgs.
-func (msgs Messages) ToastCopiedText() string {
-	return Catalog.Format(msgs.locale, "toastCopiedText", nil)
-}
-
 // ToastCopyFailed says "Copy failed: {err}"
 // in the language the app shows.
 func ToastCopyFailed(err string) string { return In(i18n.Locale()).ToastCopyFailed(err) }
@@ -3710,6 +4030,16 @@ func ToastCopyFailed(err string) string { return In(i18n.Locale()).ToastCopyFail
 // in the language of msgs.
 func (msgs Messages) ToastCopyFailed(err string) string {
 	return Catalog.Format(msgs.locale, "toastCopyFailed", map[string]any{"err": err})
+}
+
+// ToastFileMissing says "File not found: {name}"
+// in the language the app shows.
+func ToastFileMissing(name string) string { return In(i18n.Locale()).ToastFileMissing(name) }
+
+// ToastFileMissing says "File not found: {name}"
+// in the language of msgs.
+func (msgs Messages) ToastFileMissing(name string) string {
+	return Catalog.Format(msgs.locale, "toastFileMissing", map[string]any{"name": name})
 }
 
 // ToastNoIconFetched says "No site icon found"
@@ -3884,4 +4214,44 @@ func NotifyUpdateBody(version string) string { return In(i18n.Locale()).NotifyUp
 // in the language of msgs.
 func (msgs Messages) NotifyUpdateBody(version string) string {
 	return Catalog.Format(msgs.locale, "notifyUpdateBody", map[string]any{"version": version})
+}
+
+// MenuCardSize says "Card Size"
+// in the language the app shows.
+func MenuCardSize() string { return In(i18n.Locale()).MenuCardSize() }
+
+// MenuCardSize says "Card Size"
+// in the language of msgs.
+func (msgs Messages) MenuCardSize() string {
+	return Catalog.Format(msgs.locale, "menuCardSize", nil)
+}
+
+// CardSizeCompact says "Compact"
+// in the language the app shows.
+func CardSizeCompact() string { return In(i18n.Locale()).CardSizeCompact() }
+
+// CardSizeCompact says "Compact"
+// in the language of msgs.
+func (msgs Messages) CardSizeCompact() string {
+	return Catalog.Format(msgs.locale, "cardSizeCompact", nil)
+}
+
+// CardSizeStandard says "Standard"
+// in the language the app shows.
+func CardSizeStandard() string { return In(i18n.Locale()).CardSizeStandard() }
+
+// CardSizeStandard says "Standard"
+// in the language of msgs.
+func (msgs Messages) CardSizeStandard() string {
+	return Catalog.Format(msgs.locale, "cardSizeStandard", nil)
+}
+
+// CardSizeDetail says "Detailed"
+// in the language the app shows.
+func CardSizeDetail() string { return In(i18n.Locale()).CardSizeDetail() }
+
+// CardSizeDetail says "Detailed"
+// in the language of msgs.
+func (msgs Messages) CardSizeDetail() string {
+	return Catalog.Format(msgs.locale, "cardSizeDetail", nil)
 }

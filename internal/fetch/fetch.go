@@ -22,6 +22,7 @@ import (
 	"golang.org/x/net/html/charset"
 
 	"cooool-mark/internal/app"
+	"cooool-mark/internal/locales"
 )
 
 const (
@@ -30,6 +31,8 @@ const (
 	maxIconBytes     = 1 << 20
 	maxManifestBytes = 256 << 10
 )
+
+var errRedirectBlocked = errors.New("redirect blocked")
 
 type fetcher struct{ a *app.App }
 
@@ -63,7 +66,8 @@ func (f *fetcher) Fetch(ctx context.Context, rawURL string) (app.PageMeta, error
 		manifestURLs = parsed.manifests
 	}
 
-	if meta.Title == "" && (f.a == nil || f.a.UseWebView()) {
+	canUseWebView := !errors.Is(httpErr, errRedirectBlocked) && !parsed.nonHTML && (f.a == nil || f.a.UseWebView())
+	if meta.Title == "" && canUseWebView {
 		if wm, werr := fetchWithWebView(ctx, meta.URL); werr == nil {
 			if wm.FinalURL != "" {
 				meta.URL = wm.FinalURL
@@ -158,6 +162,19 @@ func newHTTPClient() (*http.Client, error) {
 	return &http.Client{
 		Transport: tr,
 		Timeout:   15 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return fmt.Errorf("%w: stopped after 10 redirects", errRedirectBlocked)
+			}
+			scheme := strings.ToLower(req.URL.Scheme)
+			if scheme != "http" && scheme != "https" {
+				return fmt.Errorf("%w: unsupported redirect scheme %q", errRedirectBlocked, req.URL.Scheme)
+			}
+			if req.URL.Host == "" {
+				return fmt.Errorf("%w: redirect missing host", errRedirectBlocked)
+			}
+			return nil
+		},
 	}, nil
 }
 
@@ -167,6 +184,7 @@ type parsedHTML struct {
 	siteName    string
 	icons       []iconCandidate
 	manifests   []string
+	nonHTML     bool
 }
 
 func (f *fetcher) fetchHTML(ctx context.Context, client *http.Client, targetURL string) (string, parsedHTML, error) {
@@ -176,7 +194,11 @@ func (f *fetcher) fetchHTML(ctx context.Context, client *http.Client, targetURL 
 	}
 	req.Header.Set("User-Agent", defaultUserAgent)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-	req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+	if locales.IsChinese() {
+		req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+	} else {
+		req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -188,11 +210,19 @@ func (f *fetcher) fetchHTML(ctx context.Context, client *http.Client, targetURL 
 	if resp.Request != nil && resp.Request.URL != nil {
 		finalURL = resp.Request.URL.String()
 	}
-	if resp.StatusCode >= 400 {
-		return finalURL, parsedHTML{}, fmt.Errorf("http %d", resp.StatusCode)
-	}
 
+	disp := strings.ToLower(resp.Header.Get("Content-Disposition"))
 	ct := resp.Header.Get("Content-Type")
+	mediaType := strings.ToLower(strings.TrimSpace(strings.Split(ct, ";")[0]))
+	nonHTML := strings.Contains(disp, "attachment") ||
+		(mediaType != "" && mediaType != "text/html" && mediaType != "application/xhtml+xml")
+
+	if resp.StatusCode >= 400 {
+		return finalURL, parsedHTML{nonHTML: nonHTML}, fmt.Errorf("http %d", resp.StatusCode)
+	}
+	if nonHTML {
+		return finalURL, parsedHTML{nonHTML: true}, nil
+	}
 	limited := io.LimitReader(resp.Body, maxHTMLBytes)
 	reader, err := charset.NewReader(limited, ct)
 	if err != nil {

@@ -5,14 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
 
-	"github.com/egoist/mygo"
-
 	"cooool-mark/internal/app"
+	"cooool-mark/internal/locales"
 	"cooool-mark/internal/model"
 )
 
@@ -28,11 +26,11 @@ func polishOpenAI(ctx context.Context, s model.Settings, in app.PolishInput) (ap
 	}
 	modelName := strings.TrimSpace(s.OpenAIModel)
 	if modelName == "" {
-		return app.Polish{}, errors.New("未设置 OpenAI 模型名称")
+		return app.Polish{}, errors.New(locales.AiErrNoOpenAIModel())
 	}
 
 	var apiKey string
-	if rawKey, err := mygo.Secrets.Get("openai-key"); err == nil {
+	if rawKey, err := app.LoadOpenAIKey(); err == nil {
 		apiKey = strings.TrimSpace(string(rawKey))
 	}
 
@@ -82,7 +80,7 @@ func polishOpenAICompat(
 	client := newHTTPClient(s, 0)
 	resp, err := client.Do(req)
 	if err != nil {
-		return app.Polish{}, fmt.Errorf("请求模型接口失败: %w", err)
+		return app.Polish{}, errors.New(locales.AiErrRequestFailed(err.Error()))
 	}
 	defer resp.Body.Close()
 
@@ -91,10 +89,10 @@ func polishOpenAICompat(
 		return app.Polish{}, err
 	}
 	if resp.StatusCode == http.StatusUnauthorized && apiKey == "" {
-		return app.Polish{}, errors.New("未配置 OpenAI API Key")
+		return app.Polish{}, errors.New(locales.AiErrNoOpenAIKey())
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return app.Polish{}, fmt.Errorf("模型接口返回状态 %d: %s", resp.StatusCode, strings.TrimSpace(string(respBytes)))
+		return app.Polish{}, errors.New(locales.AiErrAPIStatus(resp.StatusCode, strings.TrimSpace(string(respBytes))))
 	}
 
 	var parsed struct {
@@ -106,13 +104,13 @@ func polishOpenAICompat(
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(respBytes, &parsed); err != nil {
-		return app.Polish{}, fmt.Errorf("解析模型响应失败: %w", err)
+		return app.Polish{}, errors.New(locales.AiErrParseResponse(err.Error()))
 	}
 	if parsed.Error != nil && parsed.Error.Message != "" {
 		return app.Polish{}, errors.New(parsed.Error.Message)
 	}
 	if len(parsed.Choices) == 0 {
-		return app.Polish{}, errors.New("模型未返回任何结果")
+		return app.Polish{}, errors.New(locales.AiErrEmptyResult())
 	}
 	return parsePolishJSON(parsed.Choices[0].Message.Content, in.Choices)
 }

@@ -1,13 +1,13 @@
 package mainwin
 
 import (
-	"fmt"
 	"runtime"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
 
 	"cooool-mark/internal/app"
+	"cooool-mark/internal/locales"
 	"cooool-mark/internal/model"
 	"cooool-mark/internal/theme"
 	"cooool-mark/internal/widget"
@@ -28,7 +28,7 @@ func (s *mainState) buildSidebar(c *ui.Context, p *theme.Palette) {
 		top := ui.Row(c).Height(topH).Shrink(0).AlignItems(ui.Center).Padding(0, 12, 0, 16).DragWindow()
 		top.Children(func() {
 			if runtime.GOOS != "darwin" || bar.Left == 0 {
-				ui.Text(c, "Cooool Mark").Font(theme.Serif).FontSize(14).FontWeight(600).TextColor(p.Text2).SingleLine()
+				ui.Text(c, locales.AppName()).Font(theme.TitleFont(c)).FontSize(14).FontWeight(600).TextColor(p.Text2).SingleLine()
 			}
 		})
 
@@ -36,11 +36,11 @@ func (s *mainState) buildSidebar(c *ui.Context, p *theme.Palette) {
 		nav := widget.AutoScrollbar(c, ui.Scroll(c.Key("sidebar-subs"))).Grow(1).MinHeight(0).Padding(6, 10)
 		nav.Children(func() {
 			if g == nil {
-				s.buildSidebarEmpty(c, p, "还没有分组", "新建分组", func() { s.startAddGroup(c) })
+				s.buildSidebarEmpty(c, p, locales.MainNoGroups(), locales.ActionNewGroup(), func() { s.startAddGroup(c) })
 				return
 			}
 			if len(g.Subs) == 0 && !s.addingSub {
-				s.buildSidebarEmpty(c, p, "还没有子分组", "新建子分组", func() { s.startAddSub(c) })
+				s.buildSidebarEmpty(c, p, locales.MainNoSubs(), locales.ActionNewSub(), func() { s.startAddSub(c) })
 				return
 			}
 			col := ui.Column(c.Key("sidebar-subs-col")).Gap(2)
@@ -64,7 +64,7 @@ func (s *mainState) buildSidebar(c *ui.Context, p *theme.Palette) {
 		// Bottom bar: new sub-group button (only when the sidebar isn't showing its empty state).
 		if g != nil && (len(g.Subs) > 0 || s.addingSub) {
 			ui.Row(c).Shrink(0).Padding(8, 10, 12, 10).Children(func() {
-				btn := ui.ButtonBase(c).Label("新建子分组").Tooltip("新建子分组").
+				btn := ui.ButtonBase(c).Label(locales.ActionNewSub()).Tooltip(locales.ActionNewSub()).
 					Height(28).FillWidth().PaddingX(10).Radius(7).Gap(6).AlignItems(ui.Center).
 					TextColor(p.Muted)
 				if btn.Hovered() {
@@ -72,7 +72,7 @@ func (s *mainState) buildSidebar(c *ui.Context, p *theme.Palette) {
 				}
 				btn.Children(func() {
 					ui.Icon(c, theme.IconPlus).FontSize(14).Shrink(0)
-					ui.Text(c, "新建子分组").FontSize(12.5).SingleLine()
+					ui.Text(c, locales.ActionNewSub()).FontSize(12.5).SingleLine()
 				})
 				if btn.Clicked() {
 					s.startAddSub(c)
@@ -87,7 +87,7 @@ func (s *mainState) buildSidebarEmpty(c *ui.Context, p *theme.Palette, title, bt
 		ui.Row(c).Size(34, 34).Radius(9).Background(p.SideSel.Mix(p.Sidebar, 0.4)).Center().Children(func() {
 			ui.Icon(c, theme.IconEmptyFolder).FontSize(16).TextColor(p.Muted)
 		})
-		ui.Text(c, title).FontSize(12.5).TextColor(p.Muted).SingleLine()
+		ui.Text(c, title).FontSize(12.5).TextColor(p.Muted).SingleLine().Selectable()
 		btn := ui.ButtonBase(c).Label(btnLabel).Tooltip(btnLabel).
 			Height(28).PaddingX(12).Radius(7).Gap(5).AlignItems(ui.Center).
 			Background(p.SideSel).TextColor(p.Text)
@@ -113,7 +113,7 @@ func (s *mainState) buildSidebarSubItem(c *ui.Context, p *theme.Palette, lib *mo
 			Background(p.Surface).Border(1.5, p.Accent)
 		box.Children(func() {
 			in := ui.TextInputBase(c, &s.renameDraft).Bind(&s.renameHandle).
-				Placeholder("子分组名称").Label("重命名子分组").Grow(1).TextColor(p.Text)
+				Placeholder(locales.MainSubNamePlaceholder()).Label(locales.MainRenameSubLabel()).Grow(1).TextColor(p.Text)
 			if in.Focused() {
 				s.renameFocused = true
 			}
@@ -162,40 +162,40 @@ func (s *mainState) buildSidebarSubItem(c *ui.Context, p *theme.Palette, lib *mo
 	}
 
 	buildSubMenu := func(m *ui.Menu) {
-		if m.Item("重命名").Chosen() {
+		if m.Item(locales.ActionRename()).Icon(theme.MenuIcon(theme.IconEdit)).Chosen() {
 			s.startRenameSub(c, sub)
 		}
-		if m.Item("新建书签到这里").Chosen() {
+		if m.Item(locales.ActionNewBookmarkHere()).Icon(theme.MenuIcon(theme.IconPlus)).Chosen() {
 			if a.Win.ShowEditor != nil {
 				a.Win.ShowEditor(app.EditorRequest{GroupID: g.ID, SubID: sub.ID})
 			}
 		}
 		m.Separator()
-		if m.Item("上移").Disabled(idx == 0).Chosen() {
+		if m.Item(locales.ActionMoveUp()).Icon(theme.MenuIcon(theme.IconChevronUp)).Disabled(idx == 0).Chosen() {
 			reorderSubByDelta(a, g, idx, -1)
 		}
-		if m.Item("下移").Disabled(idx >= len(g.Subs)-1).Chosen() {
+		if m.Item(locales.ActionMoveDown()).Icon(theme.MenuIcon(theme.IconChevronDown)).Disabled(idx >= len(g.Subs)-1).Chosen() {
 			reorderSubByDelta(a, g, idx, 1)
 		}
 		if len(lib.Groups) > 1 {
-			m.Submenu("移动到其他分组", func(sm *ui.Menu) {
+			m.Submenu(locales.ActionMoveToOtherGroup(), func(sm *ui.Menu) {
 				for _, targetG := range lib.Groups {
 					if targetG.ID == g.ID {
 						continue
 					}
-					if sm.Item(targetG.Name).ID("mv-" + targetG.ID).Chosen() {
+					if sm.Item(targetG.Name).Icon(theme.MenuIcon(theme.IconFolder)).ID("mv-" + targetG.ID).Chosen() {
 						a.MoveSub(g.ID, sub.ID, targetG.ID)
 						a.EnsurePlace()
 					}
 				}
-			})
+			}).Icon(theme.MenuIcon(theme.IconMove))
 		}
-		if m.Item("提升为一级分组").Chosen() {
+		if m.Item(locales.ActionPromoteToGroup()).Icon(theme.MenuIcon(theme.IconPromote)).Chosen() {
 			a.PromoteSub(g.ID, sub.ID)
 			a.EnsurePlace()
 		}
 		m.Separator()
-		if m.Item("删除子分组").Danger().Chosen() {
+		if m.Item(locales.ActionDeleteSub()).Icon(theme.MenuIcon(theme.IconTrash)).IconColor(p.Danger).Danger().Chosen() {
 			a.DeleteSub(g.ID, sub.ID)
 		}
 	}
@@ -211,7 +211,7 @@ func (s *mainState) buildSidebarSubItem(c *ui.Context, p *theme.Palette, lib *mo
 			switch {
 			case dragOver:
 				txt.TextColor(p.AccentText).FontWeight(600)
-				ui.Text(c, fmt.Sprintf("移入 %d", len(drag.IDs))).FontSize(11.5).FontWeight(500).TextColor(p.AccentText).SingleLine()
+				ui.Text(c, locales.MainDropMoveCount(len(drag.IDs))).FontSize(11.5).FontWeight(500).TextColor(p.AccentText).SingleLine()
 			case selected:
 				txt.TextColor(p.Text).FontWeight(500)
 			default:
@@ -223,7 +223,7 @@ func (s *mainState) buildSidebarSubItem(c *ui.Context, p *theme.Palette, lib *mo
 		})
 
 		if !dragOver && (hovered || *menuOpen) {
-			moreBtn := ui.ButtonBase(c).Label("子分组操作").Tooltip("子分组操作").
+			moreBtn := ui.ButtonBase(c).Label(locales.MenuSubActions()).Tooltip(locales.MenuSubActions()).
 				Size(22, 22).Radius(6).Center().TextColor(p.Text2).Shrink(0)
 			if moreBtn.Hovered() || *menuOpen {
 				moreBtn.Background(p.SideSel.Mix(p.Text, 0.08)).TextColor(p.Text)
@@ -250,7 +250,7 @@ func (s *mainState) buildNewSubInput(c *ui.Context, p *theme.Palette, groupID st
 		Background(p.Surface).Border(1.5, p.Accent)
 	box.Children(func() {
 		in := ui.TextInputBase(c, &s.newSubDraft).Bind(&s.newSubHandle).
-			Placeholder("子分组名称").Grow(1).TextColor(p.Text)
+			Placeholder(locales.MainSubNamePlaceholder()).Label(locales.ActionNewSub()).Grow(1).TextColor(p.Text)
 		if in.Focused() {
 			s.newSubFocused = true
 		}

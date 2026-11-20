@@ -67,7 +67,7 @@ func Secondary(c *ui.Context, p *theme.Palette, text string) ui.Element {
 func Danger(c *ui.Context, p *theme.Palette, text string, filled bool) ui.Element {
 	b := ui.ButtonBase(c).Height(30).PaddingX(13).Radius(8).AlignItems(ui.Center)
 	if filled {
-		b.Background(p.Danger).TextColor(ui.Hex("#ffffff"))
+		b.Background(p.Danger).TextColor(p.OnDanger)
 	} else {
 		b.TextColor(p.Danger)
 		if b.Hovered() {

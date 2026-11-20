@@ -3,7 +3,6 @@ package mode
 
 import (
 	"bytes"
-	"context"
 	"image"
 	"image/color"
 	"image/png"
@@ -13,14 +12,15 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 
 	"cooool-mark/internal/app"
+	"cooool-mark/internal/locales"
 	"cooool-mark/internal/model"
+	"cooool-mark/internal/theme"
 )
 
 var (
@@ -49,6 +49,12 @@ func Close() {
 	syncQuickSearch(nil, false)
 }
 
+// HasActiveSummonMode reports whether at least one persistent summon surface
+// (tray icon, notch panel, or edge trigger) is currently alive.
+func HasActiveSummonMode() bool {
+	return curTray != nil || curNotch != nil || curEdge != nil
+}
+
 // HideSummoned collapses every summoned panel (after opening a bookmark).
 func HideSummoned() {
 	if curNotch != nil {
@@ -62,6 +68,114 @@ func HideSummoned() {
 	}
 	if curQuick != nil {
 		curQuick.hide()
+	}
+}
+
+// ToggleNotch enables notch mode if needed and toggles its expanded panel.
+func ToggleNotch(a *app.App) {
+	if a == nil {
+		return
+	}
+	if !a.Settings.ModeOn(model.ModeNotch) {
+		a.Settings.SetMode(model.ModeNotch, true)
+		a.SaveSettings()
+		if curNotch != nil {
+			curNotch.expand()
+		}
+		return
+	}
+	if curNotch == nil {
+		syncNotch(a, true)
+	}
+	if curNotch == nil {
+		return
+	}
+	if curNotch.state == notchOpen {
+		curNotch.collapse()
+	} else {
+		curNotch.expand()
+	}
+}
+
+// ToggleEdge enables edge mode if needed and toggles its expanded panel.
+func ToggleEdge(a *app.App) {
+	if a == nil {
+		return
+	}
+	if !a.Settings.ModeOn(model.ModeEdge) {
+		a.Settings.SetMode(model.ModeEdge, true)
+		a.SaveSettings()
+		if curEdge != nil {
+			curEdge.expand()
+		}
+		return
+	}
+	if curEdge == nil {
+		syncEdge(a, true)
+	}
+	if curEdge == nil {
+		return
+	}
+	if curEdge.state == edgeOut {
+		curEdge.collapse()
+	} else {
+		curEdge.expand()
+	}
+}
+
+// ToggleTray enables tray mode if needed and toggles the menu bar panel.
+func ToggleTray(a *app.App) {
+	if a == nil {
+		return
+	}
+	if !a.Settings.ModeOn(model.ModeTray) {
+		a.Settings.SetMode(model.ModeTray, true)
+		a.SaveSettings()
+		if curTray != nil {
+			curTray.showAttached()
+		}
+		return
+	}
+	if curTray == nil {
+		syncTray(a, true)
+	}
+	if curTray != nil {
+		curTray.toggleAttached()
+	}
+}
+
+// RefreshChrome rebuilds tray menus/tooltips and updates mode window titles after locale changes.
+func RefreshChrome(a *app.App) {
+	if curTray != nil {
+		curTray.refreshChrome(a)
+	}
+	if curNotch != nil {
+		if a != nil {
+			curNotch.app = a
+		}
+		if curNotch.win != nil {
+			curNotch.win.SetTitle(locales.ModeNotchTitle())
+			curNotch.win.Invalidate()
+		}
+	}
+	if curEdge != nil {
+		if a != nil {
+			curEdge.app = a
+		}
+		if curEdge.win != nil {
+			curEdge.win.SetTitle(locales.ModeEdgeTitle())
+			curEdge.win.Invalidate()
+		}
+	}
+	if curQuick != nil {
+		if a != nil {
+			curQuick.app = a
+			quickApp = a
+		}
+		if curQuick.win != nil {
+			curQuick.win.SetTitle(locales.ModeQuickSearchTitle())
+			curQuick.win.Invalidate()
+		}
 	}
 }
 
@@ -126,89 +240,81 @@ func normalizeHTTPURL(raw string) string {
 	return ""
 }
 
-func titleFromURL(raw string) string {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return raw
+func modeMenuOptions(p *theme.Palette) ui.PopoverMenuOptions {
+	return ui.PopoverMenuOptions{
+		Panel: func(panel ui.Element) {
+			shadow := ui.RGBA(25, 15, 9, 0.22)
+			if p.Dark {
+				shadow = ui.RGBA(0, 0, 0, 0.5)
+			}
+			panel.Background(p.Surface).Border(1, p.Line).Radius(10).Padding(5).
+				NoShadow().Shadow(0, 12, 32, -10, shadow)
+		},
+		Item: func(item ui.Element) {
+			item.MinHeight(29).PaddingX(10).Radius(6)
+		},
 	}
-	host := strings.TrimPrefix(strings.ToLower(u.Hostname()), "www.")
-	if host != "" {
-		return host
-	}
-	return raw
 }
 
-// saveDroppedURL saves a dropped URL into groupID/subID and fetches page metadata asynchronously.
-func saveDroppedURL(a *app.App, rawURL, groupID, subID string) {
-	if a == nil || rawURL == "" {
-		return
-	}
-	lib := a.Store.Lib()
-	if existing := lib.FindURL(rawURL); existing != nil {
-		a.Say("已在「" + a.PathOf(existing) + "」")
-		return
-	}
-	g := activeGroup(lib, groupID)
-	if g == nil {
-		groupID = a.AddGroup("收藏")
-	} else {
-		groupID = g.ID
-	}
-	if lib.Sub(groupID, subID) == nil {
-		subID = firstSubID(lib.Group(groupID))
-		if subID == "" {
-			subID = a.AddSub(groupID, "常用")
-		}
-	}
-	fallbackTitle := titleFromURL(rawURL)
-	id := a.SaveBookmark(model.Bookmark{
-		Title:   fallbackTitle,
-		URL:     rawURL,
-		GroupID: groupID,
-		SubID:   subID,
-	})
-	if a.Fetch == nil {
-		return
-	}
-	dir := a.Store.Dir()
-	app.Background(12*time.Second, func(ctx context.Context) {
-		meta, err := a.Fetch.Fetch(ctx, rawURL)
+func copyModeText(c *ui.Context, a *app.App, value, success string) {
+	c.WriteClipboardThen(value, func(err error) {
 		if err != nil {
+			a.SayErr(locales.ToastCopyFailed(err.Error()), "", nil)
 			return
 		}
-		a.Post(func() {
-			b := a.Store.Lib().Bookmark(id)
-			if a.Store.Dir() != dir || b == nil || b.URL != rawURL {
-				return
-			}
-			var iconRel string
-			if len(meta.Icon) > 0 && b.Icon.Image == "" {
-				ext := meta.IconExt
-				if ext == "" {
-					ext = ".png"
-				}
-				if path, err := a.Store.SaveIcon(meta.Icon, ext); err == nil {
-					iconRel = path
-				}
-			}
-			a.Store.Update(func(l *model.Library) {
-				b := l.Bookmark(id)
-				if b == nil {
-					return
-				}
-				if meta.Title != "" && (b.Title == "" || b.Title == fallbackTitle || b.Title == b.URL) {
-					b.Title = meta.Title
-				}
-				if meta.Description != "" && b.Note == "" {
-					b.Note = meta.Description
-				}
-				if iconRel != "" && b.Icon.Image == "" {
-					b.Icon.Image = iconRel
-				}
-				b.UpdatedAt = time.Now()
-			})
-		})
+		a.Say(success)
 	})
+}
+
+func bindBookmarkPopoverMenu(
+	c *ui.Context,
+	a *app.App,
+	el ui.Element,
+	b *model.Bookmark,
+	opts ui.PopoverMenuOptions,
+	menuOpen *bool,
+	onOpen func(),
+	onEdit func(),
+	onDelete func(),
+) {
+	el.PopoverMenu(func(m *ui.Menu) {
+		*menuOpen = true
+		if m.Item(locales.ActionOpen()).Icon(theme.MenuIcon(theme.IconExternal)).Chosen() {
+			*menuOpen = false
+			if onOpen != nil {
+				onOpen()
+			}
+		}
+		if m.Item(locales.ActionCopyURL()).Icon(theme.MenuIcon(theme.IconLink)).Disabled(b.URL == "").Chosen() {
+			*menuOpen = false
+			copyModeText(c, a, b.URL, locales.ToastCopiedURL())
+		}
+		if m.Item(locales.ActionCopyTitle()).Icon(theme.MenuIcon(theme.IconCopy)).Disabled(b.Title == "").Chosen() {
+			*menuOpen = false
+			copyModeText(c, a, b.Title, locales.ToastCopiedTitle())
+		}
+		if m.Item(locales.ActionCopyMarkdown()).Icon(theme.MenuIcon(theme.IconCode)).Disabled(b.URL == "").Chosen() {
+			*menuOpen = false
+			copyModeText(c, a, "["+b.Title+"]("+b.URL+")", locales.ToastCopiedMarkdown())
+		}
+		m.Separator()
+		if m.Item(locales.ActionEdit()).Icon(theme.MenuIcon(theme.IconEdit)).Chosen() {
+			*menuOpen = false
+			if onEdit != nil {
+				onEdit()
+			}
+			if a.Win.ShowEditor != nil {
+				a.Win.ShowEditor(app.EditorRequest{ID: b.ID})
+			}
+		}
+		if m.Item(locales.ActionDelete()).Icon(theme.MenuIcon(theme.IconTrash)).Danger().Chosen() {
+			*menuOpen = false
+			a.Delete(b.ID)
+			if onDelete != nil {
+				onDelete()
+			}
+		}
+	}, opts)
 }
 
 func firstSubID(g *model.Group) string {
@@ -308,7 +414,7 @@ func renderTemplateBar(c *ui.Context, a *app.App, b *model.Bookmark, query *stri
 		ui.Text(c, b.Title).FontSize(12).FontWeight(500).TextColor(accent).MaxWidth(106).
 			MinWidth(0).SingleLine().Tooltip(b.Title)
 		in := ui.TextInputBase(c.Key("tmpl-in"), query).Bind(handle).Grow(1).MinWidth(80).
-			FontSize(12).Label("模板参数").Placeholder("输入参数，回车打开").TextColor(fg).PlaceholderColor(muted)
+			FontSize(12).Label(locales.MainTemplateLabel()).Placeholder(locales.MainTemplatePlaceholder()).TextColor(fg).PlaceholderColor(muted)
 		if in.Submitted() && a.Open(b, *query) {
 			onCancel()
 		}
@@ -316,8 +422,8 @@ func renderTemplateBar(c *ui.Context, a *app.App, b *model.Bookmark, query *stri
 			onCancel()
 		}
 		cancel := ui.ButtonBase(c.Key("tmpl-cancel")).PaddingX(6).Height(22).Radius(6).
-			TextColor(muted).Label("取消").Tooltip("取消").Center().Shrink(0)
-		cancel.Children(func() { ui.Text(c, "取消").FontSize(11).SingleLine() })
+			TextColor(muted).Label(locales.ActionCancel()).Tooltip(locales.ActionCancel()).Center().Shrink(0)
+		cancel.Children(func() { ui.Text(c, locales.ActionCancel()).FontSize(11).SingleLine() })
 		if cancel.Clicked() {
 			onCancel()
 		}

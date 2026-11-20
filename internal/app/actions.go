@@ -2,10 +2,14 @@ package app
 
 import (
 	"context"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/egoist/mygo"
+
+	"cooool-mark/internal/locales"
 	"cooool-mark/internal/model"
 	"cooool-mark/internal/store"
 )
@@ -17,6 +21,10 @@ import (
 // auto-polish on and the bookmark not yet polished, a background pass
 // fills empty fields afterwards (never blocking the save).
 func (a *App) SaveBookmark(b model.Bookmark) string {
+	return a.saveBookmark(b, true, true)
+}
+
+func (a *App) saveBookmark(b model.Bookmark, toast, autoPolish bool) string {
 	now := time.Now()
 	b.Title = strings.TrimSpace(b.Title)
 	b.URL = strings.TrimSpace(b.URL)
@@ -44,10 +52,271 @@ func (a *App) SaveBookmark(b model.Bookmark) string {
 		}
 	})
 	if isNew {
-		a.Say("已保存到「" + a.PathOf(&b) + "」")
-		a.Polish(b.ID, false)
+		if toast {
+			a.Say(locales.ToastSavedTo(a.PathOf(&b)))
+		}
+		if autoPolish {
+			a.Polish(b.ID, false)
+		}
 	}
 	return b.ID
+}
+
+// QuickAddFromClipboard saves the URL currently in the system clipboard.
+// Returns true when a URL was found and saved (or already existed).
+func (a *App) QuickAddFromClipboard() bool {
+	u := extractFirstURL(mygo.Clipboard.ReadText())
+	if u == "" {
+		a.Say(locales.ToastClipboardNoURL())
+		return false
+	}
+	a.QuickAddURL(u, "", "", "", false)
+	return true
+}
+
+// QuickAddURL saves rawURL into the requested group/sub (or the active place
+// when empty), then fetches its page metadata and icon in the background
+// before running AI auto-polish. When silent is true or the app is not active,
+// a desktop notification confirms the save.
+func (a *App) QuickAddURL(rawURL, title, groupName, subName string, silent bool) string {
+	cleanURL := normalizeQuickURL(rawURL)
+	if cleanURL == "" {
+		return ""
+	}
+	lib := a.Store.Lib()
+	if existing := lib.FindURL(cleanURL); existing != nil {
+		msg := locales.ToastAlreadyIn(a.PathOf(existing))
+		a.Say(msg)
+		if silent || !mygo.App.IsActive() {
+			a.Notify("quicksave-"+existing.ID, locales.NotifyQuickSaveTitle(), msg, func() {
+				a.Go(existing.GroupID, existing.SubID)
+				if a.Win.ShowMain != nil {
+					a.Win.ShowMain()
+				}
+			})
+		}
+		return existing.ID
+	}
+
+	groupID, subID := a.resolveTargetPlace(groupName, subName)
+	return a.QuickAddToPlace(cleanURL, title, groupID, subID, silent)
+}
+
+// QuickAddToPlace saves cleanURL directly into groupID/subID (resolving fallbacks
+// if missing) and runs background metadata fetch + AI auto-polish.
+func (a *App) QuickAddToPlace(rawURL, title, groupID, subID string, silent bool) string {
+	cleanURL := normalizeQuickURL(rawURL)
+	if cleanURL == "" {
+		return ""
+	}
+	lib := a.Store.Lib()
+	if existing := lib.FindURL(cleanURL); existing != nil {
+		a.Say(locales.ToastAlreadyIn(a.PathOf(existing)))
+		return existing.ID
+	}
+
+	if g := lib.Group(groupID); g == nil {
+		if len(lib.Groups) > 0 {
+			groupID = lib.Groups[0].ID
+		} else {
+			groupID = a.AddGroup(locales.DefaultGroup())
+		}
+	}
+	if a.Store.Lib().Sub(groupID, subID) == nil {
+		if g := a.Store.Lib().Group(groupID); g != nil && len(g.Subs) > 0 {
+			subID = g.Subs[0].ID
+		} else {
+			subID = a.AddSub(groupID, locales.DefaultSub())
+		}
+	}
+
+	fallbackTitle := strings.TrimSpace(title)
+	hasExplicitTitle := fallbackTitle != ""
+	if fallbackTitle == "" {
+		fallbackTitle = hostFallbackTitle(cleanURL)
+	}
+
+	deferPolish := a.Fetch != nil
+	id := a.saveBookmark(model.Bookmark{
+		Title:   fallbackTitle,
+		URL:     cleanURL,
+		GroupID: groupID,
+		SubID:   subID,
+	}, true, !deferPolish)
+	if id == "" {
+		return ""
+	}
+
+	path := a.PathOf(a.Store.Lib().Bookmark(id))
+	if silent || !mygo.App.IsActive() {
+		a.Notify("quicksave-"+id, locales.NotifyQuickSaveTitle(), locales.NotifyQuickSaveBody(fallbackTitle, path), func() {
+			a.Go(groupID, subID)
+			if a.Win.ShowMain != nil {
+				a.Win.ShowMain()
+			}
+		})
+	}
+
+	if !deferPolish {
+		return id
+	}
+	dir := a.Store.Dir()
+	Background(12*time.Second, func(ctx context.Context) {
+		meta, err := a.Fetch.Fetch(ctx, cleanURL)
+		a.Post(func() {
+			b := a.Store.Lib().Bookmark(id)
+			if a.Store.Dir() != dir || b == nil || b.URL != cleanURL {
+				return
+			}
+			if err == nil {
+				var iconRel string
+				if len(meta.Icon) > 0 && b.Icon.Image == "" {
+					ext := meta.IconExt
+					if ext == "" {
+						ext = ".png"
+					}
+					if savedPath, saveErr := a.Store.SaveIcon(meta.Icon, ext); saveErr == nil {
+						iconRel = savedPath
+					}
+				}
+				a.Store.Update(func(l *model.Library) {
+					b := l.Bookmark(id)
+					if b == nil {
+						return
+					}
+					if meta.Title != "" && (!hasExplicitTitle && (b.Title == "" || b.Title == fallbackTitle || b.Title == b.URL)) {
+						b.Title = meta.Title
+					}
+					if meta.Description != "" && b.Note == "" {
+						b.Note = meta.Description
+					}
+					if iconRel != "" && b.Icon.Image == "" {
+						b.Icon.Image = iconRel
+					}
+					b.UpdatedAt = time.Now()
+				})
+			}
+			a.Polish(id, false)
+		})
+	})
+	return id
+}
+
+func (a *App) resolveTargetPlace(groupName, subName string) (string, string) {
+	groupName = strings.TrimSpace(groupName)
+	subName = strings.TrimSpace(subName)
+	lib := a.Store.Lib()
+
+	var groupID, subID string
+	if groupName != "" {
+		for _, g := range lib.Groups {
+			if strings.EqualFold(strings.TrimSpace(g.Name), groupName) {
+				groupID = g.ID
+				break
+			}
+		}
+		if groupID == "" {
+			subLabel := subName
+			if subLabel == "" {
+				subLabel = locales.DefaultSub()
+			}
+			now := time.Now()
+			gid, sid := model.NewID(), model.NewID()
+			a.Store.Update(func(l *model.Library) {
+				order := 1.0
+				if n := len(l.Groups); n > 0 {
+					order = l.Groups[n-1].Order + 1
+				}
+				l.Groups = append(l.Groups, model.Group{
+					ID:        gid,
+					Name:      groupName,
+					Order:     order,
+					UpdatedAt: now,
+					Subs:      []model.Sub{{ID: sid, Name: subLabel, Order: 1, UpdatedAt: now}},
+				})
+			})
+			return gid, sid
+		}
+	} else {
+		a.EnsurePlace()
+		groupID, subID = a.Group, a.Sub
+	}
+
+	if groupID != "" && subName != "" {
+		if g := a.Store.Lib().Group(groupID); g != nil {
+			for _, s := range g.Subs {
+				if strings.EqualFold(strings.TrimSpace(s.Name), subName) {
+					subID = s.ID
+					break
+				}
+			}
+			if subID == "" {
+				subID = a.AddSub(groupID, subName)
+			}
+		}
+	}
+	return groupID, subID
+}
+
+func normalizeQuickURL(raw string) string {
+	s := strings.TrimSpace(raw)
+	if s == "" || strings.ContainsAny(s, " \t\n\r") {
+		return ""
+	}
+	low := strings.ToLower(s)
+	if !strings.HasPrefix(low, "http://") && !strings.HasPrefix(low, "https://") {
+		if !looksLikeBareDomain(s) {
+			return ""
+		}
+		s = "https://" + s
+	}
+	u, err := url.Parse(s)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return ""
+	}
+	return s
+}
+
+func extractFirstURL(text string) string {
+	for _, line := range strings.Split(text, "\n") {
+		if u := normalizeQuickURL(line); u != "" {
+			return u
+		}
+	}
+	return ""
+}
+
+func looksLikeBareDomain(q string) bool {
+	dot := strings.IndexByte(q, '.')
+	if dot <= 0 || dot >= len(q)-1 {
+		return false
+	}
+	host := q
+	if slash := strings.IndexAny(host, "/?#"); slash >= 0 {
+		host = host[:slash]
+	}
+	parts := strings.Split(host, ".")
+	if len(parts) < 2 {
+		return false
+	}
+	tld := parts[len(parts)-1]
+	return len(tld) >= 2 && !strings.ContainsAny(tld, "0123456789")
+}
+
+func hostFallbackTitle(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	host := strings.TrimPrefix(strings.ToLower(u.Hostname()), "www.")
+	if host != "" {
+		return host
+	}
+	return raw
 }
 
 // defaultIcon is set by the theme package (avoids an import cycle).
@@ -88,7 +357,7 @@ func (a *App) Polish(id string, force bool) {
 			}
 			if err != nil {
 				if force {
-					a.SayErr("润色失败", "重试", func() { a.Polish(id, true) })
+					a.SayErr(locales.ToastPolishFailed(), locales.ActionRetry(), func() { a.Polish(id, true) })
 				}
 				return
 			}
@@ -132,7 +401,7 @@ func (a *App) Polish(id string, force bool) {
 // where they were), with undo.
 func (a *App) Move(ids []string, groupID, subID string) {
 	if a.Store.Lib().Sub(groupID, subID) == nil {
-		a.SayErr("目标子分组已找不到", "", nil)
+		a.SayErr(locales.ToastTargetSubMissing(), "", nil)
 		return
 	}
 	type was struct {
@@ -161,9 +430,9 @@ func (a *App) Move(ids []string, groupID, subID string) {
 			path += " / " + s.Name
 		}
 	}
-	text := "已移到「" + path + "」"
+	text := locales.ToastMovedTo(path)
 	if len(ids) > 1 {
-		text = "已移动 " + itoa(len(ids)) + " 项"
+		text = locales.ToastMovedCount(len(ids))
 	}
 	a.SayUndo(text, func() {
 		a.Store.Update(func(l *model.Library) {
@@ -238,9 +507,9 @@ func (a *App) Delete(ids ...string) {
 	if len(saved) == 0 {
 		return
 	}
-	text := "已删除「" + saved[0].Title + "」"
+	text := locales.ToastDeletedOne(saved[0].Title)
 	if len(saved) > 1 {
-		text = "已删除 " + itoa(len(saved)) + " 项"
+		text = locales.ToastDeletedCount(len(saved))
 	}
 	a.SayUndo(text, func() { a.restoreSaved(saved) })
 }
@@ -271,7 +540,7 @@ func (a *App) restoreSaved(saved []model.Bookmark) {
 func (a *App) AddGroup(name string) string {
 	now := time.Now()
 	g := model.Group{ID: model.NewID(), Name: name, UpdatedAt: now,
-		Subs: []model.Sub{{ID: model.NewID(), Name: "常用", UpdatedAt: now}}}
+		Subs: []model.Sub{{ID: model.NewID(), Name: locales.DefaultSub(), UpdatedAt: now}}}
 	a.Store.Update(func(l *model.Library) {
 		g.Order = float64(len(l.Groups) + 1)
 		if n := len(l.Groups); n > 0 {
@@ -360,7 +629,7 @@ func (a *App) DeleteGroup(id string) {
 		l.Tombstones = append(l.Tombstones, model.Tombstone{ID: id, DeletedAt: time.Now()})
 	})
 	a.EnsurePlace()
-	a.SayUndo("已删除「"+saved.Name+"」", func() {
+	a.SayUndo(locales.ToastDeletedOne(saved.Name), func() {
 		a.Store.Update(func(l *model.Library) {
 			saved.UpdatedAt = time.Now()
 			idx = min(idx, len(l.Groups))
@@ -394,7 +663,7 @@ func (a *App) DeleteSub(groupID, subID string) {
 		l.Tombstones = append(l.Tombstones, model.Tombstone{ID: subID, DeletedAt: time.Now()})
 	})
 	a.EnsurePlace()
-	a.SayUndo("已删除「"+saved.Name+"」", func() {
+	a.SayUndo(locales.ToastDeletedOne(saved.Name), func() {
 		a.Store.Update(func(l *model.Library) {
 			if g := l.Group(groupID); g != nil {
 				saved.UpdatedAt = time.Now()
@@ -453,7 +722,7 @@ func (a *App) PromoteSub(groupID, subID string) {
 		}
 		now := time.Now()
 		ng := model.Group{ID: model.NewID(), Name: s.Name, UpdatedAt: now,
-			Subs: []model.Sub{{ID: subID, Name: "常用", UpdatedAt: now}}}
+			Subs: []model.Sub{{ID: subID, Name: locales.DefaultSub(), UpdatedAt: now}}}
 		if n := len(l.Groups); n > 0 {
 			ng.Order = l.Groups[n-1].Order + 1
 		}
@@ -555,26 +824,4 @@ func sortGroups(g []model.Group) {
 			g[j], g[j-1] = g[j-1], g[j]
 		}
 	}
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var b [20]byte
-	i := len(b)
-	for n > 0 {
-		i--
-		b[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		b[i] = '-'
-	}
-	return string(b[i:])
 }

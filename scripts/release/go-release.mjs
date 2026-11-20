@@ -49,8 +49,15 @@ export function canReuseReleaseBinary({ goos, goarch, version, outFile = release
 export function goRelease({ goos, goarch, outFile = releaseBinaryPath(goos, goarch) }) {
   mkdirSync(dirname(outFile), { recursive: true });
   const version = readPackageVersion(ROOT);
-  const verFlag = `-X cooool-mark/internal/app.BuildVersion=${version}`;
-  const ldflags = goos === "windows" ? `-s -w -H=windowsgui ${verFlag}` : `-s -w ${verFlag}`;
+  const metaFlags = [
+    `-X cooool-mark/internal/app.BuildVersion=${version}`,
+    `-X 'github.com/egoist/mygo.packageName=Cooool Mark'`,
+    `-X github.com/egoist/mygo.packageVersion=${version}`,
+    `-X github.com/egoist/mygo.packageIdentifier=app.cooool.mark`,
+    `-X github.com/egoist/mygo.packageURLSchemes=coooolmark`,
+    `-X github.com/egoist/mygo.packageFileExtensions=html,htm,json`,
+  ].join(" ");
+  const ldflags = goos === "windows" ? `-s -w -H=windowsgui ${metaFlags}` : `-s -w ${metaFlags}`;
   run("go", ["build", `-ldflags=${ldflags}`, "-o", outFile, "."], {
     env: {
       ...process.env,

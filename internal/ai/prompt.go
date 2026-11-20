@@ -3,28 +3,56 @@ package ai
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 
 	"cooool-mark/internal/app"
+	"cooool-mark/internal/locales"
 )
 
-const polishInstructions = `你是书签整理助手。请根据网页信息生成简洁准确的中文整理结果，只输出严格 JSON（不要 markdown 代码块或额外说明），格式：{"title":"精简中文标题","note":"一句话中文备注","tags":["最多3个简短标签"],"group":"最匹配的分组路径或空字符串"}`
+const (
+	polishInstructionsZH = `你是书签整理助手。请根据网页信息生成简洁准确的中文整理结果，只输出严格 JSON（不要 markdown 代码块或额外说明），格式：{"title":"精简中文标题","note":"一句话中文备注","tags":["最多3个简短标签"],"group":"最匹配的分组路径或空字符串"}`
+	polishInstructionsEN = `You are a bookmark organizer. Given webpage details, produce concise and accurate English metadata as strict JSON only (no markdown fences or extra text) in this format: {"title":"concise title","note":"one-sentence note","tags":["up to 3 short tags"],"group":"best matching group path or empty string"}`
+)
 
 func buildPolishPrompt(in app.PolishInput) (instructions, userPrompt string) {
+	if locales.IsChinese() {
+		var b strings.Builder
+		b.WriteString("网址: ")
+		b.WriteString(strings.TrimSpace(in.URL))
+		if t := strings.TrimSpace(in.Title); t != "" {
+			b.WriteString("\n原标题: ")
+			b.WriteString(truncateRunes(t, 160))
+		}
+		if d := strings.TrimSpace(in.Description); d != "" {
+			b.WriteString("\n简介: ")
+			b.WriteString(truncateRunes(d, 300))
+		}
+		if len(in.Choices) > 0 {
+			b.WriteString("\n可选分组: ")
+			for i, c := range in.Choices {
+				if i > 0 {
+					b.WriteString(" | ")
+				}
+				b.WriteString(c.Path)
+			}
+		}
+		b.WriteString("\n要求: 标题精简并去掉网站后缀；备注限一句话；tags 最多3个；group 必须完全等于某个可选分组或留空\"\"。")
+		return polishInstructionsZH, b.String()
+	}
+
 	var b strings.Builder
-	b.WriteString("网址: ")
+	b.WriteString("URL: ")
 	b.WriteString(strings.TrimSpace(in.URL))
 	if t := strings.TrimSpace(in.Title); t != "" {
-		b.WriteString("\n原标题: ")
+		b.WriteString("\nOriginal title: ")
 		b.WriteString(truncateRunes(t, 160))
 	}
 	if d := strings.TrimSpace(in.Description); d != "" {
-		b.WriteString("\n简介: ")
+		b.WriteString("\nDescription: ")
 		b.WriteString(truncateRunes(d, 300))
 	}
 	if len(in.Choices) > 0 {
-		b.WriteString("\n可选分组: ")
+		b.WriteString("\nAvailable groups: ")
 		for i, c := range in.Choices {
 			if i > 0 {
 				b.WriteString(" | ")
@@ -32,8 +60,8 @@ func buildPolishPrompt(in app.PolishInput) (instructions, userPrompt string) {
 			b.WriteString(c.Path)
 		}
 	}
-	b.WriteString("\n要求: 标题精简并去掉网站后缀；备注限一句话；tags 最多3个；group 必须完全等于某个可选分组或留空\"\"。")
-	return polishInstructions, b.String()
+	b.WriteString("\nRules: keep title concise without redundant site suffix; note is one sentence; max 3 short tags; group must exactly match one of the available groups or \"\".")
+	return polishInstructionsEN, b.String()
 }
 
 type rawPolishJSON struct {
@@ -47,12 +75,12 @@ func parsePolishJSON(raw string, choices []app.GroupChoice) (app.Polish, error) 
 	cleaned := stripThinkingAndFences(raw)
 	jsonText, ok := extractJSONObject(cleaned)
 	if !ok {
-		return app.Polish{}, errors.New("AI 未返回 JSON 对象")
+		return app.Polish{}, errors.New(locales.AiErrNoJSON())
 	}
 
 	var parsed rawPolishJSON
 	if err := json.Unmarshal([]byte(jsonText), &parsed); err != nil {
-		return app.Polish{}, fmt.Errorf("解析 AI JSON 失败: %w", err)
+		return app.Polish{}, errors.New(locales.AiErrParseJSON(err.Error()))
 	}
 
 	out := app.Polish{

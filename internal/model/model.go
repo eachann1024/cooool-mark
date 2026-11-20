@@ -167,17 +167,20 @@ func (l *Library) FindURL(url string) *Bookmark {
 // and the scheme, for duplicate checks.
 func NormalizeURL(u string) string {
 	u = strings.TrimSpace(u)
-	low := strings.ToLower(u)
-	for _, p := range []string{"https://", "http://"} {
-		if strings.HasPrefix(low, p) {
-			u, low = u[len(p):], low[len(p):]
-		}
+	if len(u) >= 8 && strings.EqualFold(u[:8], "https://") {
+		u = u[8:]
+	} else if len(u) >= 7 && strings.EqualFold(u[:7], "http://") {
+		u = u[7:]
 	}
-	low = strings.TrimPrefix(low, "www.")
-	if i := strings.IndexAny(low, "/?#"); i >= 0 {
-		low = low[:i] + u[len(u)-len(low)+i:]
+	if len(u) >= 4 && strings.EqualFold(u[:4], "www.") {
+		u = u[4:]
 	}
-	return strings.TrimSuffix(low, "/")
+	if i := strings.IndexAny(u, "/?#"); i >= 0 {
+		u = strings.ToLower(u[:i]) + u[i:]
+	} else {
+		u = strings.ToLower(u)
+	}
+	return strings.TrimSuffix(u, "/")
 }
 
 func sortBookmarks(bs []*Bookmark) {
@@ -208,11 +211,28 @@ const (
 	StorageFolder = "folder" // any folder, e.g. OneDrive, Dropbox, Syncthing
 )
 
+// Grid card sizes (Settings.CardSize).
+const (
+	CardCompact  = "compact"
+	CardStandard = "standard"
+	CardDetail   = "detail"
+)
+
+// NormalizeCardSize maps unknown or empty values to the standard size.
+func NormalizeCardSize(v string) string {
+	switch v {
+	case CardCompact, CardDetail:
+		return v
+	}
+	return CardStandard
+}
+
 // Settings are per device and never synced (settings.json in the app's
 // user data dir).
 type Settings struct {
-	Appearance  string `json:"appearance"`  // auto | light | dark
-	DefaultView string `json:"defaultView"` // list | grid
+	Appearance  string `json:"appearance"`         // auto | light | dark
+	DefaultView string `json:"defaultView"`        // list | grid
+	CardSize    string `json:"cardSize,omitempty"` // compact | standard | detail (grid view)
 	ShowNote    bool   `json:"showNote"`
 	ShowTags    bool   `json:"showTags"`
 
@@ -222,6 +242,14 @@ type Settings struct {
 	GlobalSearchOff    bool     `json:"globalSearchOff,omitempty"`
 	LaunchInBackground bool     `json:"launchInBackground,omitempty"`
 	HideDockWhenClosed bool     `json:"hideDockWhenClosed,omitempty"`
+	NotificationsOff   bool     `json:"notificationsOff,omitempty"`
+
+	// Global shortcuts (Electron-style accelerators, e.g. "Alt+Space", "CmdOrCtrl+Shift+K").
+	// ShortcutSearch defaults to "Alt+Space" when empty and GlobalSearchOff is false.
+	ShortcutSearch   string `json:"shortcutSearch,omitempty"`
+	ShortcutQuickAdd string `json:"shortcutQuickAdd,omitempty"`
+	ShortcutNotch    string `json:"shortcutNotch,omitempty"`
+	ShortcutEdge     string `json:"shortcutEdge,omitempty"`
 
 	AutoBackup bool `json:"autoBackup"`
 
@@ -256,14 +284,34 @@ func DefaultSettings() Settings {
 		OpenModes: []string{ModeTray}, EdgeSide: "right",
 		AutoBackup: true,
 		Storage:    StorageLocal, AIEngine: AIOff, AIAutoPolish: true, LocalModel: "qwen3.5-0.8b",
-		OpenAIURL: "https://api.openai.com/v1",
+		OpenAIURL:  "https://api.openai.com/v1",
 		UseWebView: true,
 	}
 }
 
+// DefaultSearchShortcut is the default global hotkey for Quick Search.
+const DefaultSearchShortcut = "Alt+Space"
+
 // GlobalSearchOn reports whether the system-wide quick search hotkey is enabled.
 func (s *Settings) GlobalSearchOn() bool {
 	return !s.GlobalSearchOff
+}
+
+// EffectiveSearchShortcut returns the active global shortcut for Quick Search,
+// or "" when global search is disabled.
+func (s *Settings) EffectiveSearchShortcut() string {
+	if s.GlobalSearchOff {
+		return ""
+	}
+	if v := strings.TrimSpace(s.ShortcutSearch); v != "" {
+		return v
+	}
+	return DefaultSearchShortcut
+}
+
+// NotificationsOn reports whether desktop notifications are enabled.
+func (s *Settings) NotificationsOn() bool {
+	return !s.NotificationsOff
 }
 
 // ModeOn reports whether an open mode is switched on.
@@ -296,9 +344,4 @@ func (s *Settings) SetMode(mode string, on bool) {
 		out = append(out, mode)
 	}
 	s.OpenModes = out
-}
-
-// AnySummonModeOn reports whether any background summon mode is enabled.
-func (s *Settings) AnySummonModeOn() bool {
-	return s.ModeOn(ModeTray) || s.ModeOn(ModeNotch) || s.ModeOn(ModeEdge)
 }

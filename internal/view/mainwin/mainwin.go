@@ -4,12 +4,14 @@ package mainwin
 import (
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 
 	"cooool-mark/internal/app"
+	"cooool-mark/internal/locales"
 	"cooool-mark/internal/model"
 	"cooool-mark/internal/theme"
 	"cooool-mark/internal/widget"
@@ -27,6 +29,10 @@ type dragPayload struct {
 }
 
 type mainState struct {
+	pal        *theme.Palette
+	lastOpenID string
+	lastOpenAt time.Time
+
 	app *app.App
 
 	// Search state.
@@ -60,7 +66,7 @@ type mainState struct {
 	subHeaderHandles    map[string]*ui.Handle
 	lastBrowseGroup     string
 	scrollToSub         string
-	groupCache      struct {
+	groupCache          struct {
 		library  *model.Library
 		revision int64
 		groupID  string
@@ -112,6 +118,13 @@ type mainState struct {
 	moveFocused bool
 }
 
+// RefreshChrome invalidates the main window when open (e.g. after locale changes).
+func RefreshChrome() {
+	if win != nil && !win.IsDestroyed() {
+		win.Invalidate()
+	}
+}
+
 // Show opens or focuses the main window. Main thread.
 func Show(a *app.App) {
 	a.PrepareRegularWindow()
@@ -125,7 +138,7 @@ func Show(a *app.App) {
 		return
 	}
 	win = mygo.NewWindow(mygo.WindowOptions{
-		Title:                "Cooool Mark",
+		Title:                locales.AppName(),
 		Width:                880,
 		Height:               580,
 		MinWidth:             640,
@@ -137,8 +150,27 @@ func Show(a *app.App) {
 		Content:              ui.View(state.view),
 	})
 	a.AddRegularWindow(win)
+	win.OnClose(func(*mygo.CloseEvent) {
+		a.FlushSettings()
+	})
 	win.OnClosed(func() { win = nil })
 	state.contentHandle.Focus()
+}
+
+// FocusSearch opens or focuses the main window search overlay while preserving
+// any existing search query if search is already open (for native menu Find).
+func FocusSearch(a *app.App) {
+	ensureState(a)
+	state.moveOpen = false
+	if state.searchOpen {
+		Show(a)
+		state.searchHandle.SelectAll()
+		if win != nil {
+			win.Invalidate()
+		}
+		return
+	}
+	ShowSearch(a, "")
 }
 
 // ShowSearch opens the main window with the search overlay focused and q typed.
@@ -184,6 +216,7 @@ func (s *mainState) view(c *ui.Context) {
 		s.tplBookmarkID = ""
 	}
 	p := theme.Apply(c, a.Settings.Appearance)
+	s.pal = p
 	c.Root().Background(p.Bg)
 
 	s.handleGlobalShortcuts(c)
@@ -298,6 +331,23 @@ func (s *mainState) handleGlobalShortcuts(c *ui.Context) {
 	if s.inputFocused(c) {
 		return
 	}
+	lib := a.Store.Lib()
+	for i := 0; i < 9; i++ {
+		if c.Shortcut(ui.Cmd, ui.Key1+ui.Key(i)) && !c.ShortcutRepeated() {
+			if i < len(lib.Groups) {
+				s.switchGroup(lib.Groups[i].ID)
+			}
+			return
+		}
+	}
+	if c.Shortcut(ui.Cmd|ui.Shift, ui.KeyBracketLeft) && !c.ShortcutRepeated() {
+		s.stepGroup(-1)
+		return
+	}
+	if c.Shortcut(ui.Cmd|ui.Shift, ui.KeyBracketRight) && !c.ShortcutRepeated() {
+		s.stepGroup(1)
+		return
+	}
 	if ch, ok := widget.TypedSearchKey(c); ok {
 		s.openSearch(c, ch, false)
 		return
@@ -307,7 +357,7 @@ func (s *mainState) handleGlobalShortcuts(c *ui.Context) {
 			a.Win.ShowEditor(app.EditorRequest{URL: ensureURLScheme(u), GroupID: a.Group, SubID: a.Sub})
 		}
 	}
-	if c.Shortcut(ui.Cmd, ui.KeyZ) && !c.ShortcutRepeated() && a.Toast.Action == "撤销" {
+	if c.Shortcut(ui.Cmd, ui.KeyZ) && !c.ShortcutRepeated() && a.Toast.Undoable {
 		a.ToastAction()
 	}
 
@@ -339,7 +389,7 @@ func (s *mainState) handleGlobalShortcuts(c *ui.Context) {
 	}
 
 	if c.Shortcut(0, ui.KeyEnter) && !c.ShortcutRepeated() {
-		if b := a.Store.Lib().Bookmark(s.cursorID); b != nil {
+		if b := lib.Bookmark(s.cursorID); b != nil {
 			s.activateBookmark(c, b)
 		}
 	}
@@ -350,7 +400,7 @@ func (s *mainState) handleGlobalShortcuts(c *ui.Context) {
 		}
 	}
 
-	if c.Shortcut(ui.Cmd, ui.KeyM) && !c.ShortcutRepeated() {
+	if c.Shortcut(ui.Cmd|ui.Shift, ui.KeyM) && !c.ShortcutRepeated() {
 		s.openMoveModal([]string{s.cursorID})
 	}
 
@@ -358,9 +408,40 @@ func (s *mainState) handleGlobalShortcuts(c *ui.Context) {
 		s.copyBookmarkURL(c, s.cursorID)
 	}
 
+	if c.Shortcut(ui.Cmd|ui.Shift, ui.KeyC) && !c.ShortcutRepeated() {
+		s.copyBookmarkTitle(c, s.cursorID)
+	}
+
 	if (c.Shortcut(0, ui.KeyBackspace) || c.Shortcut(0, ui.KeyDelete)) && !c.ShortcutRepeated() {
 		a.Delete(s.cursorID)
 	}
+}
+
+func (s *mainState) switchGroup(groupID string) {
+	if groupID == "" || groupID == s.app.Group {
+		return
+	}
+	s.clearSearch()
+	s.cursorID = ""
+	s.browseList.ScrollTo(0, ui.Start)
+	s.stopBrowseFollow()
+	s.app.Go(groupID, "")
+}
+
+func (s *mainState) stepGroup(delta int) {
+	groups := s.app.Store.Lib().Groups
+	if len(groups) <= 1 {
+		return
+	}
+	idx := 0
+	for i, g := range groups {
+		if g.ID == s.app.Group {
+			idx = i
+			break
+		}
+	}
+	next := (idx + delta + len(groups)) % len(groups)
+	s.switchGroup(groups[next].ID)
 }
 
 func (s *mainState) moveCursor(ids []string, delta int) {
@@ -387,7 +468,7 @@ func (s *mainState) moveCursor(ids []string, delta int) {
 func (s *mainState) drawExternalDropOverlay(c *ui.Context, p *theme.Palette) {
 	a := s.app
 	lib := a.Store.Lib()
-	targetName := "收藏夹"
+	targetName := locales.MainDropDefaultTarget()
 	if g := lib.Group(a.Group); g != nil {
 		targetName = g.Name
 		if sub := lib.Sub(g.ID, a.Sub); sub != nil {
@@ -397,21 +478,27 @@ func (s *mainState) drawExternalDropOverlay(c *ui.Context, p *theme.Palette) {
 	ui.Column(c).Absolute().Left(196).Top(58).Right(12).Bottom(12).
 		Radius(12).Background(p.AccentBg.Alpha(0.92)).Border(2, p.Accent).BorderStyle(ui.BorderDashed).
 		Center().PassThrough().Children(func() {
-		ui.Text(c, "松手保存到「"+targetName+"」").FontSize(14).FontWeight(600).TextColor(p.AccentText)
+		ui.Text(c, locales.MainDropSaveTo(targetName)).FontSize(14).FontWeight(600).TextColor(p.AccentText)
 	})
 }
 
 func (s *mainState) handleExternalDrop(drop transfer.Drop) {
 	a := s.app
 	if paths, err := drop.Data.Files(); err == nil && len(paths) > 0 {
+		var importable []string
 		for _, path := range paths {
 			low := strings.ToLower(path)
 			if strings.HasSuffix(low, ".html") || strings.HasSuffix(low, ".htm") || strings.HasSuffix(low, ".json") {
-				if a.Win.ShowImport != nil {
+				importable = append(importable, path)
+			}
+		}
+		if len(importable) > 0 {
+			if a.Win.ShowImport != nil {
+				for _, path := range importable {
 					a.Win.ShowImport(path)
 				}
-				return
 			}
+			return
 		}
 	}
 	if urls, err := drop.Data.URLs(); err == nil && len(urls) > 0 {

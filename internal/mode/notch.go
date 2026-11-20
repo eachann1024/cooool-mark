@@ -9,6 +9,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"cooool-mark/internal/app"
+	"cooool-mark/internal/locales"
 	"cooool-mark/internal/model"
 	"cooool-mark/internal/theme"
 	"cooool-mark/internal/widget"
@@ -37,6 +38,7 @@ type notchMode struct {
 	state        notchState
 	groupID      string
 	searching    bool
+	menuOpen     bool
 	query        string
 	searchInput  ui.Handle
 	hoverSince   time.Time
@@ -87,7 +89,7 @@ func newNotchMode(a *app.App) *notchMode {
 	}
 	x, y, w, h := n.boundsFor(notchClosed, 1)
 	n.win = mygo.NewWindow(mygo.WindowOptions{
-		Title:             "Cooool Mark 刘海",
+		Title:             locales.ModeNotchTitle(),
 		X:                 x,
 		Y:                 y,
 		Width:             w,
@@ -110,7 +112,7 @@ func newNotchMode(a *app.App) *notchMode {
 	a.AddWindow(n.win)
 	n.win.ShowInactive()
 	n.win.OnBlur(func() {
-		if n.state != notchClosed && time.Since(n.openedAt) > 150*time.Millisecond {
+		if !n.menuOpen && n.state != notchClosed && time.Since(n.openedAt) > 150*time.Millisecond {
 			n.collapse()
 		}
 	})
@@ -212,6 +214,7 @@ func (n *notchMode) setState(st notchState) {
 	n.hoverSince = time.Time{}
 	n.dragLeftAt = time.Time{}
 	if st == notchClosed {
+		n.menuOpen = false
 		n.searching = false
 		n.query = ""
 		n.tmplID = ""
@@ -270,6 +273,15 @@ func (n *notchMode) syncOpenHeight() {
 }
 
 func (n *notchMode) view(c *ui.Context) {
+	menuOpenThisFrame := false
+	defer func() {
+		if n.state == notchClosed {
+			n.menuOpen = false
+			return
+		}
+		n.menuOpen = menuOpenThisFrame
+	}()
+
 	p := theme.Apply(c, n.app.Settings.Appearance)
 	// Keep Notch's window theme dark so no widget or scrollbar inherits light surfaces.
 	base := c.Theme()
@@ -287,6 +299,16 @@ func (n *notchMode) view(c *ui.Context) {
 	nt.TextMuted = ui.RGBA(234, 232, 225, 0.55)
 	nt.Focus = ui.Hex("#e0875f")
 	nt.Selection = ui.Hex("#e0875f").Alpha(0.28)
+	if theme.Preferences().HighContrast {
+		nt.Surface = ui.RGBA(255, 255, 255, 0.18)
+		nt.SurfaceHover = ui.RGBA(255, 255, 255, 0.24)
+		nt.SurfacePressed = ui.RGBA(255, 255, 255, 0.30)
+		nt.Border = ui.RGBA(255, 255, 255, 0.34)
+		nt.Text = ui.Hex("#ffffff")
+		nt.TextMuted = ui.RGBA(255, 255, 255, 0.80)
+		nt.Focus = ui.Hex("#f09b74")
+		nt.Selection = ui.Hex("#f09b74").Alpha(0.36)
+	}
 	sb := theme.ScrollbarStyle(true)
 	nt.ScrollbarWidth = sb.ThumbWidth
 	nt.Scrollbar = sb.Thumb
@@ -301,12 +323,12 @@ func (n *notchMode) view(c *ui.Context) {
 		n.tmplID = ""
 	}
 
-	if n.state == notchOpen && c.Shortcut(ui.Cmd, ui.KeyF) && !c.ShortcutRepeated() {
+	if !n.menuOpen && n.state == notchOpen && c.Shortcut(ui.Cmd, ui.KeyF) && !c.ShortcutRepeated() {
 		n.searching = true
 		n.searchInput.SelectAll(c)
 	}
 
-	if n.state == notchOpen && c.Shortcut(0, ui.KeyEscape) {
+	if !n.menuOpen && n.state == notchOpen && c.Shortcut(0, ui.KeyEscape) {
 		if n.tmplID != "" {
 			n.tmplID = ""
 			n.tmplQuery = ""
@@ -326,7 +348,7 @@ func (n *notchMode) view(c *ui.Context) {
 		}
 	}
 
-	if n.state == notchOpen && !n.searching && !n.searchInput.Focused(c) && !n.tmplInput.Focused(c) {
+	if !n.menuOpen && n.state == notchOpen && !n.searching && !n.searchInput.Focused(c) && !n.tmplInput.Focused(c) {
 		if ch, ok := widget.TypedSearchKey(c); ok {
 			n.searching = true
 			n.query = ch
@@ -369,7 +391,7 @@ func (n *notchMode) view(c *ui.Context) {
 				g := activeGroup(lib, n.groupID)
 				gid, sid = g.ID, firstSubID(g)
 			}
-			saveDroppedURL(n.app, raw, gid, sid)
+			n.app.QuickAddToPlace(raw, "", gid, sid, false)
 		}
 		n.collapse()
 	}
@@ -426,9 +448,9 @@ func (n *notchMode) view(c *ui.Context) {
 
 		panel.Children(func() {
 			// Top notch trigger strip (200x32 centered at top)
-			trigLabel := "展开书签"
+			trigLabel := locales.ActionExpandBookmarks()
 			if n.state == notchOpen {
-				trigLabel = "收起书签"
+				trigLabel = locales.ActionCollapseBookmarks()
 			}
 			trigger := ui.ButtonBase(c.Key("notch-trigger")).Absolute().
 				Left((animW-200)/2).Top(0).Size(200, 32).FocusRing(false)
@@ -461,14 +483,14 @@ func (n *notchMode) view(c *ui.Context) {
 			case notchDrop:
 				n.renderDrop(c, lib)
 			case notchOpen:
-				n.renderOpen(c, p, lib)
+				n.renderOpen(c, p, lib, &menuOpenThisFrame)
 			}
 		})
 	})
 }
 
 func (n *notchMode) renderDrop(c *ui.Context, lib *model.Library) {
-	groupName := "默认分组"
+	groupName := locales.ModeDefaultGroup()
 	if len(lib.Groups) > 0 {
 		groupName = activeGroup(lib, n.groupID).Name
 	}
@@ -477,11 +499,11 @@ func (n *notchMode) renderDrop(c *ui.Context, lib *model.Library) {
 		Background(ui.RGBA(224, 135, 95, 0.10)).Center().Gap(10)
 	zone.Children(func() {
 		ui.Icon(c, theme.IconPlus).FontSize(18).TextColor(ui.Hex("#f0a07c"))
-		ui.Text(c, "存到「"+groupName+"」").FontSize(14).FontWeight(500).TextColor(ui.Hex("#f0a07c")).SingleLine()
+		ui.Text(c, locales.ModeDropSaveGroup(groupName)).FontSize(14).FontWeight(500).TextColor(ui.Hex("#f0a07c")).SingleLine()
 	})
 }
 
-func (n *notchMode) renderOpen(c *ui.Context, p *theme.Palette, lib *model.Library) {
+func (n *notchMode) renderOpen(c *ui.Context, p *theme.Palette, lib *model.Library, menuOpen *bool) {
 	body := ui.Column(c.Key("notch-body")).Fill().Padding(40, 20, 18, 20).Gap(14)
 	body.Children(func() {
 		defer widget.Toast(c, n.app, p, 12)
@@ -527,7 +549,7 @@ func (n *notchMode) renderOpen(c *ui.Context, p *theme.Palette, lib *model.Libra
 					ui.Spacer(c)
 				}
 
-				searchBtn := notchIconBtn(c, "notch-search-btn", theme.IconSearch, "搜索书签")
+				searchBtn := notchIconBtn(c, "notch-search-btn", theme.IconSearch, locales.MenuSearchBookmarks())
 				if searchBtn.Clicked() {
 					n.searching = true
 					n.searchInput.Focus(c)
@@ -545,7 +567,7 @@ func (n *notchMode) renderOpen(c *ui.Context, p *theme.Palette, lib *model.Libra
 				sbox.Children(func() {
 					ui.Icon(c, theme.IconSearch).FontSize(13).TextColor(ui.RGBA(234, 232, 225, 0.65)).Shrink(0)
 					in := ui.TextInputBase(c.Key("notch-q"), &n.query).Bind(&n.searchInput).Grow(1).MinWidth(0).
-						Label("搜索书签").Placeholder("搜索书签").TextColor(ui.Hex("#ffffff")).
+						Label(locales.MainSearchPlaceholder()).Placeholder(locales.MainSearchPlaceholder()).TextColor(ui.Hex("#ffffff")).
 						PlaceholderColor(ui.RGBA(234, 232, 225, 0.60))
 					if in.Changed() {
 						n.list.ScrollTo(0, ui.Start)
@@ -562,7 +584,7 @@ func (n *notchMode) renderOpen(c *ui.Context, p *theme.Palette, lib *model.Libra
 					}
 					if hasQ {
 						clr := ui.ButtonBase(c.Key("notch-qclr")).Size(18, 18).Radius(5).Center().
-							TextColor(ui.RGBA(234, 232, 225, 0.70)).Label("清空搜索").Tooltip("清空搜索").Shrink(0)
+							TextColor(ui.RGBA(234, 232, 225, 0.70)).Label(locales.ActionClearSearch()).Tooltip(locales.ActionClearSearch()).Shrink(0)
 						if clr.Hovered() {
 							clr.Background(ui.RGBA(255, 255, 255, 0.14)).TextColor(ui.Hex("#ffffff"))
 						}
@@ -576,7 +598,7 @@ func (n *notchMode) renderOpen(c *ui.Context, p *theme.Palette, lib *model.Libra
 					}
 				})
 
-				closeSearch := notchIconBtn(c, "notch-search-close", theme.IconClose, "退出搜索")
+				closeSearch := notchIconBtn(c, "notch-search-close", theme.IconClose, locales.ActionCloseSearch())
 				if closeSearch.Clicked() {
 					n.searching = false
 					n.query = ""
@@ -586,7 +608,7 @@ func (n *notchMode) renderOpen(c *ui.Context, p *theme.Palette, lib *model.Libra
 				}
 			}
 
-			mainBtn := notchIconBtn(c, "notch-main", theme.IconExternal, "打开主窗口")
+			mainBtn := notchIconBtn(c, "notch-main", theme.IconExternal, locales.MenuOpenMain())
 			if mainBtn.Clicked() {
 				n.collapse()
 				if n.app.Win.ShowMain != nil {
@@ -609,14 +631,14 @@ func (n *notchMode) renderOpen(c *ui.Context, p *theme.Palette, lib *model.Libra
 		items := n.currentItems(lib)
 
 		if len(items) == 0 {
-			msg := "还没有书签"
+			msg := locales.MainNoBookmarks()
 			if q != "" {
-				msg = "还没有匹配的书签"
+				msg = locales.MainNoMatchingBookmarks()
 			} else if len(lib.Groups) == 0 {
-				msg = "还没有分组"
+				msg = locales.MainNoGroups()
 			}
 			ui.Column(c.Key("notch-empty")).FillWidth().Grow(1).Center().Children(func() {
-				ui.Text(c, msg).Font(theme.Serif).FontSize(14).TextColor(ui.RGBA(234, 232, 225, 0.72)).SingleLine()
+				ui.Text(c, msg).Font(theme.TitleFont(c)).FontSize(14).TextColor(ui.RGBA(234, 232, 225, 0.72)).SingleLine()
 			})
 			return
 		}
@@ -653,6 +675,16 @@ func (n *notchMode) renderOpen(c *ui.Context, p *theme.Palette, lib *model.Libra
 								n.tmplInput.Focus(c)
 							}
 						}
+						bindBookmarkPopoverMenu(c, n.app, tile, b, modeMenuOptions(&theme.Dark), menuOpen,
+							func() {
+								n.openItem(b)
+								if n.tmplID != "" {
+									n.tmplInput.Focus(c)
+								}
+							},
+							n.collapse,
+							n.syncOpenHeight,
+						)
 					}
 				})
 			})

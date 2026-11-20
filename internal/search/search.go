@@ -10,6 +10,7 @@ import (
 	"github.com/mozillazg/go-pinyin"
 
 	"cooool-mark/internal/app"
+	"cooool-mark/internal/locales"
 	"cooool-mark/internal/model"
 )
 
@@ -189,7 +190,7 @@ func (s *searcher) Search(lib *model.Library, query string, groupID string) []ap
 
 		path := paths[groupSubKey{b.GroupID, b.SubID}]
 		if path == "" {
-			path = "未分组"
+			path = locales.Ungrouped()
 		}
 
 		results = append(results, scoredHit{

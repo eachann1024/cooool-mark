@@ -17,44 +17,88 @@ import (
 
 	"github.com/egoist/mygo"
 
+	"cooool-mark/internal/locales"
 	"cooool-mark/internal/model"
 	"cooool-mark/internal/store"
+	"cooool-mark/internal/update"
 )
 
 // BuildVersion is injected at release build time via -ldflags.
 var BuildVersion = "1.0.0"
 
+// Version returns the effective application version, preferring the bundle or
+// package metadata injected by mygo build over the fallback BuildVersion.
+func Version() string {
+	if v := strings.TrimSpace(mygo.App.Version()); v != "" {
+		return v
+	}
+	return BuildVersion
+}
+
 // Toast is the one transient message at the bottom of a window, with an
-// optional action (撤销, 重试…).
+// optional action (Undo, Retry…).
 type Toast struct {
-	Text   string
-	Action string
-	Do     func()
-	Err    bool
-	Until  time.Time
-	seq    int
+	Text     string
+	Action   string
+	Do       func()
+	Undoable bool
+	Err      bool
+	Until    time.Time
+	seq      int
+}
+
+// UpdateState tracks the latest in-app update check result.
+type UpdateState struct {
+	Checking  bool
+	Checked   bool
+	Available bool
+	Release   *update.ReleaseInfo
+	Err       string
 }
 
 // EditorRequest opens the editor: ID edits a bookmark; otherwise a new
 // one, prefilled with URL/Title and placed in GroupID/SubID.
+// FromExternal marks untrusted OS deep-link requests so the editor waits for
+// explicit user confirmation before fetching the page or running AI.
 type EditorRequest struct {
 	ID             string
 	URL, Title     string
 	GroupID, SubID string
+	FromExternal   bool
 }
 
 // Windows are the windows the views can open, set up by main.
 type Windows struct {
 	ShowMain        func()
 	ShowEditor      func(EditorRequest)
+	FocusSearch     func()
 	ShowSearch      func(query string)
 	ShowQuickSearch func()
 	ShowSettings    func(page string) // "general", "ai", "data"
-	ShowImport   func(path string) // "" asks for a file
+	ShowImport      func(path string) // "" asks for a file
+	ShowAbout       func()
+	Export          func(format string) // "html" | "json"
 	// ApplyModes creates/destroys the notch, tray and edge windows
 	// to match Settings.OpenModes.
 	ApplyModes func()
-	// HideSummoned hides whichever summoned panel (notch/tray/edge)
+	// HasActiveSummon reports whether at least one live persistent summon
+	// surface (tray, notch, or edge) is currently created and reachable.
+	HasActiveSummon func() bool
+	// ApplyShortcuts synchronizes global shortcuts with Settings.
+	ApplyShortcuts func()
+	// SetShortcut attempts to assign and register accel for slot, preserving
+	// the previous working shortcut on failure.
+	SetShortcut func(slot, accel string) bool
+	// SetShortcutsPaused temporarily suspends global shortcuts while recording one in Settings.
+	SetShortcutsPaused func(bool)
+	// RefreshChrome rebuilds menus, Dock/JumpList entries, and open window titles
+	// after locale or preference changes.
+	RefreshChrome func()
+	// ToggleNotch, ToggleEdge, ToggleTray summon or collapse individual panels.
+	ToggleNotch func()
+	ToggleEdge  func()
+	ToggleTray  func()
+	// HideSummoned hides whichever summoned panel (notch/tray/edge/quicksearch)
 	// is open, after a bookmark opened from it.
 	HideSummoned func()
 }
@@ -75,17 +119,25 @@ type App struct {
 	View              string // list | grid
 	StealthBackground bool
 
-	Toast Toast
+	Toast           Toast
+	Update          UpdateState
+	ShortcutErrs    map[string]string
+	ShortcutBound   map[string]string
+	ShortcutPending map[string]bool
 
-	settingsPath  string
-	savedSettings atomic.Pointer[model.Settings]
-	placeTimer    *time.Timer
-	placeDirty    bool
-	windows       []*mygo.Window
-	regularWins   []*mygo.Window
-	postMu        sync.Mutex
-	postQueue     []func()
-	toastSeq      int
+	settingsPath     string
+	savedSettings    atomic.Pointer[model.Settings]
+	placeTimer       *time.Timer
+	placeDirty       bool
+	windows          []*mygo.Window
+	regularWins      []*mygo.Window
+	downloadProgress float64
+	keepRunning      func()
+	notifyMu         sync.Mutex
+	notifyClicks     map[string]func()
+	postMu           sync.Mutex
+	postQueue        []func()
+	toastSeq         int
 	// PolishedAt marks bookmarks the AI just filled, for a 1.5 s highlight.
 	PolishedAt map[string]time.Time
 }
@@ -109,7 +161,14 @@ func New() (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	a := &App{settingsPath: filepath.Join(userData, "settings.json"), PolishedAt: map[string]time.Time{}}
+	a := &App{
+		settingsPath:    filepath.Join(userData, "settings.json"),
+		PolishedAt:      map[string]time.Time{},
+		ShortcutErrs:    map[string]string{},
+		ShortcutBound:   map[string]string{},
+		ShortcutPending: map[string]bool{},
+		notifyClicks:    map[string]func(){},
+	}
 	a.Settings = model.DefaultSettings()
 	if data, err := os.ReadFile(a.settingsPath); err == nil {
 		_ = json.Unmarshal(data, &a.Settings)
@@ -136,7 +195,7 @@ func New() (*App, error) {
 	}
 	a.Store.OnChange(a.Invalidate)
 	a.Store.OnSaveError(func(err error) {
-		a.SayErr("无法保存书签："+err.Error(), "重试", func() { _ = a.Store.Flush() })
+		a.SayErr(locales.ToastSaveLibraryErr(err.Error()), locales.ActionRetry(), func() { _ = a.Store.Flush() })
 	})
 	a.View = a.Settings.DefaultView
 	a.restorePlace()
@@ -149,12 +208,12 @@ func (a *App) LibraryDir(storage, folder string) (string, error) {
 	case model.StorageICloud:
 		dir := ICloudDir()
 		if dir == "" {
-			return "", fmt.Errorf("没有找到 iCloud Drive")
+			return "", fmt.Errorf("%s", locales.StorageICloudErr())
 		}
 		return filepath.Join(dir, "Cooool Mark"), nil
 	case model.StorageFolder:
 		if folder == "" {
-			return "", fmt.Errorf("没有选择文件夹")
+			return "", fmt.Errorf("%s", locales.StorageNoFolderErr())
 		}
 		return folder, nil
 	}
@@ -213,6 +272,9 @@ func (a *App) AddWindow(w *mygo.Window) {
 func (a *App) AddRegularWindow(w *mygo.Window) {
 	a.AddWindow(w)
 	a.regularWins = append(a.regularWins, w)
+	if a.downloadProgress > 0 && a.downloadProgress < 1 {
+		w.SetProgressBar(mygo.ProgressBar{State: mygo.ProgressNormal, Value: a.downloadProgress})
+	}
 	w.OnClosed(func() {
 		for i, x := range a.regularWins {
 			if x == w {
@@ -221,7 +283,237 @@ func (a *App) AddRegularWindow(w *mygo.Window) {
 			}
 		}
 		a.SyncDockPolicy()
+		// A hidden QuickSearch window keeps mygo.Windows() non-empty on
+		// Windows/Linux, so OnWindowAllClosed will not fire on its own.
+		if runtime.GOOS != "darwin" && !a.HasRegularWindow() && !a.HasActiveSummon() {
+			mygo.App.Quit()
+		}
 	})
+}
+
+// AppearanceThemeSource maps Settings.Appearance ("auto"|"light"|"dark") to mygo.ThemeSource.
+func AppearanceThemeSource(appearance string) mygo.ThemeSource {
+	switch appearance {
+	case "light":
+		return mygo.ThemeLight
+	case "dark":
+		return mygo.ThemeDark
+	default:
+		return mygo.ThemeSystem
+	}
+}
+
+// SyncAppearance applies Settings.Appearance to the native window chrome and menus.
+func (a *App) SyncAppearance() {
+	mygo.Theme.SetSource(AppearanceThemeSource(a.Settings.Appearance))
+}
+
+// SyncKeepRunning prevents macOS App Nap while syncing through iCloud Drive or a custom folder.
+func (a *App) SyncKeepRunning() {
+	need := a.Settings.Storage == model.StorageICloud || a.Settings.Storage == model.StorageFolder
+	if need && a.keepRunning == nil {
+		a.keepRunning = mygo.Power.KeepRunning("Syncing Cooool Mark bookmark library")
+		return
+	}
+	if !need && a.keepRunning != nil {
+		rel := a.keepRunning
+		a.keepRunning = nil
+		rel()
+	}
+}
+
+// SetDownloadProgress updates Dock / taskbar progress bars across open regular windows.
+func (a *App) SetDownloadProgress(progress float64) {
+	if progress < 0 || progress >= 1 {
+		progress = 0
+	}
+	a.downloadProgress = progress
+	bar := mygo.ProgressBar{}
+	if progress > 0 {
+		bar = mygo.ProgressBar{State: mygo.ProgressNormal, Value: progress}
+	}
+	for _, w := range a.regularWins {
+		if w != nil && !w.IsDestroyed() {
+			w.SetProgressBar(bar)
+		}
+	}
+}
+
+// ShortcutErr returns the last registration error for a global shortcut slot.
+func (a *App) ShortcutErr(id string) string {
+	if a.ShortcutErrs == nil {
+		return ""
+	}
+	return a.ShortcutErrs[id]
+}
+
+// SetShortcutErr records or clears a registration error for a global shortcut slot.
+func (a *App) SetShortcutErr(id, msg string) {
+	if a.ShortcutErrs == nil {
+		a.ShortcutErrs = map[string]string{}
+	}
+	if msg == "" {
+		delete(a.ShortcutErrs, id)
+	} else {
+		a.ShortcutErrs[id] = msg
+	}
+}
+
+// ShortcutBoundKeys returns desktop-assigned shortcut keys (e.g. from Wayland portal), if any.
+func (a *App) ShortcutBoundKeys(id string) string {
+	if a.ShortcutBound == nil {
+		return ""
+	}
+	return a.ShortcutBound[id]
+}
+
+// SetShortcutBoundKeys records or clears desktop-assigned shortcut keys for a slot.
+func (a *App) SetShortcutBoundKeys(id, keys string) {
+	if a.ShortcutBound == nil {
+		a.ShortcutBound = map[string]string{}
+	}
+	if keys == "" {
+		delete(a.ShortcutBound, id)
+	} else {
+		a.ShortcutBound[id] = keys
+	}
+}
+
+// IsShortcutPending reports whether a slot is awaiting desktop portal confirmation.
+func (a *App) IsShortcutPending(id string) bool {
+	return a.ShortcutPending != nil && a.ShortcutPending[id]
+}
+
+// HasAnyShortcutPending reports whether any global shortcut slot is awaiting
+// asynchronous desktop portal confirmation (Wayland).
+func (a *App) HasAnyShortcutPending() bool {
+	for _, pending := range a.ShortcutPending {
+		if pending {
+			return true
+		}
+	}
+	return false
+}
+
+// SetShortcutPending marks or clears pending desktop confirmation for a slot.
+func (a *App) SetShortcutPending(id string, pending bool) {
+	if a.ShortcutPending == nil {
+		a.ShortcutPending = map[string]bool{}
+	}
+	if pending {
+		a.ShortcutPending[id] = true
+	} else {
+		delete(a.ShortcutPending, id)
+	}
+}
+
+// Notify displays a system notification when notifications are enabled.
+func (a *App) Notify(id, title, body string, onClick func()) {
+	if !a.Settings.NotificationsOn() {
+		return
+	}
+	n := mygo.NewNotification(mygo.NotificationOptions{
+		ID:    id,
+		Title: title,
+		Body:  body,
+	})
+	if onClick != nil {
+		a.notifyMu.Lock()
+		if a.notifyClicks == nil {
+			a.notifyClicks = map[string]func(){}
+		}
+		if len(a.notifyClicks) >= 64 {
+			clear(a.notifyClicks)
+		}
+		a.notifyClicks[n.ID()] = onClick
+		a.notifyMu.Unlock()
+	}
+	go func() {
+		_ = n.Show()
+	}()
+}
+
+// HandleNotificationClick runs the callback associated with a clicked notification ID.
+// Main thread.
+func (a *App) HandleNotificationClick(id string) {
+	a.notifyMu.Lock()
+	fn := a.notifyClicks[id]
+	delete(a.notifyClicks, id)
+	a.notifyMu.Unlock()
+	if fn != nil {
+		fn()
+		return
+	}
+	switch {
+	case strings.HasPrefix(id, "update-"):
+		if a.Win.ShowSettings != nil {
+			a.Win.ShowSettings("general")
+		}
+	case strings.HasPrefix(id, "model-"):
+		if a.Win.ShowSettings != nil {
+			a.Win.ShowSettings("ai")
+		}
+	default:
+		if a.Win.ShowMain != nil {
+			a.Win.ShowMain()
+		}
+	}
+}
+
+// CheckUpdate checks the update feed in the background. When manual is true,
+// the result is also reported with a toast.
+func (a *App) CheckUpdate(manual bool) {
+	if a.Update.Checking {
+		return
+	}
+	a.Update.Checking = true
+	a.Update.Err = ""
+	a.Invalidate()
+	Background(15*time.Second, func(ctx context.Context) {
+		currentVer := Version()
+		info, newer, err := update.Check(ctx, currentVer)
+		a.Post(func() {
+			a.Update.Checking = false
+			a.Update.Checked = true
+			if err != nil {
+				a.Update.Err = err.Error()
+				if manual {
+					a.SayErr(locales.ToastUpdateFailed(err.Error()), locales.ActionRetry(), func() { a.CheckUpdate(true) })
+				}
+				return
+			}
+			a.Update.Err = ""
+			a.Update.Available = newer
+			a.Update.Release = info
+			if newer && info != nil {
+				ver := strings.TrimPrefix(info.Version, "v")
+				if manual {
+					a.Say(locales.ToastUpdateFound(ver))
+				} else {
+					a.Notify("update-"+ver, locales.NotifyUpdateTitle(), locales.NotifyUpdateBody(ver), func() {
+						if a.Win.ShowSettings != nil {
+							a.Win.ShowSettings("general")
+						}
+					})
+				}
+			} else if manual {
+				a.Say(locales.ToastUpdateUpToDate(strings.TrimPrefix(currentVer, "v")))
+			}
+		})
+	})
+}
+
+// Close releases OS power assertions and stops background AI processes on quit.
+func (a *App) Close() {
+	if a.keepRunning != nil {
+		rel := a.keepRunning
+		a.keepRunning = nil
+		rel()
+	}
+	a.SetDownloadProgress(0)
+	if a.AI != nil {
+		a.AI.Close()
+	}
 }
 
 // HasRegularWindow reports whether any regular window is currently open.
@@ -234,6 +526,12 @@ func (a *App) HasRegularWindow() bool {
 	return false
 }
 
+// HasActiveSummon reports whether at least one live persistent summon surface
+// (tray icon, notch panel, or edge trigger) is currently reachable.
+func (a *App) HasActiveSummon() bool {
+	return a.Win.HasActiveSummon != nil && a.Win.HasActiveSummon()
+}
+
 // PrepareRegularWindow ensures the macOS Dock icon is active before showing a regular window.
 func (a *App) PrepareRegularWindow() {
 	a.StealthBackground = false
@@ -243,7 +541,7 @@ func (a *App) PrepareRegularWindow() {
 }
 
 // SyncDockPolicy shows or hides the macOS Dock icon based on open regular windows,
-// active summon modes, and the user's background settings.
+// live summon surfaces, and the user's background settings.
 func (a *App) SyncDockPolicy() {
 	if runtime.GOOS != "darwin" {
 		return
@@ -252,7 +550,7 @@ func (a *App) SyncDockPolicy() {
 		a.PrepareRegularWindow()
 		return
 	}
-	if (a.Settings.HideDockWhenClosed && a.Settings.HasSummonMode()) || a.StealthBackground {
+	if a.HasActiveSummon() && (a.Settings.HideDockWhenClosed || a.StealthBackground) {
 		if mygo.App.ActivationPolicy() != mygo.ActivationPolicyAccessory {
 			mygo.App.Dock.Hide()
 		}
@@ -294,6 +592,12 @@ func (a *App) Post(fn func()) {
 // SaveSettings writes settings.json and applies what changed.
 func (a *App) SaveSettings() {
 	previous := a.savedSettings.Load()
+	autoEnabledTray := false
+	if runtime.GOOS == "darwin" && a.Settings.HideDockWhenClosed && !a.Settings.HasSummonMode() &&
+		(previous == nil || !previous.HideDockWhenClosed) {
+		a.Settings.SetMode(model.ModeTray, true)
+		autoEnabledTray = true
+	}
 	if err := a.writeSettings(a.Settings); err != nil {
 		if previous != nil {
 			if a.Settings.DefaultView != previous.DefaultView {
@@ -303,8 +607,11 @@ func (a *App) SaveSettings() {
 			if a.AI != nil {
 				a.AI.Configure(*previous)
 			}
+			if a.Win.ApplyShortcuts != nil {
+				a.Win.ApplyShortcuts()
+			}
 		}
-		a.SayErr("无法保存设置："+err.Error(), "", nil)
+		a.SayErr(locales.ToastSaveSettingsErr(err.Error()), "", nil)
 		return
 	}
 	a.clearPlaceTimer()
@@ -314,10 +621,21 @@ func (a *App) SaveSettings() {
 	if a.AI != nil {
 		a.AI.Configure(a.Settings)
 	}
+	a.SyncAppearance()
+	a.SyncKeepRunning()
 	if a.Win.ApplyModes != nil {
 		a.Win.ApplyModes()
 	}
+	if a.Win.ApplyShortcuts != nil {
+		a.Win.ApplyShortcuts()
+	}
+	if a.Win.RefreshChrome != nil {
+		a.Win.RefreshChrome()
+	}
 	a.SyncDockPolicy()
+	if autoEnabledTray {
+		a.Say(locales.ToastDockRequiresMode())
+	}
 	if a.Settings.AutoBackup && (previous == nil || !previous.AutoBackup) {
 		a.DailyBackup()
 	}
@@ -345,7 +663,7 @@ func (a *App) writeSettings(s model.Settings) error {
 func (a *App) DailyBackup() {
 	if a.Settings.AutoBackup {
 		if err := a.Store.DailyBackup(); err != nil {
-			a.SayErr("自动备份失败："+err.Error(), "重试", a.DailyBackup)
+			a.SayErr(locales.ToastAutoBackupErr(err.Error()), locales.ActionRetry(), a.DailyBackup)
 		}
 	}
 }
@@ -369,6 +687,7 @@ func (a *App) SetStorage(storage, folder string) error {
 		return err
 	}
 	a.Settings = next
+	a.SyncKeepRunning()
 	a.DailyBackup()
 	a.Invalidate()
 	return nil
@@ -410,7 +729,7 @@ func (a *App) Go(groupID, subID string) {
 	if err := a.patchSavedSettings(func(s *model.Settings) {
 		s.LastGroup, s.LastSub = a.Group, a.Sub
 	}); err != nil {
-		a.SayErr("无法记住当前分组："+err.Error(), "", nil)
+		a.SayErr(locales.ToastSavePlaceErr(err.Error()), "", nil)
 	}
 	a.Invalidate()
 }
@@ -445,7 +764,25 @@ func (a *App) SetView(view string) {
 	}); err != nil {
 		a.View = prevView
 		a.Settings.DefaultView = prevDefault
-		a.SayErr("无法保存视图设置："+err.Error(), "", nil)
+		a.SayErr(locales.ToastSaveViewErr(err.Error()), "", nil)
+		return
+	}
+	a.Invalidate()
+}
+
+// SetCardSize switches the grid card size and persists the choice.
+func (a *App) SetCardSize(size string) {
+	size = model.NormalizeCardSize(size)
+	prev := a.Settings.CardSize
+	if model.NormalizeCardSize(prev) == size && prev != "" {
+		return
+	}
+	a.Settings.CardSize = size
+	if err := a.patchSavedSettings(func(s *model.Settings) {
+		s.CardSize = size
+	}); err != nil {
+		a.Settings.CardSize = prev
+		a.SayErr(locales.ToastSaveViewErr(err.Error()), "", nil)
 		return
 	}
 	a.Invalidate()
@@ -557,7 +894,7 @@ func (a *App) PathOf(b *model.Bookmark) string {
 	lib := a.Store.Lib()
 	g, s := lib.Group(b.GroupID), lib.Sub(b.GroupID, b.SubID)
 	if g == nil || s == nil {
-		return "未分组"
+		return locales.Ungrouped()
 	}
 	return g.Name + " / " + s.Name
 }
@@ -572,9 +909,9 @@ func (a *App) SayErr(text, action string, do func()) {
 	a.toast(Toast{Text: text, Action: action, Do: do, Err: true}, 5*time.Second)
 }
 
-// SayUndo shows a toast with 撤销.
+// SayUndo shows a toast with Undo.
 func (a *App) SayUndo(text string, undo func()) {
-	a.toast(Toast{Text: text, Action: "撤销", Do: undo}, 5*time.Second)
+	a.toast(Toast{Text: text, Action: locales.ActionUndo(), Do: undo, Undoable: true}, 5*time.Second)
 }
 
 func (a *App) toast(t Toast, d time.Duration) {
@@ -613,7 +950,7 @@ func (a *App) Open(b *model.Bookmark, query string) bool {
 		url = strings.ReplaceAll(url, "{query}", urlQueryEscape(query))
 	}
 	if err := a.OpenURL(url); err != nil {
-		a.SayErr("打不开「"+b.Title+"」", "重试", func() { a.Open(b, query) })
+		a.SayErr(locales.ToastOpenFailed(b.Title), locales.ActionRetry(), func() { a.Open(b, query) })
 		return false
 	}
 	if a.Win.HideSummoned != nil {

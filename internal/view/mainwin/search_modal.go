@@ -2,13 +2,13 @@ package mainwin
 
 import (
 	"cmp"
-	"fmt"
 	"slices"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
 
 	"cooool-mark/internal/app"
+	"cooool-mark/internal/locales"
 	"cooool-mark/internal/model"
 	"cooool-mark/internal/theme"
 	"cooool-mark/internal/widget"
@@ -54,11 +54,11 @@ func (s *mainState) buildSearchModal(c *ui.Context, p *theme.Palette) {
 			ui.Row(c.Key("sm-hdr")).Height(50).Padding(0, 12, 0, 16).Gap(10).AlignItems(ui.Center).Children(func() {
 				ui.Icon(c, theme.IconSearch).FontSize(16).TextColor(p.Accent).Shrink(0)
 				searchIn = ui.TextInputBase(c.Key("sm-q"), &s.query).Bind(&s.searchHandle).
-					Placeholder("搜标题、拼音、网址，或粘贴网址保存…").Label("搜索书签").
+					Placeholder(locales.SearchModalPlaceholder()).Label(locales.MainSearchPlaceholder()).
 					FontSize(15).Grow(1).MinWidth(0).TextColor(p.Text).PlaceholderColor(p.Muted)
 
 				if s.query != "" {
-					clr := ui.ButtonBase(c.Key("sm-clear")).Label("清空搜索").Tooltip("清空搜索").
+					clr := ui.ButtonBase(c.Key("sm-clear")).Label(locales.ActionClearSearch()).Tooltip(locales.ActionClearSearch()).
 						Size(24, 24).Radius(6).Center().TextColor(p.Muted).Shrink(0)
 					if clr.Hovered() {
 						clr.Background(p.RowSel).TextColor(p.Text)
@@ -73,7 +73,7 @@ func (s *mainState) buildSearchModal(c *ui.Context, p *theme.Palette) {
 					}
 				}
 
-				escBtn := ui.ButtonBase(c.Key("sm-esc")).Label("关闭搜索").Tooltip("返回主界面 (Esc)").
+				escBtn := ui.ButtonBase(c.Key("sm-esc")).Label(locales.ActionCloseSearch()).Tooltip(locales.SearchModalCloseTip()).
 					Height(24).PaddingX(8).Radius(6).AlignItems(ui.Center).
 					Background(p.Field).TextColor(p.Muted).Shrink(0)
 				if escBtn.Hovered() {
@@ -85,6 +85,34 @@ func (s *mainState) buildSearchModal(c *ui.Context, p *theme.Palette) {
 				}
 			})
 			ui.Box(c).Height(1).FillWidth().Background(p.Line).Shrink(0)
+
+			start, end := searchIn.TextSelection()
+			hasSel := start != end
+			svc := c.Services()
+			searchIn.OnTextKey(func(k ui.TextKey) bool {
+				if s.moveOpen {
+					return false
+				}
+				b := selectedSearchBookmark(hits, isURL, s.searchIdx)
+				if b == nil {
+					return false
+				}
+				switch {
+				case k.Key == ui.KeyC && k.Mods == ui.Cmd && !hasSel:
+					if b.URL != "" {
+						svc.WriteClipboard(b.URL)
+						a.Say(locales.ToastCopiedURL())
+						return true
+					}
+				case k.Key == ui.KeyC && k.Mods == ui.Cmd|ui.Shift:
+					if b.Title != "" {
+						svc.WriteClipboard(b.Title)
+						a.Say(locales.ToastCopiedTitle())
+						return true
+					}
+				}
+				return false
+			})
 
 			if searchIn.Changed() {
 				s.tplBookmarkID = ""
@@ -111,12 +139,33 @@ func (s *mainState) buildSearchModal(c *ui.Context, p *theme.Palette) {
 				s.activateSearchIndex(c, hits, isURL, s.searchIdx)
 			}
 
+			if !s.moveOpen && !s.tplInputHandle.Focused(c) {
+				if b := selectedSearchBookmark(hits, isURL, s.searchIdx); b != nil {
+					if !s.searchHandle.Focused(c) {
+						if c.Shortcut(ui.Cmd, ui.KeyC) && !c.ShortcutRepeated() {
+							s.copyBookmarkURL(c, b.ID)
+						}
+						if c.Shortcut(ui.Cmd|ui.Shift, ui.KeyC) && !c.ShortcutRepeated() {
+							s.copyBookmarkTitle(c, b.ID)
+						}
+					}
+					if c.Shortcut(ui.Cmd, ui.KeyE) && !c.ShortcutRepeated() {
+						if a.Win.ShowEditor != nil {
+							a.Win.ShowEditor(app.EditorRequest{ID: b.ID})
+						}
+					}
+					if c.Shortcut(ui.Cmd|ui.Shift, ui.KeyM) && !c.ShortcutRepeated() {
+						s.openMoveModal([]string{b.ID})
+					}
+				}
+			}
+
 			// Scope chips strip.
 			if len(lib.Groups) > 0 {
 				widget.AutoScrollbarSlim(c, ui.ScrollHorizontal(c.Key("sm-scopes"))).
 					ScrollbarInsets(0, 14, 0, 14).FillWidth().Height(36).Shrink(0).Children(func() {
 					ui.Row(c).AlignItems(ui.Center).Gap(6).Padding(8, 14, 3, 14).Children(func() {
-						s.buildScopeChip(c.Key("sm-scope-all"), p, "", "全部")
+						s.buildScopeChip(c.Key("sm-scope-all"), p, "", locales.MainAllGroups())
 						for _, g := range lib.Groups {
 							s.buildScopeChip(c.Key("sm-scope-"+g.ID), p, g.ID, g.Name)
 						}
@@ -133,19 +182,20 @@ func (s *mainState) buildSearchModal(c *ui.Context, p *theme.Palette) {
 					}
 
 					if q == "" && len(hits) > 0 {
-						ui.Text(c, "最近更新").FontSize(11.5).TextColor(p.Muted).Padding(2, 10, 4, 10)
+						ui.Text(c, locales.SearchRecentUpdates()).FontSize(11.5).TextColor(p.Muted).Padding(2, 10, 4, 10)
 					}
 
 					if !isURL && len(hits) == 0 {
 						ui.Column(c).FillWidth().Padding(28, 16).Center().Gap(12).Children(func() {
-							msg := "还没有书签"
+							msg := locales.MainNoBookmarks()
 							if q != "" {
-								msg = "没有找到「" + q + "」"
+								msg = locales.SearchNotFoundFor(q)
 							}
-							ui.Text(c, msg).FontSize(13.5).TextColor(p.Muted).SingleLine()
+							ui.Text(c, msg).FontSize(13.5).TextColor(p.Muted).SingleLine().Selectable()
 							ui.Row(c).Wrap().Center().Gap(8).Children(func() {
 								if s.searchScope != "" {
-									allBtn := widget.Secondary(c, p, "在全部分组中搜索")
+									allBtn := widget.Secondary(c, p, locales.MainSearchAllGroups()).
+										Label(locales.MainSearchAllGroups()).Tooltip(locales.MainSearchAllGroupsTip())
 									if allBtn.Clicked() {
 										s.searchScope = ""
 										s.searchIdx = 0
@@ -153,7 +203,7 @@ func (s *mainState) buildSearchModal(c *ui.Context, p *theme.Palette) {
 									}
 								}
 								if q != "" && a.Win.ShowEditor != nil {
-									newBtn := widget.Secondary(c, p, "新建书签")
+									newBtn := widget.Secondary(c, p, locales.MenuNewBookmark()).Label(locales.MenuNewBookmark())
 									if newBtn.Clicked() {
 										s.closeSearch(c)
 										a.Win.ShowEditor(app.EditorRequest{Title: q, GroupID: a.Group, SubID: a.Sub})
@@ -179,17 +229,17 @@ func (s *mainState) buildSearchModal(c *ui.Context, p *theme.Palette) {
 			ui.Box(c).Height(1).FillWidth().Background(p.Line).Shrink(0)
 			ui.Row(c.Key("sm-foot")).Height(34).Padding(0, 14).Background(p.Bg).
 				AlignItems(ui.Center).Justify(ui.SpaceBetween).Shrink(0).Children(func() {
-				status := "直接输入关键词、拼音或网址"
+				status := locales.SearchFooterIdle()
 				switch {
 				case isURL:
-					status = "识别为网址 · 按回车保存"
+					status = locales.SearchFooterURL()
 				case q != "":
-					status = fmt.Sprintf("%d 个匹配结果", len(hits))
+					status = locales.SearchFooterMatches(len(hits))
 				case len(hits) > 0:
-					status = fmt.Sprintf("最近 %d 条书签", len(hits))
+					status = locales.SearchFooterRecent(len(hits))
 				}
 				ui.Text(c, status).FontSize(11.5).TextColor(p.Muted).SingleLine()
-				ui.Text(c, "↑↓ 选择 · ↵ 打开 · Esc 返回").FontSize(11.5).TextColor(p.Muted).SingleLine()
+				ui.Text(c, locales.SearchFooterHint()).FontSize(11.5).TextColor(p.Muted).SingleLine()
 			})
 		})
 	})
@@ -198,6 +248,17 @@ func (s *mainState) buildSearchModal(c *ui.Context, p *theme.Palette) {
 		s.clearSearch()
 		s.contentHandle.Focus(c)
 	}
+}
+
+func selectedSearchBookmark(hits []app.Hit, isURL bool, idx int) *model.Bookmark {
+	hitIdx := idx
+	if isURL {
+		hitIdx--
+	}
+	if hitIdx >= 0 && hitIdx < len(hits) {
+		return hits[hitIdx].B
+	}
+	return nil
 }
 
 func (s *mainState) recentHits(lib *model.Library, groupID string, limit int) []app.Hit {

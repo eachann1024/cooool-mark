@@ -5,14 +5,18 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"cooool-mark/internal/app"
+	"cooool-mark/internal/locales"
 	"cooool-mark/internal/model"
 )
+
+const maxImportBytes = 64 << 20
 
 type importer struct{}
 
@@ -20,12 +24,30 @@ type importer struct{}
 func New() app.Importer { return importer{} }
 
 func (importer) Parse(path string, lib *model.Library) (*app.ImportPlan, error) {
-	if info, err := os.Stat(path); err == nil && info.IsDir() {
-		return nil, fmt.Errorf("不能导入文件夹，请选择书签文件")
-	}
-	data, err := os.ReadFile(path)
+	info, err := os.Stat(path)
 	if err != nil {
 		return nil, err
+	}
+	if info.IsDir() {
+		return nil, errors.New(locales.ImportErrIsDir())
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New(locales.ImportErrNotRegularFile())
+	}
+	if info.Size() > maxImportBytes {
+		return nil, errors.New(locales.ImportErrTooLarge())
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxImportBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxImportBytes {
+		return nil, errors.New(locales.ImportErrTooLarge())
 	}
 	trimmed := bytes.TrimSpace(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")))
 	ext := strings.ToLower(filepath.Ext(path))
@@ -187,7 +209,7 @@ func (importer) Apply(lib *model.Library, plan *app.ImportPlan, opts app.ImportO
 	for _, top := range plan.Folders {
 		groupName := strings.TrimSpace(top.Name)
 		if groupName == "" {
-			groupName = "未分组"
+			groupName = locales.Ungrouped()
 		}
 		var target *model.Group
 		ensureTarget := func() *model.Group {
@@ -203,14 +225,14 @@ func (importer) Apply(lib *model.Library, plan *app.ImportPlan, opts app.ImportO
 		}
 
 		if top.Checked && len(top.Items) > 0 {
-			appendItems(ensureTarget, "未分组", top.Items)
+			appendItems(ensureTarget, locales.Ungrouped(), top.Items)
 		}
 
 		var walkSub func(f *app.ImportFolder, prefix string)
 		walkSub = func(f *app.ImportFolder, prefix string) {
 			name := strings.TrimSpace(f.Name)
 			if name == "" {
-				name = "未命名"
+				name = locales.Untitled()
 			}
 			subName := name
 			if prefix != "" {

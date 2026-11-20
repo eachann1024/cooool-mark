@@ -11,21 +11,20 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"cooool-mark/internal/app"
+	"cooool-mark/internal/locales"
 	"cooool-mark/internal/model"
 	"cooool-mark/internal/theme"
 	"cooool-mark/internal/widget"
 )
 
 const (
-	quickSearchHotkey = "Alt+Space"
-	quickSearchW      = 580
-	quickSearchH      = 440
+	quickSearchW = 580
+	quickSearchH = 440
 )
 
 var (
-	curQuick      *quickSearchMode
-	quickApp      *app.App
-	quickHotkeyOn bool
+	curQuick *quickSearchMode
+	quickApp *app.App
 )
 
 type quickSearchMode struct {
@@ -35,6 +34,7 @@ type quickSearchMode struct {
 	query       string
 	selIdx      int
 	scrollMoved bool
+	menuOpen    bool
 	openedAt    time.Time
 	searchInput ui.Handle
 	tmplID      string
@@ -52,10 +52,6 @@ type quickSearchMode struct {
 
 func syncQuickSearch(a *app.App, on bool) {
 	if !on {
-		if quickHotkeyOn || mygo.GlobalShortcut.IsRegistered(quickSearchHotkey) {
-			mygo.GlobalShortcut.Unregister(quickSearchHotkey)
-		}
-		quickHotkeyOn = false
 		quickApp = nil
 		if curQuick != nil {
 			curQuick.destroy()
@@ -68,15 +64,6 @@ func syncQuickSearch(a *app.App, on bool) {
 		curQuick.app = a
 		if curQuick.win != nil {
 			curQuick.win.Invalidate()
-		}
-	}
-	if !quickHotkeyOn && !mygo.GlobalShortcut.IsRegistered(quickSearchHotkey) {
-		if err := mygo.GlobalShortcut.Register(quickSearchHotkey, func() {
-			if quickApp != nil {
-				ToggleQuickSearch(quickApp)
-			}
-		}); err == nil {
-			quickHotkeyOn = true
 		}
 	}
 }
@@ -105,7 +92,7 @@ func newQuickSearchMode(a *app.App) *quickSearchMode {
 	q := &quickSearchMode{app: a}
 	b := quickSearchBounds()
 	w := mygo.NewWindow(mygo.WindowOptions{
-		Title:             "Cooool Mark 快速搜索",
+		Title:             locales.ModeQuickSearchTitle(),
 		X:                 b.X,
 		Y:                 b.Y,
 		Width:             b.Width,
@@ -127,7 +114,7 @@ func newQuickSearchMode(a *app.App) *quickSearchMode {
 	q.win = w
 	a.AddWindow(w)
 	w.OnBlur(func() {
-		if q.win != nil && q.win.IsVisible() && time.Since(q.openedAt) > 150*time.Millisecond {
+		if !q.menuOpen && q.win != nil && q.win.IsVisible() && time.Since(q.openedAt) > 150*time.Millisecond {
 			q.hide()
 		}
 	})
@@ -164,6 +151,7 @@ func (q *quickSearchMode) show() {
 }
 
 func (q *quickSearchMode) hide() {
+	q.menuOpen = false
 	q.tmplID = ""
 	q.tmplQuery = ""
 	if q.win != nil && q.win.IsVisible() {
@@ -180,6 +168,15 @@ func (q *quickSearchMode) destroy() {
 }
 
 func (q *quickSearchMode) view(c *ui.Context) {
+	menuOpenThisFrame := false
+	defer func() {
+		if q.win == nil || !q.win.IsVisible() {
+			q.menuOpen = false
+			return
+		}
+		q.menuOpen = menuOpenThisFrame
+	}()
+
 	p := theme.Apply(c, q.app.Settings.Appearance)
 	c.Root().Background(ui.Transparent)
 
@@ -206,11 +203,11 @@ func (q *quickSearchMode) view(c *ui.Context) {
 		q.selIdx = max(0, min(q.selIdx, total-1))
 	}
 
-	if c.Shortcut(ui.Cmd, ui.KeyF) && !c.ShortcutRepeated() {
+	if !q.menuOpen && c.Shortcut(ui.Cmd, ui.KeyF) && !c.ShortcutRepeated() {
 		q.searchInput.SelectAll(c)
 	}
 
-	if c.Shortcut(0, ui.KeyEscape) {
+	if !q.menuOpen && c.Shortcut(0, ui.KeyEscape) {
 		if q.tmplID != "" {
 			q.tmplID = ""
 			q.tmplQuery = ""
@@ -226,7 +223,7 @@ func (q *quickSearchMode) view(c *ui.Context) {
 		}
 	}
 
-	if q.tmplID == "" && total > 0 {
+	if !q.menuOpen && q.tmplID == "" && total > 0 {
 		if c.Shortcut(0, ui.KeyDown) {
 			q.selIdx = min(q.selIdx+1, total-1)
 			q.scrollMoved = true
@@ -238,18 +235,18 @@ func (q *quickSearchMode) view(c *ui.Context) {
 	}
 
 	svc := c.Services()
-	if !q.searchInput.Focused(c) && !q.tmplInput.Focused(c) && c.Shortcut(ui.Cmd, ui.KeyC) && !c.ShortcutRepeated() {
+	if !q.menuOpen && !q.searchInput.Focused(c) && !q.tmplInput.Focused(c) && c.Shortcut(ui.Cmd, ui.KeyC) && !c.ShortcutRepeated() {
 		if b := quickSelectedBookmark(hits, offset, q.selIdx); b != nil && b.URL != "" {
 			svc.WriteClipboard(b.URL)
-			q.app.Say("已复制链接")
+			q.app.Say(locales.ToastCopiedURL())
 		}
 	}
-	if q.tmplID == "" && !q.searchInput.Focused(c) && c.Shortcut(0, ui.KeyEnter) && !c.ShortcutRepeated() && total > 0 {
+	if !q.menuOpen && q.tmplID == "" && !q.searchInput.Focused(c) && c.Shortcut(0, ui.KeyEnter) && !c.ShortcutRepeated() && total > 0 {
 		q.activateIndex(c, lib, raw, isURL, hits, offset, q.selIdx)
 	}
 
 	box := ui.Column(c).Fill()
-	if c.Vibrancy() {
+	if c.Vibrancy() && !theme.ReduceTransparency() {
 		alpha := float32(0.96)
 		if p.Dark {
 			alpha = 0.94
@@ -271,7 +268,7 @@ func (q *quickSearchMode) view(c *ui.Context) {
 			ui.Icon(c, theme.IconSearch).FontSize(18).TextColor(iconCol).Shrink(0)
 
 			in := ui.TextInputBase(c.Key("qs-q"), &q.query).Bind(&q.searchInput).Grow(1).MinWidth(0).
-				FontSize(16).Label("搜索书签").Placeholder("搜索书签或输入网址…").
+				FontSize(16).Label(locales.MainSearchPlaceholder()).Placeholder(locales.QuickSearchPlaceholder()).
 				TextColor(p.Text).PlaceholderColor(p.Muted)
 
 			start, end := in.TextSelection()
@@ -280,7 +277,7 @@ func (q *quickSearchMode) view(c *ui.Context) {
 				if k.Key == ui.KeyC && k.Mods == ui.Cmd && !hasSel {
 					if b := quickSelectedBookmark(hits, offset, q.selIdx); b != nil && b.URL != "" {
 						svc.WriteClipboard(b.URL)
-						q.app.Say("已复制链接")
+						q.app.Say(locales.ToastCopiedURL())
 						return true
 					}
 				}
@@ -299,7 +296,7 @@ func (q *quickSearchMode) view(c *ui.Context) {
 
 			if q.query != "" {
 				clr := ui.ButtonBase(c.Key("qs-qclr")).Size(22, 22).Radius(6).Center().
-					TextColor(p.Muted).Label("清空搜索").Tooltip("清空搜索").Shrink(0)
+					TextColor(p.Muted).Label(locales.ActionClearSearch()).Tooltip(locales.ActionClearSearch()).Shrink(0)
 				if clr.Hovered() {
 					clr.Background(p.RowSel).TextColor(p.Text)
 				}
@@ -316,13 +313,13 @@ func (q *quickSearchMode) view(c *ui.Context) {
 
 			mainBtn := ui.ButtonBase(c.Key("qs-main")).Height(28).PaddingX(9).Radius(7).Gap(5).
 				AlignItems(ui.Center).Background(p.Field).TextColor(p.Text2).Shrink(0).
-				Label("在主窗口中打开").Tooltip("在主窗口中搜索")
+				Label(locales.QuickSearchOpenMain()).Tooltip(locales.QuickSearchOpenMainTip())
 			if mainBtn.Hovered() {
 				mainBtn.Background(p.RowSel).TextColor(p.Text)
 			}
 			mainBtn.Children(func() {
 				ui.Icon(c, theme.IconExternal).FontSize(13)
-				ui.Text(c, "主窗口").FontSize(12).FontWeight(500).SingleLine()
+				ui.Text(c, locales.QuickSearchMainBtn()).FontSize(12).FontWeight(500).SingleLine()
 			})
 			if mainBtn.Clicked() {
 				query := q.query
@@ -333,14 +330,14 @@ func (q *quickSearchMode) view(c *ui.Context) {
 			}
 		})
 
-		// Scope pills: 全部 + groups.
+		// Scope pills: All + groups.
 		if len(lib.Groups) > 0 {
 			scroll := widget.AutoScrollbarSlim(c, ui.ScrollHorizontal(c.Key("qs-scopes"))).
 				FillWidth().Height(38).Shrink(0).ScrollbarInsets(0, 14, 1, 14).Padding(6, 14, 6, 14).
 				BorderWidth(0, 0, 1, 0).BorderColor(p.LineSoft)
 			scroll.Children(func() {
 				ui.Row(c.Key("qs-scopes-row")).Gap(5).AlignItems(ui.Center).Children(func() {
-					allPill := widget.Pill(c.Key("qs-scope-all"), p, "全部", q.groupID == "")
+					allPill := widget.Pill(c.Key("qs-scope-all"), p, locales.MainAllGroups(), q.groupID == "")
 					widget.RevealSelectedTab(allPill, q.groupID == "", 0)
 					if allPill.Clicked() {
 						q.groupID = ""
@@ -381,17 +378,17 @@ func (q *quickSearchMode) view(c *ui.Context) {
 
 		// Results or recent bookmarks.
 		if total == 0 {
-			msg := "还没有书签"
+			msg := locales.MainNoBookmarks()
 			if raw != "" {
-				msg = "还没有匹配的书签"
+				msg = locales.MainNoMatchingBookmarks()
 			}
 			ui.Column(c.Key("qs-empty")).Grow(1).FillWidth().Center().Children(func() {
-				ui.Text(c, msg).Font(theme.Serif).FontSize(15).TextColor(p.Text2).SingleLine()
+				ui.Text(c, msg).Font(theme.TitleFont(c)).FontSize(15).TextColor(p.Text2).SingleLine()
 			})
 		} else {
 			if raw == "" {
 				ui.Row(c.Key("qs-recent-hdr")).Padding(8, 16, 2, 16).Children(func() {
-					ui.Text(c, "最近更新").FontSize(11.5).FontWeight(500).TextColor(p.Muted).SingleLine()
+					ui.Text(c, locales.SearchRecentUpdates()).FontSize(11.5).FontWeight(500).TextColor(p.Muted).SingleLine()
 				})
 			}
 			if q.scrollMoved {
@@ -413,7 +410,7 @@ func (q *quickSearchMode) view(c *ui.Context) {
 						return
 					}
 					hit := hits[row.Index-offset]
-					q.renderHitRow(c, p, hit, row.Index, row.Index == q.selIdx)
+					q.renderHitRow(c, p, hit, row.Index, row.Index == q.selIdx, &menuOpenThisFrame)
 				})
 		}
 
@@ -424,13 +421,13 @@ func (q *quickSearchMode) view(c *ui.Context) {
 		}
 		ui.Row(c.Key("qs-foot")).Height(34).PaddingX(14).Gap(14).AlignItems(ui.Center).
 			BorderWidth(1, 0, 0, 0).BorderColor(p.LineSoft).Children(func() {
-			quickHint(c, p, "↑↓", "选择")
-			quickHint(c, p, "↵", "打开")
-			quickHint(c, p, copyKey, "复制链接")
-			quickHint(c, p, "Esc", "清空 / 关闭")
+			quickHint(c, p, "↑↓", locales.QuickSearchHintSelect())
+			quickHint(c, p, "↵", locales.ActionOpen())
+			quickHint(c, p, copyKey, locales.ActionCopyURL())
+			quickHint(c, p, "Esc", locales.QuickSearchHintClearClose())
 			ui.Spacer(c)
 			if raw != "" {
-				ui.Textf(c, "%d 个结果", len(hits)).FontSize(11.5).TextColor(p.Muted).SingleLine()
+				ui.Text(c, locales.MainSearchResults(len(hits))).FontSize(11.5).TextColor(p.Muted).SingleLine()
 			}
 		})
 
@@ -544,11 +541,11 @@ func (q *quickSearchMode) renderURLCard(c *ui.Context, p *theme.Palette, lib *mo
 		card.Border(1, p.Accent.Alpha(0.4))
 	}
 
-	title := "保存这个网址"
+	title := locales.MainSaveThisURL()
 	subtitle := raw
 	if existing != nil {
-		title = "编辑已保存的书签「" + existing.Title + "」"
-		subtitle = raw + " · 已存在于「" + q.app.PathOf(existing) + "」"
+		title = locales.MainEditSavedBookmark(existing.Title)
+		subtitle = locales.MainExistsInPath(raw, q.app.PathOf(existing))
 	}
 	card.Label(title).Tooltip(subtitle)
 
@@ -574,7 +571,7 @@ func (q *quickSearchMode) renderURLCard(c *ui.Context, p *theme.Palette, lib *mo
 	}
 }
 
-func (q *quickSearchMode) renderHitRow(c *ui.Context, p *theme.Palette, hit app.Hit, idx int, selected bool) {
+func (q *quickSearchMode) renderHitRow(c *ui.Context, p *theme.Palette, hit app.Hit, idx int, selected bool, menuOpen *bool) {
 	b := hit.B
 	btn := ui.ButtonBase(c.Key("qs-bm-"+b.ID)).Height(44).Padding(0, 10).Gap(10).
 		Radius(9).Justify(ui.Start).AlignItems(ui.Center).Label(b.Title).Tooltip(b.Title)
@@ -613,6 +610,14 @@ func (q *quickSearchMode) renderHitRow(c *ui.Context, p *theme.Palette, hit app.
 		q.selIdx = idx
 		q.openItem(c, b)
 	}
+	bindBookmarkPopoverMenu(c, q.app, btn, b, modeMenuOptions(p), menuOpen,
+		func() {
+			q.selIdx = idx
+			q.openItem(c, b)
+		},
+		q.hide,
+		nil,
+	)
 }
 
 func quickHint(c *ui.Context, p *theme.Palette, key, label string) {

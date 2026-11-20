@@ -37,6 +37,7 @@ type Palette struct {
 	Primary    ui.Color // primary button
 	OnPrimary  ui.Color
 	Danger     ui.Color
+	OnDanger   ui.Color
 	DangerBg   ui.Color
 	ToastBg    ui.Color
 	ToastText  ui.Color
@@ -50,7 +51,7 @@ var Light = Palette{
 	Surface: ui.Hex("#ffffff"), Overlay: ui.RGBA(38, 36, 32, 0.22),
 	Text: ui.Hex("#1f1e1d"), Text2: ui.Hex("#3d3c38"), Muted: ui.Hex("#6c6b64"),
 	Accent: ui.Hex("#d97757"), AccentBg: ui.Hex("#f3e7e0"), AccentText: ui.Hex("#9a4a2e"),
-	Primary: ui.Hex("#b5583a"), OnPrimary: ui.Hex("#ffffff"), Danger: ui.Hex("#b54a3f"), DangerBg: ui.Hex("#fbefed"),
+	Primary: ui.Hex("#b5583a"), OnPrimary: ui.Hex("#ffffff"), Danger: ui.Hex("#b54a3f"), OnDanger: ui.Hex("#ffffff"), DangerBg: ui.Hex("#fbefed"),
 	ToastBg: ui.Hex("#1f1e1d"), ToastText: ui.Hex("#faf9f5"), Notch: ui.Hex("#0b0b0c"),
 }
 
@@ -62,7 +63,7 @@ var Dark = Palette{
 	Surface: ui.Hex("#1c1c1b"), Overlay: ui.RGBA(0, 0, 0, 0.45),
 	Text: ui.Hex("#eae8e1"), Text2: ui.Hex("#c7c5bd"), Muted: ui.Hex("#b7b5ad"),
 	Accent: ui.Hex("#e0875f"), AccentBg: ui.Hex("#3a2a22"), AccentText: ui.Hex("#f0a07c"),
-	Primary: ui.Hex("#c96a48"), OnPrimary: ui.Hex("#ffffff"), Danger: ui.Hex("#e5776b"), DangerBg: ui.Hex("#3a2422"),
+	Primary: ui.Hex("#e0875f"), OnPrimary: ui.Hex("#141312"), Danger: ui.Hex("#e5776b"), OnDanger: ui.Hex("#141312"), DangerBg: ui.Hex("#3a2422"),
 	ToastBg: ui.Hex("#262624"), ToastText: ui.Hex("#eae8e1"), Notch: ui.Hex("#0b0b0c"),
 }
 
@@ -160,12 +161,24 @@ func Apply(c *ui.Context, appearance string) *Palette {
 			pal.Text = ui.Hex("#ffffff")
 			pal.Text2 = ui.Hex("#e3e1da")
 			pal.Muted = ui.Hex("#cccac2")
+			pal.Accent = ui.Hex("#f09b74")
+			pal.AccentText = ui.Hex("#ffb694")
+			pal.Primary = ui.Hex("#f09b74")
+			pal.OnPrimary = ui.Hex("#0d0c0b")
+			pal.Danger = ui.Hex("#ff8b7e")
+			pal.OnDanger = ui.Hex("#0d0c0b")
 		} else {
 			pal.Line = ui.Hex("#bdb8ac")
 			pal.LineSoft = ui.Hex("#d4cfc2")
 			pal.Text = ui.Hex("#111110")
 			pal.Text2 = ui.Hex("#262522")
 			pal.Muted = ui.Hex("#4c4b45")
+			pal.Accent = ui.Hex("#9a4427")
+			pal.AccentText = ui.Hex("#78321b")
+			pal.Primary = ui.Hex("#8f3f25")
+			pal.OnPrimary = ui.Hex("#ffffff")
+			pal.Danger = ui.Hex("#992f26")
+			pal.OnDanger = ui.Hex("#ffffff")
 		}
 	}
 	p := &pal

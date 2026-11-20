@@ -9,6 +9,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"cooool-mark/internal/app"
+	"cooool-mark/internal/locales"
 	"cooool-mark/internal/model"
 	"cooool-mark/internal/theme"
 	"cooool-mark/internal/widget"
@@ -20,13 +21,23 @@ func (s *state) view(c *ui.Context) {
 
 	c.OnWindowShortcut(ui.Cmd, ui.KeyEnter, s.save)
 	c.OnWindowShortcut(0, ui.KeyEscape, func() {
+		if s.confirmSwitch {
+			s.confirmSwitch = false
+			s.pendingReqs = nil
+			return
+		}
+		if s.confirmClose {
+			s.confirmClose = false
+			s.quitAfterClose = false
+			return
+		}
 		if s.addingSub {
 			s.addingSub = false
 			s.newSubName = ""
 			s.newSubFocused = false
 			return
 		}
-		s.close()
+		s.requestClose()
 	})
 
 	if s.needFocus != nil {
@@ -48,7 +59,102 @@ func (s *state) view(c *ui.Context) {
 
 		ui.Box(c).Height(1).FillWidth().Background(p.Line)
 		s.footerBar(c, p)
+		s.unsavedSwitchModal(c, p)
+		s.unsavedCloseModal(c, p)
 	})
+}
+
+func (s *state) unsavedCloseModal(c *ui.Context, p *theme.Palette) {
+	if !s.confirmClose {
+		return
+	}
+	wasOpen := s.confirmClose
+	chosen := -1
+	winW, _ := c.Size()
+	ui.DialogBase(c.Key("unsaved-close-modal"), &s.confirmClose, func(back, panel ui.Element) {
+		back.Background(p.Overlay)
+		panel.Width(404).MaxWidth(max(winW-32, 240)).Padding(20, 20, 16, 20).Gap(10).Radius(12).
+			Background(p.Surface).Border(1, p.Line).
+			Shadow(0, 24, 64, -16, ui.RGBA(0, 0, 0, 0.32))
+		widget.Title(c, p, locales.EditorUnsavedTitle(), 17)
+		ui.Text(c, locales.EditorUnsavedCloseMsg()).TextColor(p.Text2).Wrap().Selectable()
+		ui.Row(c).Gap(8).Justify(ui.End).Margin(6, 0, 0, 0).Children(func() {
+			if widget.Secondary(c.Key("close-cancel"), p, locales.ActionCancel()).Clicked() {
+				chosen = 0
+			}
+			if widget.Danger(c.Key("close-discard"), p, locales.EditorDiscardAndClose(), false).Clicked() {
+				chosen = 1
+			}
+			if widget.Primary(c.Key("close-save"), p, locales.EditorSaveAndClose()).AutoFocus().Clicked() {
+				chosen = 2
+			}
+		})
+	})
+	switch chosen {
+	case 0:
+		s.confirmClose = false
+		s.quitAfterClose = false
+	case 1:
+		s.confirmClose = false
+		s.finishClose()
+	case 2:
+		s.confirmClose = false
+		if s.doSave() {
+			s.pendingReqs = nil
+			s.finishClose()
+		} else {
+			s.quitAfterClose = false
+		}
+	default:
+		if wasOpen && !s.confirmClose {
+			s.quitAfterClose = false
+		}
+	}
+}
+
+func (s *state) unsavedSwitchModal(c *ui.Context, p *theme.Palette) {
+	if !s.confirmSwitch || len(s.pendingReqs) == 0 {
+		s.confirmSwitch = false
+		return
+	}
+	wasOpen := s.confirmSwitch
+	chosen := -1
+	winW, _ := c.Size()
+	ui.DialogBase(c.Key("unsaved-switch-modal"), &s.confirmSwitch, func(back, panel ui.Element) {
+		back.Background(p.Overlay)
+		panel.Width(404).MaxWidth(max(winW-32, 240)).Padding(20, 20, 16, 20).Gap(10).Radius(12).
+			Background(p.Surface).Border(1, p.Line).
+			Shadow(0, 24, 64, -16, ui.RGBA(0, 0, 0, 0.32))
+		widget.Title(c, p, locales.EditorUnsavedTitle(), 17)
+		ui.Text(c, locales.EditorUnsavedMsg()).TextColor(p.Text2).Wrap().Selectable()
+		ui.Row(c).Gap(8).Justify(ui.End).Margin(6, 0, 0, 0).Children(func() {
+			if widget.Secondary(c.Key("switch-cancel"), p, locales.ActionCancel()).Clicked() {
+				chosen = 0
+			}
+			if widget.Danger(c.Key("switch-discard"), p, locales.EditorDiscardAndSwitch(), false).Clicked() {
+				chosen = 1
+			}
+			if widget.Primary(c.Key("switch-save"), p, locales.EditorSaveAndSwitch()).AutoFocus().Clicked() {
+				chosen = 2
+			}
+		})
+	})
+	switch chosen {
+	case 0:
+		s.confirmSwitch = false
+		s.pendingReqs = nil
+	case 1:
+		s.advancePending()
+	case 2:
+		s.confirmSwitch = false
+		if s.doSave() {
+			s.advancePending()
+		}
+	default:
+		if wasOpen && !s.confirmSwitch {
+			s.pendingReqs = nil
+		}
+	}
 }
 
 func (s *state) headerBar(c *ui.Context, p *theme.Palette) {
@@ -78,8 +184,8 @@ func (s *state) urlSection(c *ui.Context, p *theme.Palette) {
 				urlIn := ui.TextInputBase(c.Key(fmt.Sprintf("url-in-%d", s.sessionSeq)), &s.url).
 					Bind(&s.urlHandle).
 					Grow(1).MinWidth(0).
-					Placeholder("粘贴网址或含 {query} 的搜索模板").
-					Label("网址").
+					Placeholder(locales.EditorURLPlaceholder()).
+					Label(locales.EditorURLLabel()).
 					TextColor(p.Text).FontSize(13.5)
 				urlIn.OnPaste(func(string) bool {
 					s.justPasted = true
@@ -101,7 +207,7 @@ func (s *state) urlSection(c *ui.Context, p *theme.Palette) {
 
 				canFetch := strings.TrimSpace(s.url) != "" && s.a.Fetch != nil && !s.fetching
 				refBtn := ui.ButtonBase(c.Key("refetch")).Size(24, 24).Radius(6).Center().
-					TextColor(p.Muted).Label("重新读取网页").Tooltip("重新读取网页").
+					TextColor(p.Muted).Label(locales.EditorRefetchPage()).Tooltip(locales.EditorRefetchPage()).
 					Busy(s.fetching && !s.fetchingIcon).Disabled(!canFetch)
 				if canFetch && refBtn.Hovered() {
 					refBtn.Background(p.Hover).TextColor(p.Text)
@@ -116,7 +222,7 @@ func (s *state) urlSection(c *ui.Context, p *theme.Palette) {
 
 			saveKey := shortcutSaveKey()
 			saveBtn := ui.ButtonBase(c.Key("top-save")).Height(36).PaddingX(13).Radius(9).
-				AlignItems(ui.Center).Gap(6).Label("保存书签").Tooltip("保存 (" + saveKey + ")")
+				AlignItems(ui.Center).Gap(6).Label(locales.EditorSaveBookmark()).Tooltip(locales.EditorSaveTip(saveKey))
 			canSave := strings.TrimSpace(s.url) != ""
 			keyColor := p.Muted.Alpha(0.8)
 			if canSave {
@@ -129,7 +235,7 @@ func (s *state) urlSection(c *ui.Context, p *theme.Palette) {
 				saveBtn.Background(p.Field).TextColor(p.Muted)
 			}
 			saveBtn.Children(func() {
-				ui.Text(c, "保存").FontWeight(500).SingleLine()
+				ui.Text(c, locales.ActionSave()).FontWeight(500).SingleLine()
 				ui.Text(c, saveKey).FontSize(11).TextColor(keyColor).SingleLine()
 			})
 			if !canSave {
@@ -140,35 +246,35 @@ func (s *state) urlSection(c *ui.Context, p *theme.Palette) {
 		})
 
 		if s.saveErr != "" {
-			ui.Text(c, s.saveErr).FontSize(12).TextColor(p.Danger).Wrap()
+			ui.Text(c, s.saveErr).FontSize(12).TextColor(p.Danger).Wrap().Selectable()
 		}
 		switch {
 		case s.fetching && s.fetchingIcon:
-			ui.Text(c, "正在抓取图标…").FontSize(12).TextColor(p.Muted).SingleLine()
+			ui.Text(c, locales.EditorFetchingIcon()).FontSize(12).TextColor(p.Muted).SingleLine()
 		case s.fetching:
-			ui.Text(c, "正在读取网页…").FontSize(12).TextColor(p.Muted).SingleLine()
+			ui.Text(c, locales.EditorFetchingPage()).FontSize(12).TextColor(p.Muted).SingleLine()
 		case s.fetchErr != "":
-			ui.Text(c, s.fetchErr).FontSize(12).TextColor(p.Danger).Wrap()
+			ui.Text(c, s.fetchErr).FontSize(12).TextColor(p.Danger).Wrap().Selectable()
 		case s.aiLoading:
-			ui.Text(c, "正在后台润色…").FontSize(12).TextColor(p.Muted).SingleLine()
+			ui.Text(c, locales.EditorAIPolishing()).FontSize(12).TextColor(p.Muted).SingleLine()
 		case s.aiErr != "":
-			ui.Text(c, s.aiErr).FontSize(12).TextColor(p.Danger).Wrap()
+			ui.Text(c, s.aiErr).FontSize(12).TextColor(p.Danger).Wrap().Selectable()
 		}
 
 		if u := strings.TrimSpace(s.url); u != "" && model.NormalizeURL(u) != "" {
 			if dup := s.a.Store.Lib().FindURL(u); dup != nil && dup.ID != s.id {
 				ui.Row(c).FillWidth().Padding(8, 10).Radius(9).AlignItems(ui.Center).Gap(8).
 					Background(p.AccentBg.Mix(p.Surface, 0.4)).Border(1, p.Accent.Alpha(0.35)).Children(func() {
-					ui.Text(c, "此网址已保存在「"+s.a.PathOf(dup)+"」").
-						FontSize(12).TextColor(p.AccentText).Grow(1).MinWidth(0)
+					ui.Text(c, locales.EditorDuplicateBanner(s.a.PathOf(dup))).
+						FontSize(12).TextColor(p.AccentText).Grow(1).MinWidth(0).Selectable()
 					jump := ui.ButtonBase(c.Key("jump-dup")).Height(24).PaddingX(8).Radius(6).
 						AlignItems(ui.Center).Background(p.Surface).TextColor(p.AccentText).
-						Label("编辑已有书签").Tooltip("打开并编辑已保存的书签")
+						Label(locales.ActionEditExisting()).Tooltip(locales.EditorEditExistingTip())
 					if jump.Hovered() {
 						jump.Background(p.Hover)
 					}
 					jump.Children(func() {
-						ui.Text(c, "编辑已有").FontSize(12).FontWeight(500).SingleLine()
+						ui.Text(c, locales.ActionEditExisting()).FontSize(12).FontWeight(500).SingleLine()
 					})
 					if jump.Clicked() {
 						Show(s.a, app.EditorRequest{ID: dup.ID})
@@ -188,13 +294,13 @@ func (s *state) cardSection(c *ui.Context, p *theme.Palette) {
 				theme.Tile(c, icon, s.a.Store.IconPath(icon), 48)
 
 				canRefetchIcon := strings.TrimSpace(s.url) != "" && s.a.Fetch != nil && !s.fetching
-				reText := "重新抓取图标"
+				reText := locales.EditorRefetchIcon()
 				if s.fetchingIcon {
-					reText = "抓取中…"
+					reText = locales.EditorFetchingShort()
 				}
 				reBtn := ui.ButtonBase(c.Key("refetch-icon")).Height(22).PaddingX(7).Radius(6).
 					AlignItems(ui.Center).Gap(3).Background(p.Field).TextColor(p.Text2).
-					Label("重新抓取图标").Tooltip("重新从网页抓取站点图标").
+					Label(locales.EditorRefetchIcon()).Tooltip(locales.EditorRefetchIconTip()).
 					Busy(s.fetchingIcon).Disabled(!canRefetchIcon)
 				if !canRefetchIcon {
 					reBtn.TextColor(p.Muted)
@@ -214,13 +320,13 @@ func (s *state) cardSection(c *ui.Context, p *theme.Palette) {
 					ui.TextInputBase(c.Key(fmt.Sprintf("title-in-%d", s.sessionSeq)), &s.title).
 						Bind(&s.titleHandle).
 						Grow(1).MinWidth(0).Height(30).
-						Placeholder("书签标题").
-						Label("书签标题").
+						Placeholder(locales.EditorTitlePlaceholder()).
+						Label(locales.EditorTitleLabel()).
 						FontSize(15).FontWeight(600).TextColor(p.Text)
 					if s.aiReady() {
-						aiLabel, aiName, aiTip := "润色", "AI 润色", "使用 AI 润色标题、简介和标签"
+						aiLabel, aiName, aiTip := locales.EditorPolishShort(), locales.ActionAIPolish(), locales.EditorPolishTip()
 						if s.aiLoading {
-							aiLabel, aiName, aiTip = "润色中…", "AI 润色中", "正在润色标题、简介和标签"
+							aiLabel, aiName, aiTip = locales.EditorPolishingShort(), locales.EditorPolishingShort(), locales.EditorPolishingTip()
 						}
 						canAI := strings.TrimSpace(s.url) != "" && !s.aiLoading
 						aiBtn := ui.ButtonBase(c.Key("ai-polish")).Height(26).PaddingX(8).Radius(6).
@@ -241,8 +347,8 @@ func (s *state) cardSection(c *ui.Context, p *theme.Palette) {
 
 				ui.TextAreaBase(c.Key(fmt.Sprintf("note-in-%d", s.sessionSeq)), &s.note).
 					FillWidth().Height(52).
-					Placeholder("简介或笔记").
-					Label("简介或笔记").
+					Placeholder(locales.EditorNotePlaceholder()).
+					Label(locales.EditorNoteLabel()).
 					FontSize(12.5).TextColor(p.Text2)
 			})
 		})
@@ -264,24 +370,24 @@ func (s *state) aiSuggestionBox(c *ui.Context, p *theme.Palette) {
 		Background(p.AccentBg.Mix(p.Surface, 0.45)).Border(1, p.Accent.Alpha(0.35)).Children(func() {
 		ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, theme.IconSparkle).FontSize(13).TextColor(p.AccentText)
-			ui.Text(c, "润色建议").FontSize(12).FontWeight(600).TextColor(p.AccentText)
+			ui.Text(c, locales.EditorAISuggestion()).FontSize(12).FontWeight(600).TextColor(p.AccentText)
 			ui.Box(c).Grow(1)
 
 			applyBtn := ui.ButtonBase(c.Key("ai-apply")).Height(22).PaddingX(8).Radius(6).
 				AlignItems(ui.Center).Background(p.Primary).TextColor(p.OnPrimary).
-				Label("一键替换").Tooltip("用润色建议替换当前内容")
+				Label(locales.EditorApplySuggestion()).Tooltip(locales.EditorApplySuggestionTip())
 			if applyBtn.Hovered() {
 				applyBtn.Background(p.Primary.Mix(ui.Hex("#000000"), 0.08))
 			}
 			applyBtn.Children(func() {
-				ui.Text(c, "一键替换").FontSize(11.5).FontWeight(500).SingleLine()
+				ui.Text(c, locales.EditorApplySuggestion()).FontSize(11.5).FontWeight(500).SingleLine()
 			})
 			if applyBtn.Clicked() {
 				s.applyAI()
 			}
 
 			disBtn := ui.ButtonBase(c.Key("ai-dismiss")).Size(22, 22).Radius(6).
-				Center().TextColor(p.AccentText).Label("忽略润色建议").Tooltip("忽略润色建议")
+				Center().TextColor(p.AccentText).Label(locales.EditorDismissSuggestion()).Tooltip(locales.EditorDismissSuggestion())
 			if disBtn.Hovered() {
 				disBtn.Background(p.Accent.Alpha(0.15))
 			}
@@ -294,10 +400,10 @@ func (s *state) aiSuggestionBox(c *ui.Context, p *theme.Palette) {
 		})
 
 		if sug.Title != "" && sug.Title != strings.TrimSpace(s.title) {
-			ui.Text(c, sug.Title).FontSize(12.5).FontWeight(500).TextColor(p.Text)
+			ui.Text(c, sug.Title).FontSize(12.5).FontWeight(500).TextColor(p.Text).Wrap().Selectable()
 		}
 		if sug.Note != "" && sug.Note != strings.TrimSpace(s.note) {
-			ui.Text(c, sug.Note).FontSize(12).TextColor(p.Text2)
+			ui.Text(c, sug.Note).FontSize(12).TextColor(p.Text2).Wrap().Selectable()
 		}
 	})
 }
@@ -313,7 +419,7 @@ func (s *state) tagsRow(c *ui.Context, p *theme.Palette) {
 				chip.Children(func() {
 					ui.Text(c, tag).FontSize(12).TextColor(p.Text).SingleLine()
 					rm := ui.ButtonBase(c.Key(fmt.Sprintf("rm-tag-%d", i))).Size(16, 16).Radius(4).Center().
-						TextColor(p.Muted).Label("移除标签 " + tag).Tooltip("移除标签")
+						TextColor(p.Muted).Label(locales.EditorRemoveTag(tag)).Tooltip(locales.EditorRemoveTagTip())
 					if rm.Hovered() {
 						rm.Background(p.Line).TextColor(p.Text)
 					}
@@ -335,7 +441,7 @@ func (s *state) tagsRow(c *ui.Context, p *theme.Palette) {
 					addChip := ui.ButtonBase(c.Key(fmt.Sprintf("ai-tag-%d-%s", i, at))).Height(22).PaddingX(7).Radius(6).
 						AlignItems(ui.Center).Background(p.AccentBg.Mix(p.Surface, 0.45)).
 						Border(1, p.Accent.Alpha(0.4)).BorderStyle(ui.BorderDashed).TextColor(p.AccentText).
-						Label("添加标签 " + at).Tooltip("点击添加推荐标签")
+						Label(locales.EditorAddTag(at)).Tooltip(locales.EditorAddTagTip())
 					if addChip.Hovered() {
 						addChip.Background(p.AccentBg)
 					}
@@ -350,7 +456,7 @@ func (s *state) tagsRow(c *ui.Context, p *theme.Palette) {
 
 			tagIn := ui.TextInputBase(c.Key(fmt.Sprintf("tag-draft-%d", s.sessionSeq)), &s.tagDraft).
 				Grow(1).MinWidth(72).Height(22).
-				Placeholder("加标签…").Label("添加标签").FontSize(12).TextColor(p.Text)
+				Placeholder(locales.EditorAddTagPlaceholder()).Label(locales.EditorAddTagLabel()).FontSize(12).TextColor(p.Text)
 			tagIn.OnTextKey(func(k ui.TextKey) bool {
 				if k.Key == ui.KeyBackspace && k.Mods == 0 && k.Text() == "" && len(s.tags) > 0 {
 					s.tags = s.tags[:len(s.tags)-1]
@@ -373,7 +479,7 @@ func (s *state) groupSection(c *ui.Context, p *theme.Palette) {
 	ui.Column(c).FillWidth().Padding(12, 14).Gap(10).Radius(12).
 		Background(p.Surface).Border(1, p.Line).Children(func() {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(8).Children(func() {
-			ui.Text(c, "放到分组").FontSize(12).FontWeight(600).TextColor(p.Text2)
+			ui.Text(c, locales.EditorPlaceInGroup()).FontSize(12).FontWeight(600).TextColor(p.Text2)
 
 			if s.aiReady() && s.aiSuggest != nil && !s.aiDismissed &&
 				s.aiSuggest.GroupID != "" && lib.Sub(s.aiSuggest.GroupID, s.aiSuggest.SubID) != nil &&
@@ -381,9 +487,9 @@ func (s *state) groupSection(c *ui.Context, p *theme.Palette) {
 				recPath := s.a.PathOf(&model.Bookmark{GroupID: s.aiSuggest.GroupID, SubID: s.aiSuggest.SubID})
 				recBtn := ui.ButtonBase(c.Key("ai-rec-group")).Height(22).PaddingX(8).Radius(999).
 					AlignItems(ui.Center).Background(p.AccentBg).TextColor(p.AccentText).
-					Label("使用推荐分组").Tooltip("切换到推荐分组")
+					Label(locales.EditorUseRecommendedGroup()).Tooltip(locales.EditorUseRecommendedGroup())
 				recBtn.Children(func() {
-					ui.Text(c, "推荐："+recPath).FontSize(11.5).SingleLine()
+					ui.Text(c, locales.EditorRecommendedGroup(recPath)).FontSize(11.5).SingleLine()
 				})
 				if recBtn.Clicked() {
 					s.groupID = s.aiSuggest.GroupID
@@ -401,7 +507,7 @@ func (s *state) groupSection(c *ui.Context, p *theme.Palette) {
 				g := &lib.Groups[i]
 				on := g.ID == s.groupID
 				pill := widget.Pill(c.Key("grp-"+g.ID), p, g.Name, on).
-					Label("分组 " + g.Name).Tooltip("选择分组 " + g.Name)
+					Label(locales.EditorGroupItemLabel(g.Name)).Tooltip(locales.EditorGroupItemTip(g.Name))
 				if pill.Clicked() {
 					s.groupID = g.ID
 					s.subID = ""
@@ -422,7 +528,7 @@ func (s *state) groupSection(c *ui.Context, p *theme.Palette) {
 					sub := &curG.Subs[i]
 					on := sub.ID == s.subID
 					sb := ui.ButtonBase(c.Key("sub-" + sub.ID)).Height(28).PaddingX(11).Radius(8).
-						AlignItems(ui.Center).Label("子分组 " + sub.Name).Tooltip("选择子分组 " + sub.Name)
+						AlignItems(ui.Center).Label(locales.EditorSubItemLabel(sub.Name)).Tooltip(locales.EditorSubItemTip(sub.Name))
 					if on {
 						sb.Background(p.AccentBg).Border(1, p.Accent).TextColor(p.AccentText)
 					} else {
@@ -448,8 +554,8 @@ func (s *state) groupSection(c *ui.Context, p *theme.Palette) {
 					subIn := ui.TextInput(c.Key(fmt.Sprintf("new-sub-in-%d", s.sessionSeq)), &s.newSubName).
 						Bind(&s.newSubHandle).
 						Width(132).Height(28).FontSize(12).
-						Placeholder("子分组名，回车确认").Label("新建子分组名称")
-					if subIn.Focused() {
+						Placeholder(locales.EditorNewSubPlaceholder()).Label(locales.EditorNewSubLabel())
+					if subIn.Focused() && !s.confirmClose && !s.confirmSwitch {
 						s.newSubFocused = true
 					}
 					switch {
@@ -459,19 +565,19 @@ func (s *state) groupSection(c *ui.Context, p *theme.Palette) {
 						s.addingSub = false
 						s.newSubName = ""
 						s.newSubFocused = false
-					case s.newSubFocused && !subIn.Focused():
+					case s.newSubFocused && !subIn.Focused() && !s.confirmClose && !s.confirmSwitch:
 						s.commitNewSub()
 					}
 				} else {
 					addBtn := ui.ButtonBase(c.Key("add-sub-btn")).Height(28).PaddingX(10).Radius(8).
 						AlignItems(ui.Center).Gap(4).Border(1, p.Line).BorderStyle(ui.BorderDashed).
-						TextColor(p.Muted).Label("新建子分组").Tooltip("在当前分组下新建子分组")
+						TextColor(p.Muted).Label(locales.ActionNewSub()).Tooltip(locales.EditorNewSubTip())
 					if addBtn.Hovered() {
 						addBtn.Background(p.Hover).TextColor(p.Text)
 					}
 					addBtn.Children(func() {
 						ui.Icon(c, theme.IconPlus).FontSize(11)
-						ui.Text(c, "新建").FontSize(12).SingleLine()
+						ui.Text(c, locales.ActionNew()).FontSize(12).SingleLine()
 					})
 					if addBtn.Clicked() {
 						s.addingSub = true
@@ -490,8 +596,8 @@ func (s *state) footerBar(c *ui.Context, p *theme.Palette) {
 	ui.Row(c).FillWidth().Shrink(0).Padding(11, 18).Gap(8).AlignItems(ui.Center).
 		Background(p.Sidebar).Children(func() {
 		if s.id != "" {
-			del := widget.Danger(c.Key("delete-btn"), p, "删除", false).
-				Label("删除").Tooltip("删除此书签")
+			del := widget.Danger(c.Key("delete-btn"), p, locales.ActionDelete(), false).
+				Label(locales.ActionDelete()).Tooltip(locales.EditorDeleteTip())
 			if del.Clicked() {
 				s.deleteCurrent()
 			}
@@ -499,14 +605,14 @@ func (s *state) footerBar(c *ui.Context, p *theme.Palette) {
 
 		ui.Box(c).Grow(1)
 
-		cancelBtn := widget.Secondary(c.Key("cancel-btn"), p, "取消").
-			Label("取消").Tooltip("取消 (Esc)")
+		cancelBtn := widget.Secondary(c.Key("cancel-btn"), p, locales.ActionCancel()).
+			Label(locales.ActionCancel()).Tooltip(locales.EditorCancelTip())
 		if cancelBtn.Clicked() {
-			s.close()
+			s.requestClose()
 		}
 
-		saveBtn := widget.Primary(c.Key("save-btn"), p, "保存").
-			Label("保存").Tooltip("保存 (" + saveKey + ")")
+		saveBtn := widget.Primary(c.Key("save-btn"), p, locales.ActionSave()).
+			Label(locales.ActionSave()).Tooltip(locales.EditorSaveTip(saveKey))
 		if strings.TrimSpace(s.url) == "" {
 			saveBtn.Disabled(true)
 		} else if saveBtn.Clicked() {
