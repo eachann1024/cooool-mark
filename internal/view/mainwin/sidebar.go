@@ -16,7 +16,6 @@ import (
 func (s *mainState) buildSidebar(c *ui.Context, p *theme.Palette) {
 	a := s.app
 	lib := a.Store.Lib()
-	g := lib.Group(a.Group)
 
 	bar := c.TitleBar()
 	topH := widget.BarH(bar)
@@ -32,39 +31,35 @@ func (s *mainState) buildSidebar(c *ui.Context, p *theme.Palette) {
 			}
 		})
 
-		// Sub-group list.
-		nav := widget.AutoScrollbar(c, ui.Scroll(c.Key("sidebar-subs"))).Grow(1).MinHeight(0).Padding(6, 10)
+		// Primary group list.
+		nav := widget.AutoScrollbar(c, ui.Scroll(c.Key("sidebar-groups"))).Grow(1).MinHeight(0).Padding(6, 10)
 		nav.Children(func() {
-			if g == nil {
+			if len(lib.Groups) == 0 && !s.addingGroup {
 				s.buildSidebarEmpty(c, p, locales.MainNoGroups(), locales.ActionNewGroup(), func() { s.startAddGroup(c) })
 				return
 			}
-			if len(g.Subs) == 0 && !s.addingSub {
-				s.buildSidebarEmpty(c, p, locales.MainNoSubs(), locales.ActionNewSub(), func() { s.startAddSub(c) })
-				return
+			col := ui.Column(c.Key("sidebar-groups-col")).Gap(2)
+			lastSelected := ui.Local(col, "selected-group", func() string { return "" })
+			revealGroup := ""
+			if strings.TrimSpace(s.query) == "" && *lastSelected != a.Group {
+				revealGroup = a.Group
+				*lastSelected = a.Group
 			}
-			col := ui.Column(c.Key("sidebar-subs-col")).Gap(2)
-			lastSelected := ui.Local(col, "selected-sub", func() string { return "" })
-			revealSub := ""
-			if strings.TrimSpace(s.query) == "" && *lastSelected != a.Sub {
-				revealSub = a.Sub
-				*lastSelected = a.Sub
-			}
-			subs, _ := s.ensureGroupCache(lib, g)
+			counts := countBookmarksByGroup(lib)
 			col.Children(func() {
-				for i, sub := range g.Subs {
-					s.buildSidebarSubItem(c, p, lib, g, i, sub, len(subs[i]), revealSub == sub.ID)
+				for i, g := range lib.Groups {
+					s.buildSidebarGroupItem(c, p, lib, i, g, counts[g.ID], revealGroup == g.ID)
 				}
-				if s.addingSub {
-					s.buildNewSubInput(c, p, g.ID)
+				if s.addingGroup {
+					s.buildNewGroupInput(c, p)
 				}
 			})
 		})
 
-		// Bottom bar: new sub-group button (only when the sidebar isn't showing its empty state).
-		if g != nil && (len(g.Subs) > 0 || s.addingSub) {
+		// Bottom bar: new group button (only when the sidebar isn't showing its empty state).
+		if len(lib.Groups) > 0 || s.addingGroup {
 			ui.Row(c).Shrink(0).Padding(8, 10, 12, 10).Children(func() {
-				btn := ui.ButtonBase(c).Label(locales.ActionNewSub()).Tooltip(locales.ActionNewSub()).
+				btn := ui.ButtonBase(c).Label(locales.ActionNewGroup()).Tooltip(locales.ActionNewGroup()).
 					Height(28).FillWidth().PaddingX(10).Radius(7).Gap(6).AlignItems(ui.Center).
 					TextColor(p.Muted)
 				if btn.Hovered() {
@@ -72,14 +67,25 @@ func (s *mainState) buildSidebar(c *ui.Context, p *theme.Palette) {
 				}
 				btn.Children(func() {
 					ui.Icon(c, theme.IconPlus).FontSize(14).Shrink(0)
-					ui.Text(c, locales.ActionNewSub()).FontSize(12.5).SingleLine()
+					ui.Text(c, locales.ActionNewGroup()).FontSize(12.5).SingleLine()
 				})
 				if btn.Clicked() {
-					s.startAddSub(c)
+					s.startAddGroup(c)
 				}
 			})
 		}
 	})
+}
+
+func countBookmarksByGroup(lib *model.Library) map[string]int {
+	counts := make(map[string]int, len(lib.Groups))
+	for i := range lib.Bookmarks {
+		b := &lib.Bookmarks[i]
+		if !b.InTrash() {
+			counts[b.GroupID]++
+		}
+	}
+	return counts
 }
 
 func (s *mainState) buildSidebarEmpty(c *ui.Context, p *theme.Palette, title, btnLabel string, onClick func()) {
@@ -104,51 +110,39 @@ func (s *mainState) buildSidebarEmpty(c *ui.Context, p *theme.Palette, title, bt
 	})
 }
 
-func (s *mainState) buildSidebarSubItem(c *ui.Context, p *theme.Palette, lib *model.Library, g *model.Group, idx int, sub model.Sub, count int, reveal bool) {
+func (s *mainState) buildSidebarGroupItem(c *ui.Context, p *theme.Palette, lib *model.Library, idx int, g model.Group, count int, reveal bool) {
 	a := s.app
-	keyC := c.Key("sub-" + sub.ID)
+	keyC := c.Key("grp-" + g.ID)
 
-	if s.renamingSubID == sub.ID {
+	if s.renamingGroupID == g.ID {
 		box := ui.Row(keyC).Height(30).PaddingX(8).Radius(7).AlignItems(ui.Center).
 			Background(p.Surface).Border(1.5, p.Accent)
 		box.Children(func() {
 			in := ui.TextInputBase(c, &s.renameDraft).Bind(&s.renameHandle).
-				Placeholder(locales.MainSubNamePlaceholder()).Label(locales.MainRenameSubLabel()).Grow(1).TextColor(p.Text)
-			if in.Focused() {
-				s.renameFocused = true
-			}
-			switch {
-			case in.Submitted():
+				Placeholder(locales.MainGroupNamePlaceholder()).Label(locales.MainRenameGroupLabel()).Grow(1).TextColor(p.Text)
+			handleInlineEditInput(in, &s.renameFocused, func() {
 				if name := strings.TrimSpace(s.renameDraft); name != "" {
-					a.RenameSub(g.ID, sub.ID, name)
+					a.RenameGroup(g.ID, name)
 				}
-				s.renamingSubID = ""
-				s.renameFocused = false
-			case in.Shortcut(0, ui.KeyEscape):
-				s.renamingSubID = ""
-				s.renameFocused = false
-			case s.renameFocused && !in.Focused():
-				if name := strings.TrimSpace(s.renameDraft); name != "" {
-					a.RenameSub(g.ID, sub.ID, name)
-				}
-				s.renamingSubID = ""
-				s.renameFocused = false
-			}
+				s.renamingGroupID = ""
+			}, func() {
+				s.renamingGroupID = ""
+			})
 		})
 		return
 	}
 
-	selected := sub.ID == a.Sub && strings.TrimSpace(s.query) == ""
+	selected := g.ID == a.Group && strings.TrimSpace(s.query) == ""
 	row := ui.Row(keyC).Height(30).Padding(0, 6, 0, 12).Radius(7).
 		AlignItems(ui.Center).Gap(4).Cursor(ui.CursorPointer)
 	if reveal {
 		row.ScrollIntoView()
 	}
-	menuOpen := ui.Local(row, "subMenuOpen", func() bool { return false })
+	menuOpen := ui.Local(row, "grpMenuOpen", func() bool { return false })
 
 	drag, dragOver := ui.DragOver[dragPayload](row)
 	if drop, ok := ui.Drop[dragPayload](row); ok {
-		a.Move(drop.IDs, g.ID, sub.ID)
+		s.moveBookmarksToGroup(drop.IDs, g.ID)
 	}
 
 	hovered := row.Hovered()
@@ -161,42 +155,24 @@ func (s *mainState) buildSidebarSubItem(c *ui.Context, p *theme.Palette, lib *mo
 		row.Background(p.Hover.Mix(p.SideSel, 0.7))
 	}
 
-	buildSubMenu := func(m *ui.Menu) {
+	buildGroupMenu := func(m *ui.Menu) {
 		if m.Item(locales.ActionRename()).Icon(theme.MenuIcon(theme.IconEdit)).Chosen() {
-			s.startRenameSub(c, sub)
+			s.startRenameGroup(c, g)
 		}
-		if m.Item(locales.ActionNewBookmarkHere()).Icon(theme.MenuIcon(theme.IconPlus)).Chosen() {
-			if a.Win.ShowEditor != nil {
-				a.Win.ShowEditor(app.EditorRequest{GroupID: g.ID, SubID: sub.ID})
-			}
+		if m.Item(locales.ActionNewSub()).Icon(theme.MenuIcon(theme.IconFolderPlus)).Chosen() {
+			a.Go(g.ID, "")
+			s.startAddSub(c)
 		}
 		m.Separator()
 		if m.Item(locales.ActionMoveUp()).Icon(theme.MenuIcon(theme.IconChevronUp)).Disabled(idx == 0).Chosen() {
-			reorderSubByDelta(a, g, idx, -1)
+			reorderGroupByDelta(a, lib, idx, -1)
 		}
-		if m.Item(locales.ActionMoveDown()).Icon(theme.MenuIcon(theme.IconChevronDown)).Disabled(idx >= len(g.Subs)-1).Chosen() {
-			reorderSubByDelta(a, g, idx, 1)
-		}
-		if len(lib.Groups) > 1 {
-			m.Submenu(locales.ActionMoveToOtherGroup(), func(sm *ui.Menu) {
-				for _, targetG := range lib.Groups {
-					if targetG.ID == g.ID {
-						continue
-					}
-					if sm.Item(targetG.Name).Icon(theme.MenuIcon(theme.IconFolder)).ID("mv-" + targetG.ID).Chosen() {
-						a.MoveSub(g.ID, sub.ID, targetG.ID)
-						a.EnsurePlace()
-					}
-				}
-			}).Icon(theme.MenuIcon(theme.IconMove))
-		}
-		if m.Item(locales.ActionPromoteToGroup()).Icon(theme.MenuIcon(theme.IconPromote)).Chosen() {
-			a.PromoteSub(g.ID, sub.ID)
-			a.EnsurePlace()
+		if m.Item(locales.ActionMoveDown()).Icon(theme.MenuIcon(theme.IconChevronDown)).Disabled(idx >= len(lib.Groups)-1).Chosen() {
+			reorderGroupByDelta(a, lib, idx, 1)
 		}
 		m.Separator()
-		if m.Item(locales.ActionDeleteSub()).Icon(theme.MenuIcon(theme.IconTrash)).IconColor(p.Danger).Danger().Chosen() {
-			a.DeleteSub(g.ID, sub.ID)
+		if m.Item(locales.ActionDeleteGroup()).Icon(theme.MenuIcon(theme.IconTrash)).IconColor(p.Danger).Danger().Chosen() {
+			a.DeleteGroup(g.ID)
 		}
 	}
 
@@ -207,7 +183,7 @@ func (s *mainState) buildSidebarSubItem(c *ui.Context, p *theme.Palette, lib *mo
 		}
 		mainArea = ui.Row(c).Grow(1).MinWidth(0).FillHeight().AlignItems(ui.Center).Gap(6)
 		mainArea.Children(func() {
-			txt := ui.Text(c, sub.Name).Grow(1).MinWidth(0).SingleLine()
+			txt := ui.Text(c, g.Name).Grow(1).MinWidth(0).SingleLine()
 			switch {
 			case dragOver:
 				txt.TextColor(p.AccentText).FontWeight(600)
@@ -223,7 +199,7 @@ func (s *mainState) buildSidebarSubItem(c *ui.Context, p *theme.Palette, lib *mo
 		})
 
 		if !dragOver && (hovered || *menuOpen) {
-			moreBtn := ui.ButtonBase(c).Label(locales.MenuSubActions()).Tooltip(locales.MenuSubActions()).
+			moreBtn := ui.ButtonBase(c).Label(locales.MenuMoreActions()).Tooltip(locales.MenuMoreActions()).
 				Size(22, 22).Radius(6).Center().TextColor(p.Text2).Shrink(0)
 			if moreBtn.Hovered() || *menuOpen {
 				moreBtn.Background(p.SideSel.Mix(p.Text, 0.08)).TextColor(p.Text)
@@ -231,80 +207,86 @@ func (s *mainState) buildSidebarSubItem(c *ui.Context, p *theme.Palette, lib *mo
 				moreBtn.Background(p.SideSel.Mix(p.Text, 0.04))
 			}
 			moreBtn.Children(func() { ui.Icon(c, theme.IconMore).FontSize(12) })
-			moreBtn.PopoverMenuButton(buildSubMenu, menuButtonOptions(p, menuOpen, true))
+			moreBtn.PopoverMenuButton(buildGroupMenu, menuButtonOptions(p, menuOpen, true))
 		}
 	})
 
 	if mainArea.Clicked() {
 		s.clearSearch()
-		s.scrollToSub = sub.ID
+		s.cursorID = ""
+		s.browseList.ScrollTo(0, ui.Start)
 		s.stopBrowseFollow()
-		a.Go(g.ID, sub.ID)
+		a.Go(g.ID, "")
 	}
-	row.PopoverMenu(buildSubMenu, menuOptions(p))
+	row.PopoverMenu(buildGroupMenu, menuOptions(p))
 }
 
-func (s *mainState) buildNewSubInput(c *ui.Context, p *theme.Palette, groupID string) {
+func (s *mainState) buildNewGroupInput(c *ui.Context, p *theme.Palette) {
 	a := s.app
-	box := ui.Row(c.Key("new-sub-input")).Height(30).PaddingX(8).Radius(7).AlignItems(ui.Center).
+	box := ui.Row(c.Key("new-grp-input")).Height(30).PaddingX(8).Radius(7).AlignItems(ui.Center).
 		Background(p.Surface).Border(1.5, p.Accent)
 	box.Children(func() {
-		in := ui.TextInputBase(c, &s.newSubDraft).Bind(&s.newSubHandle).
-			Placeholder(locales.MainSubNamePlaceholder()).Label(locales.ActionNewSub()).Grow(1).TextColor(p.Text)
-		if in.Focused() {
-			s.newSubFocused = true
-		}
-		switch {
-		case in.Submitted():
-			if name := strings.TrimSpace(s.newSubDraft); name != "" {
-				id := a.AddSub(groupID, name)
-				a.Go(groupID, id)
-				s.scrollToSub = id
+		in := ui.TextInputBase(c, &s.newGroupDraft).Bind(&s.newGroupHandle).
+			Placeholder(locales.MainGroupNamePlaceholder()).Label(locales.ActionNewGroup()).Grow(1).TextColor(p.Text)
+		handleInlineEditInput(in, &s.newGroupFocused, func() {
+			if name := strings.TrimSpace(s.newGroupDraft); name != "" {
+				a.AddGroup(name)
+				s.cursorID = ""
+				s.browseList.ScrollTo(0, ui.Start)
 				s.stopBrowseFollow()
 			}
-			s.addingSub = false
-			s.newSubFocused = false
-		case in.Shortcut(0, ui.KeyEscape):
-			s.addingSub = false
-			s.newSubFocused = false
-		case s.newSubFocused && !in.Focused():
-			if name := strings.TrimSpace(s.newSubDraft); name != "" {
-				id := a.AddSub(groupID, name)
-				a.Go(groupID, id)
-				s.scrollToSub = id
-				s.stopBrowseFollow()
-			}
-			s.addingSub = false
-			s.newSubFocused = false
-		}
+			s.addingGroup = false
+		}, func() {
+			s.addingGroup = false
+		})
 	})
 }
 
-func (s *mainState) startRenameSub(c *ui.Context, sub model.Sub) {
-	s.renamingGroupID = ""
-	s.renamingSubID = sub.ID
-	s.renameDraft = sub.Name
+func (s *mainState) startRenameGroup(c *ui.Context, g model.Group) {
+	s.addingGroup = false
+	s.addingSub = false
+	s.renamingSubID = ""
+	s.renamingGroupID = g.ID
+	s.renameDraft = g.Name
 	s.renameFocused = false
 	s.renameHandle.SelectAll(c)
 }
 
-func (s *mainState) startAddSub(c *ui.Context) {
-	s.addingGroup = false
-	s.addingSub = true
-	s.newSubDraft = ""
-	s.newSubFocused = false
-	s.newSubHandle.Focus(c)
+func (s *mainState) startAddGroup(c *ui.Context) {
+	s.renamingGroupID = ""
+	s.renamingSubID = ""
+	s.addingSub = false
+	s.addingGroup = true
+	s.newGroupDraft = ""
+	s.newGroupFocused = false
+	s.newGroupHandle.Focus(c)
 }
 
-func reorderSubByDelta(a *app.App, g *model.Group, idx, delta int) {
+func reorderGroupByDelta(a *app.App, lib *model.Library, idx, delta int) {
 	next := idx + delta
-	if next < 0 || next >= len(g.Subs) {
+	if next < 0 || next >= len(lib.Groups) {
 		return
 	}
-	ids := make([]string, len(g.Subs))
-	for i, sub := range g.Subs {
-		ids[i] = sub.ID
+	ids := make([]string, len(lib.Groups))
+	for i, g := range lib.Groups {
+		ids[i] = g.ID
 	}
 	ids[idx], ids[next] = ids[next], ids[idx]
-	a.ReorderSubs(g.ID, ids)
+	a.ReorderGroups(ids)
+}
+
+func (s *mainState) moveBookmarksToGroup(ids []string, groupID string) {
+	a := s.app
+	lib := a.Store.Lib()
+	g := lib.Group(groupID)
+	if g == nil {
+		return
+	}
+	subID := ""
+	if len(g.Subs) > 0 {
+		subID = g.Subs[0].ID
+	} else {
+		subID = a.AddSub(groupID, locales.DefaultSub())
+	}
+	a.Move(ids, groupID, subID)
 }

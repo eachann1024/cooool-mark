@@ -117,10 +117,13 @@ func (s *mainState) ensureBrowseCache(lib *model.Library, g *model.Group, view s
 	subRow = make(map[string]int, len(g.Subs))
 	bmRow = make(map[string]int, len(s.groupCache.ids))
 	rows = rows[:0]
+	singleSub := len(g.Subs) <= 1
 	for si, sub := range g.Subs {
 		items := subs[si]
 		subRow[sub.ID] = len(rows)
-		rows = append(rows, browseRow{kind: browseRowHeader, sub: sub, count: len(items)})
+		if !singleSub {
+			rows = append(rows, browseRow{kind: browseRowHeader, sub: sub, count: len(items)})
+		}
 		if len(items) == 0 {
 			rows = append(rows, browseRow{kind: browseRowEmpty, sub: sub})
 			continue
@@ -524,7 +527,11 @@ func (s *mainState) buildBrowseBody(c *ui.Context, p *theme.Palette) {
 					s.buildEmptySubCard(c, p, g, r.sub)
 				})
 			case browseRowListItem:
-				ui.Box(c).FillWidth().Padding(0, 24, 1+extraBottom, 24).Children(func() {
+				top := float32(0)
+				if row.Index == 0 {
+					top = 8
+				}
+				ui.Box(c).FillWidth().Padding(top, 24, 1+extraBottom, 24).Children(func() {
 					s.buildBookmarkListRow(c, p, g, r.sub, r.b, listTileSize, minH, padY)
 				})
 			case browseRowTail:
@@ -539,12 +546,16 @@ func (s *mainState) buildBrowseBody(c *ui.Context, p *theme.Palette) {
 					}
 				})
 			case browseRowGridRow:
+				top := float32(0)
+				if row.Index == 0 {
+					top = 8
+				}
 				bottom := gridGap
 				if r.lastInSub {
 					bottom = 0
 				}
 				bottom += extraBottom
-				ui.Column(c).FillWidth().Padding(0, 24, bottom, 24).Gap(6).Children(func() {
+				ui.Column(c).FillWidth().Padding(top, 24, bottom, 24).Gap(6).Children(func() {
 					ui.Grid(c).Columns(cols).Gap(gridGap).Children(func() {
 						for _, b := range r.items {
 							s.buildBookmarkGridCard(c, p, g, r.sub, b, cardSize, spec)
