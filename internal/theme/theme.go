@@ -67,33 +67,40 @@ var Dark = Palette{
 	ToastBg: ui.Hex("#262624"), ToastText: ui.Hex("#eae8e1"), Notch: ui.Hex("#0b0b0c"),
 }
 
-// Serif is the family of titles; Sans of everything else (Chinese locale).
+// tsangerJinKai lists common installed family names of Tsanger JinKai
+// (仓耳今楷) across platforms and weight variants before falling back to
+// system serif fonts.
+const tsangerJinKai = "仓耳今楷03W04, 仓耳今楷03-W04, 仓耳今楷03-W03, 仓耳今楷03-W05, 仓耳今楷02-W04, 仓耳今楷01-W04, 仓耳今楷04-W04, 仓耳今楷05-W04, 仓耳今楷, TsangerJinKai03-W04, TsangerJinKai02-W04, TsangerJinKai01-W04, TsangerJinKai04-W04, TsangerJinKai05-W04, TsangerJinKai"
+
+// Serif is the family of titles (Chinese locale); Sans is empty to use the
+// system's built-in UI font.
 var Serif, Sans = fonts()
 
-// LatinSerif and LatinSans are used when the active locale is non-Chinese.
+// LatinSerif is the family of titles for non-Chinese locales; LatinSans is
+// empty to use the system's built-in UI font.
 var LatinSerif, LatinSans = latinFonts()
 
 func fonts() (string, string) {
 	switch runtime.GOOS {
 	case "darwin":
-		return "Songti SC", "PingFang SC"
+		return tsangerJinKai + ", Songti SC", ""
 	case "windows":
-		return "SimSun", "Microsoft YaHei UI"
+		return tsangerJinKai + ", SimSun", ""
 	}
-	return "Noto Serif CJK SC", "Noto Sans CJK SC"
+	return tsangerJinKai + ", Noto Serif CJK SC", ""
 }
 
 func latinFonts() (string, string) {
 	switch runtime.GOOS {
 	case "darwin":
-		return "New York", ""
+		return tsangerJinKai + ", New York", ""
 	case "windows":
-		return "Georgia", "Segoe UI"
+		return tsangerJinKai + ", Georgia", ""
 	}
-	return "Noto Serif", ""
+	return tsangerJinKai + ", Noto Serif", ""
 }
 
-// TitleFont returns the serif display font matching the active locale.
+// TitleFont returns the display font for titles matching the active locale.
 func TitleFont(c *ui.Context) string {
 	if c != nil && !strings.HasPrefix(strings.ToLower(c.Locale()), "zh") && LatinSerif != "" {
 		return LatinSerif
@@ -216,6 +223,7 @@ func Apply(c *ui.Context, appearance string) *Palette {
 	t.ScrollbarWidth = sb.ThumbWidth
 	t.Scrollbar = sb.Thumb
 	t.ScrollbarStyle = sb
+	t.Font = ""
 	if strings.HasPrefix(strings.ToLower(c.Locale()), "zh") {
 		if Sans != "" {
 			t.Font = Sans
