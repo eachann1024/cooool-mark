@@ -45,10 +45,11 @@ type EditorRequest struct {
 
 // Windows are the windows the views can open, set up by main.
 type Windows struct {
-	ShowMain     func()
-	ShowEditor   func(EditorRequest)
-	ShowSearch   func(query string)
-	ShowSettings func(page string) // "general", "ai", "data"
+	ShowMain        func()
+	ShowEditor      func(EditorRequest)
+	ShowSearch      func(query string)
+	ShowQuickSearch func()
+	ShowSettings    func(page string) // "general", "ai", "data"
 	ShowImport   func(path string) // "" asks for a file
 	// ApplyModes creates/destroys the notch, tray and edge windows
 	// to match Settings.OpenModes.
@@ -70,8 +71,9 @@ type App struct {
 	Import Importer
 
 	// Where the main window is.
-	Group, Sub string
-	View       string // list | grid
+	Group, Sub        string
+	View              string // list | grid
+	StealthBackground bool
 
 	Toast Toast
 
@@ -80,11 +82,25 @@ type App struct {
 	placeTimer    *time.Timer
 	placeDirty    bool
 	windows       []*mygo.Window
+	regularWins   []*mygo.Window
 	postMu        sync.Mutex
 	postQueue     []func()
 	toastSeq      int
 	// PolishedAt marks bookmarks the AI just filled, for a 1.5 s highlight.
 	PolishedAt map[string]time.Time
+}
+
+// PeekSettings reads settings.json before mygo.App.Run() starts.
+func PeekSettings() model.Settings {
+	s := model.DefaultSettings()
+	userData, err := mygo.App.Path(mygo.PathUserData)
+	if err != nil {
+		return s
+	}
+	if data, err := os.ReadFile(filepath.Join(userData, "settings.json")); err == nil {
+		_ = json.Unmarshal(data, &s)
+	}
+	return s
 }
 
 // New loads the settings and opens the library where they say.
@@ -192,6 +208,61 @@ func (a *App) AddWindow(w *mygo.Window) {
 	})
 }
 
+// AddRegularWindow registers a regular user window (Main, Settings, Editor, Import)
+// so background / Dock policy tracks whether any primary window is open.
+func (a *App) AddRegularWindow(w *mygo.Window) {
+	a.AddWindow(w)
+	a.regularWins = append(a.regularWins, w)
+	w.OnClosed(func() {
+		for i, x := range a.regularWins {
+			if x == w {
+				a.regularWins = append(a.regularWins[:i], a.regularWins[i+1:]...)
+				break
+			}
+		}
+		a.SyncDockPolicy()
+	})
+}
+
+// HasRegularWindow reports whether any regular window is currently open.
+func (a *App) HasRegularWindow() bool {
+	for _, w := range a.regularWins {
+		if w != nil && !w.IsDestroyed() {
+			return true
+		}
+	}
+	return false
+}
+
+// PrepareRegularWindow ensures the macOS Dock icon is active before showing a regular window.
+func (a *App) PrepareRegularWindow() {
+	a.StealthBackground = false
+	if runtime.GOOS == "darwin" && mygo.App.ActivationPolicy() != mygo.ActivationPolicyRegular {
+		mygo.App.Dock.Show()
+	}
+}
+
+// SyncDockPolicy shows or hides the macOS Dock icon based on open regular windows,
+// active summon modes, and the user's background settings.
+func (a *App) SyncDockPolicy() {
+	if runtime.GOOS != "darwin" {
+		return
+	}
+	if a.HasRegularWindow() {
+		a.PrepareRegularWindow()
+		return
+	}
+	if (a.Settings.HideDockWhenClosed && a.Settings.HasSummonMode()) || a.StealthBackground {
+		if mygo.App.ActivationPolicy() != mygo.ActivationPolicyAccessory {
+			mygo.App.Dock.Hide()
+		}
+		return
+	}
+	if mygo.App.ActivationPolicy() != mygo.ActivationPolicyRegular {
+		mygo.App.Dock.Show()
+	}
+}
+
 // Invalidate redraws every window.
 func (a *App) Invalidate() {
 	for _, w := range a.windows {
@@ -246,6 +317,7 @@ func (a *App) SaveSettings() {
 	if a.Win.ApplyModes != nil {
 		a.Win.ApplyModes()
 	}
+	a.SyncDockPolicy()
 	if a.Settings.AutoBackup && (previous == nil || !previous.AutoBackup) {
 		a.DailyBackup()
 	}

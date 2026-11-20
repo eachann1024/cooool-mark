@@ -50,12 +50,11 @@ type notchMode struct {
 	unsubDisp    func()
 	list         ui.ListState
 	cache        struct {
-		library   *model.Library
-		revision  int64
-		groupID   string
-		searching bool
-		query     string
-		items     []*model.Bookmark
+		library  *model.Library
+		revision int64
+		groupID  string
+		query    string
+		items    []*model.Bookmark
 	}
 }
 
@@ -93,6 +92,7 @@ func newNotchMode(a *app.App) *notchMode {
 		Y:                 y,
 		Width:             w,
 		Height:            h,
+		Hidden:            true,
 		Frameless:         true,
 		Transparent:       true,
 		Panel:             true,
@@ -108,6 +108,7 @@ func newNotchMode(a *app.App) *notchMode {
 	prepareNotchWindow(n.win)
 	n.win.SetBounds(mygo.Rectangle{X: x, Y: y, Width: w, Height: h})
 	a.AddWindow(n.win)
+	n.win.ShowInactive()
 	n.win.OnBlur(func() {
 		if n.state != notchClosed && time.Since(n.openedAt) > 150*time.Millisecond {
 			n.collapse()
@@ -178,11 +179,11 @@ func (n *notchMode) placeClosed(d mygo.Display) {
 
 func (n *notchMode) currentItems(lib *model.Library) []*model.Bookmark {
 	q := strings.TrimSpace(n.query)
-	if n.cache.library == lib && n.cache.revision == lib.Revision && n.cache.groupID == n.groupID && n.cache.searching == n.searching && n.cache.query == q {
+	if n.cache.library == lib && n.cache.revision == lib.Revision && n.cache.groupID == n.groupID && n.cache.query == q {
 		return n.cache.items
 	}
 	var items []*model.Bookmark
-	if n.searching && q != "" {
+	if q != "" {
 		items = searchBookmarks(n.app, q, "")
 	} else if len(lib.Groups) > 0 {
 		items = groupBookmarks(lib, activeGroup(lib, n.groupID))
@@ -190,7 +191,6 @@ func (n *notchMode) currentItems(lib *model.Library) []*model.Bookmark {
 	n.cache.library = lib
 	n.cache.revision = lib.Revision
 	n.cache.groupID = n.groupID
-	n.cache.searching = n.searching
 	n.cache.query = q
 	n.cache.items = items
 	return items
@@ -207,6 +207,7 @@ func (n *notchMode) setState(st notchState) {
 	if n.state == st {
 		return
 	}
+	wasFocused := st == notchClosed && n.win != nil && n.win.IsFocused()
 	n.state = st
 	n.hoverSince = time.Time{}
 	n.dragLeftAt = time.Time{}
@@ -223,17 +224,32 @@ func (n *notchMode) setState(st notchState) {
 	if n.win == nil {
 		return
 	}
+	if wasFocused {
+		n.win.Hide()
+	}
 	rows := n.currentRows()
 	x, y, w, h := n.boundsFor(st, rows)
 	n.win.SetBounds(mygo.Rectangle{X: x, Y: y, Width: w, Height: h})
 	if st == notchOpen {
 		n.win.Show()
 		n.win.Focus()
+	} else if wasFocused {
+		n.win.ShowInactive()
 	}
 	n.win.Invalidate()
 }
 
 func (n *notchMode) expand() {
+	if n.state == notchOpen {
+		if n.win != nil {
+			n.win.Show()
+			n.win.Focus()
+		}
+		if n.searching {
+			n.searchInput.Focus()
+		}
+		return
+	}
 	n.setState(notchOpen)
 }
 
@@ -285,19 +301,38 @@ func (n *notchMode) view(c *ui.Context) {
 		n.tmplID = ""
 	}
 
+	if n.state == notchOpen && c.Shortcut(ui.Cmd, ui.KeyF) && !c.ShortcutRepeated() {
+		n.searching = true
+		n.searchInput.SelectAll(c)
+	}
+
 	if n.state == notchOpen && c.Shortcut(0, ui.KeyEscape) {
 		if n.tmplID != "" {
 			n.tmplID = ""
 			n.tmplQuery = ""
 			n.syncOpenHeight()
+			if n.searching {
+				n.searchInput.Focus(c)
+			}
 		} else if n.searching {
 			n.searching = false
 			n.query = ""
 			n.list.ScrollTo(0, ui.Start)
 			n.syncOpenHeight()
+			n.searchInput.CancelFocus(c)
 		} else {
 			n.collapse()
 			return
+		}
+	}
+
+	if n.state == notchOpen && !n.searching && !n.searchInput.Focused(c) && !n.tmplInput.Focused(c) {
+		if ch, ok := widget.TypedSearchKey(c); ok {
+			n.searching = true
+			n.query = ch
+			n.list.ScrollTo(0, ui.Start)
+			n.syncOpenHeight()
+			n.searchInput.Focus(c)
 		}
 	}
 
@@ -450,14 +485,66 @@ func (n *notchMode) renderOpen(c *ui.Context, p *theme.Palette, lib *model.Libra
 	body := ui.Column(c.Key("notch-body")).Fill().Padding(40, 20, 18, 20).Gap(14)
 	body.Children(func() {
 		defer widget.Toast(c, n.app, p, 12)
-		// Header: group pills (or search input) + Search button + Open Main button
-		ui.Row(c.Key("notch-hdr")).Height(30).AlignItems(ui.Center).Gap(2).Children(func() {
-			if n.searching {
-				sbox := ui.Row(c.Key("notch-sbox")).Grow(1).Height(30).PaddingX(10).Gap(7).Radius(9).
-					Background(ui.RGBA(255, 255, 255, 0.12)).AlignItems(ui.Center)
+		q := strings.TrimSpace(n.query)
+		// Header: browse (group pills + search button + Open Main) OR search (search input + close + Open Main)
+		ui.Row(c.Key("notch-hdr")).Height(30).AlignItems(ui.Center).Gap(6).Children(func() {
+			if !n.searching {
+				if len(lib.Groups) > 0 {
+					scroll := widget.AutoScrollbarSlim(c, ui.ScrollHorizontal(c.Key("notch-tabs"))).MinWidth(0).Shrink(1).ScrollbarInsets(0, 2, 0, 2).Padding(0, 0, 4, 0).Grow(1).Height(30)
+					scroll.Children(func() {
+						ui.Row(c.Key("notch-tabs-row")).Gap(4).AlignItems(ui.Center).Children(func() {
+							for i := range lib.Groups {
+								g := &lib.Groups[i]
+								sel := g.ID == n.groupID
+								pill := ui.ButtonBase(c.Key(g.ID)).Height(26).PaddingX(10).Radius(999).
+									MaxWidth(156).Shrink(0).Label(g.Name).Tooltip(g.Name).AlignItems(ui.Center)
+								widget.RevealSelectedTab(pill, sel, i)
+								if sel {
+									pill.Background(ui.RGBA(255, 255, 255, 0.16)).TextColor(ui.Hex("#ffffff"))
+								} else if pill.Hovered() {
+									pill.Background(ui.RGBA(255, 255, 255, 0.10)).TextColor(ui.Hex("#eae8e1"))
+								} else {
+									pill.TextColor(ui.RGBA(234, 232, 225, 0.60))
+								}
+								pill.Children(func() {
+									t := ui.Text(c, g.Name).SingleLine()
+									if sel {
+										t.FontWeight(500)
+									}
+								})
+								if pill.Clicked() {
+									n.query = ""
+									n.groupID = g.ID
+									n.app.SetModeGroup(model.ModeNotch, g.ID)
+									n.tmplID = ""
+									n.list.ScrollTo(0, ui.Start)
+									n.syncOpenHeight()
+								}
+							}
+						})
+					})
+				} else {
+					ui.Spacer(c)
+				}
+
+				searchBtn := notchIconBtn(c, "notch-search-btn", theme.IconSearch, "搜索书签")
+				if searchBtn.Clicked() {
+					n.searching = true
+					n.searchInput.Focus(c)
+				}
+			} else {
+				focused := n.searchInput.Focused(c)
+				hasQ := n.query != ""
+				sbox := ui.Row(c.Key("notch-sbox")).Grow(1).MinWidth(0).Height(30).Padding(0, 6, 0, 10).Gap(6).Radius(9).
+					AlignItems(ui.Center)
+				if focused || hasQ {
+					sbox.Background(ui.RGBA(255, 255, 255, 0.16)).Border(1.5, ui.Hex("#e0875f"))
+				} else {
+					sbox.Background(ui.RGBA(255, 255, 255, 0.11)).Border(1.5, ui.RGBA(255, 255, 255, 0.08))
+				}
 				sbox.Children(func() {
-					ui.Icon(c, theme.IconSearch).FontSize(14).TextColor(ui.RGBA(234, 232, 225, 0.65))
-					in := ui.TextInputBase(c.Key("notch-q"), &n.query).Bind(&n.searchInput).Grow(1).
+					ui.Icon(c, theme.IconSearch).FontSize(13).TextColor(ui.RGBA(234, 232, 225, 0.65)).Shrink(0)
+					in := ui.TextInputBase(c.Key("notch-q"), &n.query).Bind(&n.searchInput).Grow(1).MinWidth(0).
 						Label("搜索书签").Placeholder("搜索书签").TextColor(ui.Hex("#ffffff")).
 						PlaceholderColor(ui.RGBA(234, 232, 225, 0.60))
 					if in.Changed() {
@@ -473,55 +560,32 @@ func (n *notchMode) renderOpen(c *ui.Context, p *theme.Palette, lib *model.Libra
 							}
 						}
 					}
+					if hasQ {
+						clr := ui.ButtonBase(c.Key("notch-qclr")).Size(18, 18).Radius(5).Center().
+							TextColor(ui.RGBA(234, 232, 225, 0.70)).Label("清空搜索").Tooltip("清空搜索").Shrink(0)
+						if clr.Hovered() {
+							clr.Background(ui.RGBA(255, 255, 255, 0.14)).TextColor(ui.Hex("#ffffff"))
+						}
+						clr.Children(func() { ui.Icon(c, theme.IconClose).FontSize(11) })
+						if clr.Clicked() {
+							n.query = ""
+							n.list.ScrollTo(0, ui.Start)
+							n.syncOpenHeight()
+							n.searchInput.Focus(c)
+						}
+					}
 				})
-				closeBtn := notchIconBtn(c, "notch-sclose", theme.IconClose, "关闭搜索")
-				if closeBtn.Clicked() {
+
+				closeSearch := notchIconBtn(c, "notch-search-close", theme.IconClose, "退出搜索")
+				if closeSearch.Clicked() {
 					n.searching = false
 					n.query = ""
 					n.list.ScrollTo(0, ui.Start)
 					n.syncOpenHeight()
-				}
-			} else {
-				scroll := widget.AutoScrollbarSlim(c, ui.ScrollHorizontal(c.Key("notch-tabs"))).MinWidth(0).Shrink(0).ScrollbarInsets(0, 2, 0, 2).Padding(0, 0, 4, 0).Grow(1).Height(30)
-				scroll.Children(func() {
-					ui.Row(c.Key("notch-tabs-row")).Gap(4).AlignItems(ui.Center).Children(func() {
-						for i := range lib.Groups {
-							g := &lib.Groups[i]
-							sel := g.ID == n.groupID
-							pill := ui.ButtonBase(c.Key(g.ID)).Height(26).PaddingX(10).Radius(999).
-								MaxWidth(156).Shrink(0).Label(g.Name).Tooltip(g.Name).AlignItems(ui.Center)
-							widget.RevealSelectedTab(pill, sel, i)
-							if sel {
-								pill.Background(ui.RGBA(255, 255, 255, 0.16)).TextColor(ui.Hex("#ffffff"))
-							} else if pill.Hovered() {
-								pill.Background(ui.RGBA(255, 255, 255, 0.10)).TextColor(ui.Hex("#eae8e1"))
-							} else {
-								pill.TextColor(ui.RGBA(234, 232, 225, 0.60))
-							}
-							pill.Children(func() {
-								t := ui.Text(c, g.Name).SingleLine()
-								if sel {
-									t.FontWeight(500)
-								}
-							})
-							if pill.Clicked() {
-								n.groupID = g.ID
-								n.app.SetModeGroup(model.ModeNotch, g.ID)
-								n.tmplID = ""
-								n.list.ScrollTo(0, ui.Start)
-								n.syncOpenHeight()
-							}
-						}
-					})
-				})
-				searchBtn := notchIconBtn(c, "notch-sbtn", theme.IconSearch, "搜索")
-				if searchBtn.Clicked() {
-					n.searching = true
-					n.searchInput.Focus(c)
-					n.list.ScrollTo(0, ui.Start)
-					n.syncOpenHeight()
+					n.searchInput.CancelFocus(c)
 				}
 			}
+
 			mainBtn := notchIconBtn(c, "notch-main", theme.IconExternal, "打开主窗口")
 			if mainBtn.Clicked() {
 				n.collapse()
@@ -536,15 +600,17 @@ func (n *notchMode) renderOpen(c *ui.Context, p *theme.Palette, lib *model.Libra
 				n.tmplID = ""
 				n.tmplQuery = ""
 				n.syncOpenHeight()
+				if n.state == notchOpen && n.searching {
+					n.searchInput.Focus(c)
+				}
 			})
 		}
 
-		q := strings.TrimSpace(n.query)
 		items := n.currentItems(lib)
 
 		if len(items) == 0 {
 			msg := "还没有书签"
-			if n.searching && q != "" {
+			if q != "" {
 				msg = "还没有匹配的书签"
 			} else if len(lib.Groups) == 0 {
 				msg = "还没有分组"
@@ -604,7 +670,7 @@ func (n *notchMode) openItem(b *model.Bookmark) {
 }
 
 func notchIconBtn(c *ui.Context, key string, icon *ui.SVG, label string) ui.Element {
-	b := ui.ButtonBase(c.Key(key)).Size(30, 30).Radius(9).Center().
+	b := ui.ButtonBase(c.Key(key)).Size(30, 30).Shrink(0).Radius(9).Center().
 		TextColor(ui.Hex("#d9d7d0")).Label(label).Tooltip(label)
 	if b.Hovered() {
 		b.Background(ui.RGBA(255, 255, 255, 0.12))

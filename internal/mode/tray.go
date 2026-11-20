@@ -14,26 +14,43 @@ import (
 )
 
 type trayMode struct {
-	app          *app.App
-	tray         *mygo.Tray
-	flyout       *mygo.Window
-	detached     *mygo.Window
-	menu         *mygo.Menu
-	groupID      string
-	query        string
-	searchInput  ui.Handle
-	tmplID       string
-	tmplQuery    string
-	tmplInput    ui.Handle
-	flyoutList   ui.ListState
-	detachedList ui.ListState
-	cache        struct {
+	app            *app.App
+	tray           *mygo.Tray
+	flyout         *mygo.Window
+	detached       *mygo.Window
+	menu           *mygo.Menu
+	groupID        string
+	searching      bool
+	query          string
+	flyoutSearch   ui.Handle
+	detachedSearch ui.Handle
+	tmplID         string
+	tmplQuery      string
+	flyoutTmpl     ui.Handle
+	detachedTmpl   ui.Handle
+	flyoutList     ui.ListState
+	detachedList   ui.ListState
+	cache          struct {
 		library  *model.Library
 		revision int64
 		groupID  string
 		query    string
 		items    []*model.Bookmark
 	}
+}
+
+func (t *trayMode) searchHandle(detached bool) *ui.Handle {
+	if detached {
+		return &t.detachedSearch
+	}
+	return &t.flyoutSearch
+}
+
+func (t *trayMode) tmplHandle(detached bool) *ui.Handle {
+	if detached {
+		return &t.detachedTmpl
+	}
+	return &t.flyoutTmpl
 }
 
 func syncTray(a *app.App, on bool) {
@@ -164,12 +181,13 @@ func (t *trayMode) hideAttached() {
 
 func (t *trayMode) toggleAttached() {
 	if t.detached != nil {
-		if t.detached.IsVisible() {
-			t.detached.Focus()
-			return
+		if !t.detached.IsVisible() {
+			t.detached.Show()
 		}
-		t.detached.Show()
 		t.detached.Focus()
+		if t.searching {
+			t.detachedSearch.Focus()
+		}
 		return
 	}
 	if t.flyout != nil {
@@ -183,8 +201,11 @@ func (t *trayMode) showAttached() {
 	if t.tray == nil || t.flyout != nil {
 		return
 	}
+	t.searching = false
+	t.query = ""
 	t.tmplID = ""
 	t.tmplQuery = ""
+	t.flyoutList.ScrollTo(0, ui.Start)
 	w := mygo.NewFlyout(mygo.FlyoutOptions{
 		Tray:         t.tray,
 		Placement:    mygo.PlacementBottom,
@@ -202,13 +223,21 @@ func (t *trayMode) showAttached() {
 	w.OnClosed(func() {
 		if t.flyout == w {
 			t.flyout = nil
+			if t.detached == nil {
+				t.searching = false
+				t.query = ""
+			}
 		}
 	})
 }
 
 func (t *trayMode) tearOff() {
 	if t.detached != nil {
+		t.detached.Show()
 		t.detached.Focus()
+		if t.searching {
+			t.detachedSearch.Focus()
+		}
 		return
 	}
 	var bx, by int
@@ -247,9 +276,16 @@ func (t *trayMode) tearOff() {
 	})
 	t.detached = w
 	t.app.AddWindow(w)
+	w.Show()
+	w.Focus()
+	if t.searching {
+		t.detachedSearch.Focus()
+	}
 	w.OnClosed(func() {
 		if t.detached == w {
 			t.detached = nil
+			t.searching = false
+			t.query = ""
 		}
 	})
 }
@@ -284,17 +320,40 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 		t.tmplID = ""
 	}
 
+	searchH := t.searchHandle(detached)
+	tmplH := t.tmplHandle(detached)
+
+	if c.Shortcut(ui.Cmd, ui.KeyF) && !c.ShortcutRepeated() {
+		t.searching = true
+		searchH.SelectAll(c)
+	}
+
 	if c.Shortcut(0, ui.KeyEscape) {
 		if t.tmplID != "" {
 			t.tmplID = ""
 			t.tmplQuery = ""
-		} else if t.query != "" {
+			if t.searching {
+				searchH.Focus(c)
+			}
+		} else if t.searching {
+			t.searching = false
 			t.query = ""
 			t.flyoutList.ScrollTo(0, ui.Start)
 			t.detachedList.ScrollTo(0, ui.Start)
+			searchH.CancelFocus(c)
 		} else if !detached {
 			t.hideAttached()
 			return
+		}
+	}
+
+	if !t.searching && !searchH.Focused(c) && !tmplH.Focused(c) {
+		if ch, ok := widget.TypedSearchKey(c); ok {
+			t.searching = true
+			t.query = ch
+			t.flyoutList.ScrollTo(0, ui.Start)
+			t.detachedList.ScrollTo(0, ui.Start)
+			searchH.Focus(c)
 		}
 	}
 
@@ -332,21 +391,88 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 	}
 
 	box.Children(func() {
-		// Top bar: search input + pin/unpin (+ close when detached, draggable when detached)
-		hdr := ui.Row(c.Key("tray-hdr")).Height(48).Padding(0, 10, 0, 12).Gap(8).AlignItems(ui.Center)
+		// Single-row header: browse (group pills + search icon + pin/close) OR search (input + close)
+		hdr := ui.Row(c.Key("tray-hdr")).Height(48).Padding(0, 8, 0, 10).Gap(6).AlignItems(ui.Center).
+			BorderWidth(0, 0, 1, 0).BorderColor(p.LineSoft)
 		if detached {
 			hdr.DragWindow()
 		}
 		hdr.Children(func() {
+			if !t.searching {
+				if len(lib.Groups) > 0 {
+					scroll := widget.AutoScrollbarSlim(c, ui.ScrollHorizontal(c.Key("tray-tabs"))).
+						Grow(1).MinWidth(0).Height(30).ScrollbarInsets(0, 2, 0, 2).Padding(2, 0)
+					scroll.Children(func() {
+						ui.Row(c.Key("tray-tabs-row")).Gap(4).AlignItems(ui.Center).Children(func() {
+							for i := range lib.Groups {
+								g := &lib.Groups[i]
+								selected := g.ID == t.groupID
+								pill := widget.Pill(c.Key("tray-grp-"+g.ID), p, g.Name, selected)
+								widget.RevealSelectedTab(pill, selected, i)
+								if pill.Clicked() {
+									t.groupID = g.ID
+									t.app.SetModeGroup(model.ModeTray, g.ID)
+									t.tmplID = ""
+									t.flyoutList.ScrollTo(0, ui.Start)
+									t.detachedList.ScrollTo(0, ui.Start)
+								}
+							}
+						})
+					})
+				} else {
+					ui.Spacer(c)
+				}
+
+				searchBtn := widget.IconButton(c.Key("tray-search-btn"), p, theme.IconSearch, "搜索书签").Shrink(0)
+				if searchBtn.Clicked() {
+					t.searching = true
+					searchH.Focus(c)
+				}
+
+				pinLabel := "撕下成小窗"
+				pinIcon := theme.IconPin
+				if detached {
+					pinLabel = "收回菜单栏"
+					pinIcon = theme.IconPinFilled
+				}
+				pinBtn := widget.IconButton(c.Key("tray-pin"), p, pinIcon, pinLabel).Shrink(0)
+				if detached {
+					pinBtn.Background(p.AccentBg).TextColor(p.Primary)
+				}
+				if pinBtn.Clicked() {
+					if detached {
+						t.reattach()
+					} else {
+						t.tearOff()
+					}
+				}
+				if detached {
+					closeBtn := widget.IconButton(c.Key("tray-close"), p, theme.IconClose, "关闭").Shrink(0)
+					if closeBtn.Clicked() {
+						if t.detached != nil {
+							t.detached.Close()
+						}
+					}
+				}
+				return
+			}
+
 			fieldBg := p.Text.Alpha(0.06)
 			if !c.Vibrancy() {
 				fieldBg = p.Field
 			}
-			sbox := ui.Row(c.Key("tray-sbox")).Grow(1).Height(30).PaddingX(10).Gap(7).Radius(9).
-				Background(fieldBg).AlignItems(ui.Center)
+			focused := searchH.Focused(c)
+			hasQ := t.query != ""
+			sbox := ui.Row(c.Key("tray-sbox")).Grow(1).MinWidth(0).Height(30).Padding(0, 6, 0, 10).Gap(6).Radius(9).
+				AlignItems(ui.Center)
+			if focused || hasQ {
+				sbox.Background(p.Surface).Border(1.5, p.Accent)
+			} else {
+				sbox.Background(fieldBg).Border(1.5, ui.Transparent)
+			}
 			sbox.Children(func() {
-				ui.Icon(c, theme.IconSearch).FontSize(14).TextColor(p.Muted)
-				in := ui.TextInputBase(c.Key("tray-q"), &t.query).Bind(&t.searchInput).Grow(1).
+				ui.Icon(c, theme.IconSearch).FontSize(14).TextColor(p.Muted).Shrink(0)
+				in := ui.TextInputBase(c.Key("tray-q"), &t.query).Bind(searchH).Grow(1).MinWidth(0).
 					Label("搜索书签").Placeholder("搜索书签").TextColor(p.Text).PlaceholderColor(p.Muted)
 				if in.Changed() {
 					t.flyoutList.ScrollTo(0, ui.Start)
@@ -357,68 +483,45 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 					if len(hits) > 0 {
 						t.openItem(hits[0])
 						if t.tmplID != "" {
-							t.tmplInput.Focus(c)
+							tmplH.Focus(c)
 						}
 					}
 				}
-			})
-			pinLabel := "撕下成小窗"
-			pinIcon := theme.IconPin
-			if detached {
-				pinLabel = "收回菜单栏"
-				pinIcon = theme.IconPinFilled
-			}
-			pinBtn := widget.IconButton(c.Key("tray-pin"), p, pinIcon, pinLabel)
-			if detached {
-				pinBtn.Background(p.AccentBg).TextColor(p.Primary)
-			}
-			if pinBtn.Clicked() {
-				if detached {
-					t.reattach()
-				} else {
-					t.tearOff()
-				}
-			}
-			if detached {
-				closeBtn := widget.IconButton(c.Key("tray-close"), p, theme.IconClose, "关闭")
-				if closeBtn.Clicked() {
-					if t.detached != nil {
-						t.detached.Close()
+				if hasQ {
+					clr := ui.ButtonBase(c.Key("tray-qclr")).Size(18, 18).Radius(5).Center().
+						TextColor(p.Muted).Label("清空搜索").Tooltip("清空搜索").Shrink(0)
+					if clr.Hovered() {
+						clr.Background(p.RowSel).TextColor(p.Text)
+					}
+					clr.Children(func() { ui.Icon(c, theme.IconClose).FontSize(11) })
+					if clr.Clicked() {
+						t.query = ""
+						t.flyoutList.ScrollTo(0, ui.Start)
+						t.detachedList.ScrollTo(0, ui.Start)
+						searchH.Focus(c)
 					}
 				}
+			})
+			closeSearch := widget.IconButton(c.Key("tray-search-close"), p, theme.IconClose, "退出搜索").Shrink(0)
+			if closeSearch.Clicked() {
+				t.searching = false
+				t.query = ""
+				t.flyoutList.ScrollTo(0, ui.Start)
+				t.detachedList.ScrollTo(0, ui.Start)
+				searchH.CancelFocus(c)
 			}
 		})
 
-		// Group pills (hidden while searching, matching Tray.dc.html)
 		q := strings.TrimSpace(t.query)
-		if q == "" && len(lib.Groups) > 0 {
-			scroll := widget.AutoScrollbarSlim(c, ui.ScrollHorizontal(c.Key("tray-tabs"))).MinWidth(0).Shrink(0).
-				ScrollbarInsets(0, 10, 2, 10).Height(34).Padding(0, 10, 8, 10).
-				BorderWidth(0, 0, 1, 0).BorderColor(p.LineSoft)
-			scroll.Children(func() {
-				ui.Row(c.Key("tray-tabs-row")).Gap(4).AlignItems(ui.Center).Children(func() {
-					for i := range lib.Groups {
-						g := &lib.Groups[i]
-						selected := g.ID == t.groupID
-						pill := widget.Pill(c.Key("tray-grp-"+g.ID), p, g.Name, selected)
-						widget.RevealSelectedTab(pill, selected, i)
-						if pill.Clicked() {
-							t.groupID = g.ID
-							t.app.SetModeGroup(model.ModeTray, g.ID)
-							t.tmplID = ""
-							t.flyoutList.ScrollTo(0, ui.Start)
-							t.detachedList.ScrollTo(0, ui.Start)
-						}
-					}
-				})
-			})
-		}
 
 		if b := templateBookmark(lib, t.tmplID); b != nil {
-			ui.Box(c.Key("tray-tmpl-wrap")).Padding(0, 10, 6, 10).Children(func() {
-				renderTemplateBar(c, t.app, b, &t.tmplQuery, &t.tmplInput, p.Dark, func() {
+			ui.Box(c.Key("tray-tmpl-wrap")).Padding(6, 10, 6, 10).Children(func() {
+				renderTemplateBar(c, t.app, b, &t.tmplQuery, tmplH, p.Dark, func() {
 					t.tmplID = ""
 					t.tmplQuery = ""
+					if t.searching {
+						searchH.Focus(c)
+					}
 				})
 			})
 		}
@@ -456,7 +559,7 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 					if btn.Clicked() {
 						t.openItem(b)
 						if t.tmplID != "" {
-							t.tmplInput.Focus(c)
+							tmplH.Focus(c)
 						}
 					}
 				})

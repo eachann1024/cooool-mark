@@ -1,6 +1,8 @@
 package settings
 
 import (
+	"runtime"
+
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
@@ -25,6 +27,10 @@ func (s *state) pageGeneral(c *ui.Context, p *theme.Palette) {
 				a.SayErr("无法设置开机启动", "", nil)
 			}
 		})
+		switchRow(c, p, "启动时不显示主窗口", &a.Settings.LaunchInBackground, a.SaveSettings)
+		if runtime.GOOS == "darwin" {
+			switchRow(c, p, "无窗口时隐藏程序坞图标", &a.Settings.HideDockWhenClosed, a.SaveSettings)
+		}
 		segmentedRow(c, p, "默认视图", a.Settings.DefaultView,
 			[]string{"列表", "网格"},
 			[]string{"list", "grid"},
@@ -41,6 +47,16 @@ func (s *state) pageGeneral(c *ui.Context, p *theme.Palette) {
 	card(c, p, func() {
 		ui.Row(c).FillWidth().Padding(11, 16).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, "唤出方式").FontSize(13).FontWeight(500).TextColor(p.Text).SingleLine()
+		})
+
+		globalLabel := "全局快速搜索（Alt+Space）"
+		if runtime.GOOS == "darwin" {
+			globalLabel = "全局快速搜索（⌥Space）"
+		}
+		globalOn := a.Settings.GlobalSearchOn()
+		switchRow(c, p, globalLabel, &globalOn, func() {
+			a.Settings.GlobalSearchOff = !globalOn
+			a.SaveSettings()
 		})
 
 		tray := a.Settings.ModeOn(model.ModeTray)

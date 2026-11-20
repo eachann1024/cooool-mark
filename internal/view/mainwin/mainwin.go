@@ -30,6 +30,7 @@ type mainState struct {
 	app *app.App
 
 	// Search state.
+	searchOpen  bool
 	query       string
 	searchScope string // "" = 全部, else groupID
 	searchIdx   int
@@ -113,10 +114,14 @@ type mainState struct {
 
 // Show opens or focuses the main window. Main thread.
 func Show(a *app.App) {
+	a.PrepareRegularWindow()
 	ensureState(a)
 	if win != nil {
 		win.Show()
 		win.Focus()
+		if !state.moveOpen {
+			state.searchHandle.SelectAll()
+		}
 		return
 	}
 	win = mygo.NewWindow(mygo.WindowOptions{
@@ -131,19 +136,28 @@ func Show(a *app.App) {
 		TitleBarHeight:       widget.HeaderH,
 		Content:              ui.View(state.view),
 	})
-	a.AddWindow(win)
+	a.AddRegularWindow(win)
 	win.OnClosed(func() { win = nil })
+	state.contentHandle.Focus()
 }
 
-// ShowSearch opens the main window with the search field focused and q typed.
+// ShowSearch opens the main window with the search overlay focused and q typed.
 func ShowSearch(a *app.App, q string) {
 	ensureState(a)
+	state.moveOpen = false
+	state.searchOpen = true
 	state.query = q
 	state.searchScope = ""
 	state.searchIdx = 0
+	state.tplBookmarkID = ""
+	state.tplQuery = ""
 	state.searchList.ScrollTo(0, ui.Start)
-	state.searchHandle.SelectAll()
 	Show(a)
+	if q != "" {
+		state.searchHandle.SelectAll()
+	} else {
+		state.searchHandle.Focus()
+	}
 	if win != nil {
 		win.Invalidate()
 	}
@@ -199,7 +213,32 @@ func (s *mainState) view(c *ui.Context) {
 		s.handleExternalDrop(drop)
 	}
 
+	s.buildSearchModal(c, p)
 	s.buildMoveModal(c, p)
+}
+
+func (s *mainState) openSearch(c *ui.Context, initial string, selectAll bool) {
+	s.searchOpen = true
+	s.query = initial
+	s.searchScope = ""
+	s.searchIdx = 0
+	s.searchScrollMoved = false
+	s.tplBookmarkID = ""
+	s.tplQuery = ""
+	s.searchList.ScrollTo(0, ui.Start)
+	if selectAll && initial != "" {
+		s.searchHandle.SelectAll(c)
+	} else {
+		s.searchHandle.Focus(c)
+	}
+}
+
+func (s *mainState) closeSearch(c *ui.Context) {
+	s.searchOpen = false
+	s.clearSearch()
+	if c != nil {
+		s.contentHandle.Focus(c)
+	}
 }
 
 func (s *mainState) clearSearch() {
@@ -208,6 +247,7 @@ func (s *mainState) clearSearch() {
 	s.searchIdx = 0
 	s.searchList.ScrollTo(0, ui.Start)
 	s.tplBookmarkID = ""
+	s.tplQuery = ""
 }
 
 func (s *mainState) inputFocused(c *ui.Context) bool {
@@ -236,7 +276,15 @@ func (s *mainState) handleGlobalShortcuts(c *ui.Context) {
 		}
 	}
 	if c.Shortcut(ui.Cmd, ui.KeyF) && !c.ShortcutRepeated() {
-		s.searchHandle.SelectAll(c)
+		if s.searchOpen {
+			s.searchHandle.SelectAll(c)
+		} else {
+			s.openSearch(c, "", false)
+		}
+		return
+	}
+	if s.searchOpen {
+		return
 	}
 	if c.Shortcut(ui.Cmd, ui.KeyComma) && !c.ShortcutRepeated() {
 		if a.Win.ShowSettings != nil {
@@ -250,6 +298,10 @@ func (s *mainState) handleGlobalShortcuts(c *ui.Context) {
 	if s.inputFocused(c) {
 		return
 	}
+	if ch, ok := widget.TypedSearchKey(c); ok {
+		s.openSearch(c, ch, false)
+		return
+	}
 	if c.Shortcut(ui.Cmd, ui.KeyV) && !c.ShortcutRepeated() && a.Win.ShowEditor != nil {
 		if u := strings.TrimSpace(c.ReadClipboard()); looksLikeURL(u) {
 			a.Win.ShowEditor(app.EditorRequest{URL: ensureURLScheme(u), GroupID: a.Group, SubID: a.Sub})
@@ -259,22 +311,15 @@ func (s *mainState) handleGlobalShortcuts(c *ui.Context) {
 		a.ToastAction()
 	}
 
-	// Escape clears template prompt, search, or cursor focus.
+	// Escape clears template prompt or cursor focus.
 	if c.Shortcut(0, ui.KeyEscape) {
 		switch {
 		case s.tplBookmarkID != "":
 			s.tplBookmarkID = ""
 			s.tplQuery = ""
-		case s.query != "":
-			s.clearSearch()
 		case s.cursorID != "":
 			s.cursorID = ""
 		}
-	}
-
-	searching := strings.TrimSpace(s.query) != ""
-	if searching {
-		return
 	}
 
 	ids := s.visibleBookmarkIDs()

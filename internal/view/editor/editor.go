@@ -25,6 +25,7 @@ var (
 
 // Show opens the editor for req (req.ID == "" adds a bookmark). Main thread.
 func Show(a *app.App, req app.EditorRequest) {
+	a.PrepareRegularWindow()
 	if edWin != nil && edSt != nil {
 		edSt.load(req)
 		edWin.SetTitle(edSt.windowTitle())
@@ -52,7 +53,7 @@ func Show(a *app.App, req app.EditorRequest) {
 	})
 	edWin = w
 	st.win = w
-	a.AddWindow(w)
+	a.AddRegularWindow(w)
 	w.OnClosed(func() {
 		st.closed = true
 		st.cancelAll()

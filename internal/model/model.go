@@ -217,8 +217,11 @@ type Settings struct {
 	ShowTags    bool   `json:"showTags"`
 
 	// OpenModes are the summon modes switched on, besides the main window.
-	OpenModes []string `json:"openModes"`
-	EdgeSide  string   `json:"edgeSide"` // left | right
+	OpenModes          []string `json:"openModes"`
+	EdgeSide           string   `json:"edgeSide"` // left | right
+	GlobalSearchOff    bool     `json:"globalSearchOff,omitempty"`
+	LaunchInBackground bool     `json:"launchInBackground,omitempty"`
+	HideDockWhenClosed bool     `json:"hideDockWhenClosed,omitempty"`
 
 	AutoBackup bool `json:"autoBackup"`
 
@@ -258,6 +261,11 @@ func DefaultSettings() Settings {
 	}
 }
 
+// GlobalSearchOn reports whether the system-wide quick search hotkey is enabled.
+func (s *Settings) GlobalSearchOn() bool {
+	return !s.GlobalSearchOff
+}
+
 // ModeOn reports whether an open mode is switched on.
 func (s *Settings) ModeOn(mode string) bool {
 	if mode == ModeWindow {
@@ -269,6 +277,11 @@ func (s *Settings) ModeOn(mode string) bool {
 		}
 	}
 	return false
+}
+
+// HasSummonMode reports whether at least one summon mode (notch, tray, or edge) is enabled.
+func (s *Settings) HasSummonMode() bool {
+	return s.ModeOn(ModeNotch) || s.ModeOn(ModeTray) || s.ModeOn(ModeEdge)
 }
 
 // SetMode switches an open mode on or off.
@@ -283,4 +296,9 @@ func (s *Settings) SetMode(mode string, on bool) {
 		out = append(out, mode)
 	}
 	s.OpenModes = out
+}
+
+// AnySummonModeOn reports whether any background summon mode is enabled.
+func (s *Settings) AnySummonModeOn() bool {
+	return s.ModeOn(ModeTray) || s.ModeOn(ModeNotch) || s.ModeOn(ModeEdge)
 }

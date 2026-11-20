@@ -80,7 +80,7 @@ func Danger(c *ui.Context, p *theme.Palette, text string, filled bool) ui.Elemen
 
 // Title is a serif heading.
 func Title(c *ui.Context, p *theme.Palette, text string, size float32) ui.Element {
-	return ui.Text(c, text).Font(theme.Serif).FontSize(size).FontWeight(500).TextColor(p.Text2).SingleLine()
+	return ui.Text(c, text).Font(theme.TitleFont(c)).FontSize(size).FontWeight(500).TextColor(p.Text2).SingleLine()
 }
 
 // Toast draws the app's toast, centered at the bottom of the current
@@ -102,7 +102,10 @@ func Toast(c *ui.Context, a *app.App, p *theme.Palette, bottom float32) {
 			box.Padding(8, 13)
 		}
 		box.Children(func() {
-			ui.Text(c, t.Text).TextColor(fg).SingleLine()
+			tEl := ui.Text(c, t.Text).TextColor(fg).SingleLine()
+			if t.Err {
+				tEl.Selectable()
+			}
 			if t.Action != "" {
 				b := ui.ButtonBase(c).Height(26).PaddingX(9).Radius(6).AlignItems(ui.Center).
 					Background(fg.Alpha(0.14)).TextColor(p.Accent.Mix(fg, 0.35))

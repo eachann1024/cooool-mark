@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
 	"cooool-mark/internal/model"
@@ -65,8 +66,11 @@ var Dark = Palette{
 	ToastBg: ui.Hex("#262624"), ToastText: ui.Hex("#eae8e1"), Notch: ui.Hex("#0b0b0c"),
 }
 
-// Serif is the family of titles; Sans of everything else.
+// Serif is the family of titles; Sans of everything else (Chinese locale).
 var Serif, Sans = fonts()
+
+// LatinSerif and LatinSans are used when the active locale is non-Chinese.
+var LatinSerif, LatinSans = latinFonts()
 
 func fonts() (string, string) {
 	switch runtime.GOOS {
@@ -76,6 +80,40 @@ func fonts() (string, string) {
 		return "SimSun", "Microsoft YaHei UI"
 	}
 	return "Noto Serif CJK SC", "Noto Sans CJK SC"
+}
+
+func latinFonts() (string, string) {
+	switch runtime.GOOS {
+	case "darwin":
+		return "New York", ""
+	case "windows":
+		return "Georgia", "Segoe UI"
+	}
+	return "Noto Serif", ""
+}
+
+// TitleFont returns the serif display font matching the active locale.
+func TitleFont(c *ui.Context) string {
+	if c != nil && !strings.HasPrefix(strings.ToLower(c.Locale()), "zh") && LatinSerif != "" {
+		return LatinSerif
+	}
+	return Serif
+}
+
+// ReduceTransparency reports whether the desktop requests opaque surfaces.
+func ReduceTransparency() bool {
+	if !mygo.App.IsReady() {
+		return false
+	}
+	return mygo.Theme.Preferences().ReduceTransparency
+}
+
+// Preferences reads the desktop theme preferences when the app is running.
+func Preferences() mygo.ThemePreferences {
+	if !mygo.App.IsReady() {
+		return mygo.ThemePreferences{TextScale: 1}
+	}
+	return mygo.Theme.Preferences()
 }
 
 // ScrollbarStyle gives scrollbars a thin thumb and a clear track.
@@ -110,10 +148,27 @@ func Apply(c *ui.Context, appearance string) *Palette {
 	case "dark":
 		dark = true
 	}
-	p := &Light
+	pal := Light
 	if dark {
-		p = &Dark
+		pal = Dark
 	}
+	prefs := Preferences()
+	if prefs.HighContrast {
+		if dark {
+			pal.Line = ui.Hex("#474744")
+			pal.LineSoft = ui.Hex("#353532")
+			pal.Text = ui.Hex("#ffffff")
+			pal.Text2 = ui.Hex("#e3e1da")
+			pal.Muted = ui.Hex("#cccac2")
+		} else {
+			pal.Line = ui.Hex("#bdb8ac")
+			pal.LineSoft = ui.Hex("#d4cfc2")
+			pal.Text = ui.Hex("#111110")
+			pal.Text2 = ui.Hex("#262522")
+			pal.Muted = ui.Hex("#4c4b45")
+		}
+	}
+	p := &pal
 	t := *base
 	if dark != base.Dark {
 		if dark {
@@ -132,7 +187,11 @@ func Apply(c *ui.Context, appearance string) *Palette {
 	t.Text = p.Text
 	t.TextMuted = p.Muted
 	t.AccentText = p.OnPrimary
-	t.InactiveAccent = p.Primary
+	if dark {
+		t.InactiveAccent = p.Muted.Mix(p.Primary, 0.25)
+	} else {
+		t.InactiveAccent = p.Muted.Mix(p.Primary, 0.22)
+	}
 	t.Danger = p.Danger
 	t.Focus = p.Accent
 	t.Selection = p.Accent.Alpha(0.28)
@@ -144,8 +203,12 @@ func Apply(c *ui.Context, appearance string) *Palette {
 	t.ScrollbarWidth = sb.ThumbWidth
 	t.Scrollbar = sb.Thumb
 	t.ScrollbarStyle = sb
-	if Sans != "" {
-		t.Font = Sans
+	if strings.HasPrefix(strings.ToLower(c.Locale()), "zh") {
+		if Sans != "" {
+			t.Font = Sans
+		}
+	} else if LatinSans != "" {
+		t.Font = LatinSans
 	}
 	c.SetTheme(&t)
 	return p

@@ -50,6 +50,7 @@ var keyWriteMu sync.Mutex
 
 // Show opens the settings window at page. Main thread.
 func Show(a *app.App, page string) {
+	a.PrepareRegularWindow()
 	page = normalizePage(page)
 	if cur != nil && cur.win != nil {
 		cur.page = page
@@ -81,7 +82,7 @@ func Show(a *app.App, page string) {
 		Content:              ui.View(s.view),
 	})
 	s.win = w
-	a.AddWindow(w)
+	a.AddRegularWindow(w)
 	w.OnClosed(func() {
 		s.cleanup()
 		if cur == s {

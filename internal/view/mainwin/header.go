@@ -28,9 +28,8 @@ func (s *mainState) buildHeader(c *ui.Context, p *theme.Palette) {
 			pills.Children(func() {
 				row := ui.Row(c.Key("main-tabs-row")).AlignItems(ui.Center).Gap(4)
 				row.Children(func() {
-					searching := strings.TrimSpace(s.query) != ""
 					for i, g := range lib.Groups {
-						s.buildGroupPill(c, p, lib, i, g, !searching && g.ID == a.Group)
+						s.buildGroupPill(c, p, lib, i, g, g.ID == a.Group)
 					}
 				})
 			})
@@ -51,10 +50,12 @@ func (s *mainState) buildHeader(c *ui.Context, p *theme.Palette) {
 
 		ui.Box(c).Size(1, 16).Background(p.Line).Shrink(0)
 
-		// Search field.
-		s.buildSearchField(c, p)
+		// Action buttons (compact search icon frees header width for more group tabs).
+		searchBtn := widget.IconButton(c.Key("open-search-btn"), p, theme.IconSearch, "搜索书签").Shrink(0)
+		if searchBtn.Clicked() {
+			s.openSearch(c, "", false)
+		}
 
-		// Action buttons.
 		newBtn := widget.IconButton(c, p, theme.IconPlus, "新建书签").Shrink(0)
 		if newBtn.Clicked() && a.Win.ShowEditor != nil {
 			a.Win.ShowEditor(app.EditorRequest{GroupID: a.Group, SubID: a.Sub})
@@ -203,77 +204,6 @@ func (s *mainState) buildNewGroupInput(c *ui.Context, p *theme.Palette) {
 			s.newGroupFocused = false
 		}
 	})
-}
-
-func (s *mainState) buildSearchField(c *ui.Context, p *theme.Palette) {
-	focused := s.searchHandle.Focused(c)
-	hasQ := s.query != ""
-
-	box := ui.Row(c).Height(28).MinWidth(110).Width(188).Shrink(1).
-		Padding(0, 6, 0, 10).Radius(7).Gap(7).AlignItems(ui.Center)
-	if focused || hasQ {
-		box.Background(p.Surface).Border(1.5, p.Accent)
-	} else {
-		box.Background(p.Field).Border(1.5, ui.Transparent)
-	}
-
-	var searchIn ui.Element
-	box.Children(func() {
-		ui.Icon(c, theme.IconSearch).FontSize(14).TextColor(p.Muted).Shrink(0)
-		searchIn = ui.TextInputBase(c, &s.query).Bind(&s.searchHandle).
-			Placeholder("搜索书签").Label("搜索书签").Grow(1).MinWidth(0).TextColor(p.Text)
-		if hasQ {
-			clr := ui.ButtonBase(c).Label("清空搜索").Tooltip("清空搜索").Height(20).PaddingX(7).Radius(5).
-				AlignItems(ui.Center).Background(p.Field).TextColor(p.Muted).Shrink(0)
-			if clr.Hovered() {
-				clr.Background(p.RowSel).TextColor(p.Text)
-			}
-			clr.Children(func() { ui.Text(c, "Esc").FontSize(11.5).SingleLine() })
-			if clr.Clicked() {
-				s.clearSearch()
-				s.searchHandle.Focus(c)
-			}
-		}
-	})
-
-	if searchIn.Changed() {
-		s.tplBookmarkID = ""
-		if strings.TrimSpace(s.query) == "" {
-			s.searchScope = ""
-		}
-		s.searchIdx = 0
-		s.searchList.ScrollTo(0, ui.Start)
-	}
-	if searchIn.Shortcut(0, ui.KeyEscape) {
-		if s.query != "" {
-			s.clearSearch()
-		} else {
-			s.contentHandle.Focus(c)
-		}
-	}
-
-	if strings.TrimSpace(s.query) != "" {
-		hits := s.searchHits()
-		isURL := looksLikeURL(strings.TrimSpace(s.query))
-		total := len(hits)
-		if isURL {
-			total++
-		}
-		if total > 0 {
-			s.searchIdx = min(s.searchIdx, total-1)
-		}
-		if searchIn.Shortcut(0, ui.KeyDown) && total > 0 {
-			s.searchIdx = min(s.searchIdx+1, total-1)
-			s.searchScrollMoved = true
-		}
-		if searchIn.Shortcut(0, ui.KeyUp) && total > 0 {
-			s.searchIdx = max(s.searchIdx-1, 0)
-			s.searchScrollMoved = true
-		}
-		if searchIn.Submitted() && total > 0 {
-			s.activateSearchIndex(c, hits, isURL, s.searchIdx)
-		}
-	}
 }
 
 func (s *mainState) startRenameGroup(c *ui.Context, g model.Group) {

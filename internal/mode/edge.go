@@ -40,6 +40,7 @@ type edgeMode struct {
 	state       edgeState
 	side        string // "left" or "right"
 	groupID     string
+	searching   bool
 	query       string
 	searchInput ui.Handle
 	hoverSince  time.Time
@@ -106,6 +107,7 @@ func newEdgeMode(a *app.App, side string) *edgeMode {
 		Y:                 y,
 		Width:             w,
 		Height:            h,
+		Hidden:            true,
 		Frameless:         true,
 		Transparent:       true,
 		Panel:             true,
@@ -120,6 +122,7 @@ func newEdgeMode(a *app.App, side string) *edgeMode {
 	})
 	e.win.SetBounds(mygo.Rectangle{X: x, Y: y, Width: w, Height: h})
 	a.AddWindow(e.win)
+	e.win.ShowInactive()
 	e.win.OnBlur(func() {
 		if e.state != edgeHidden && time.Since(e.openedAt) > 150*time.Millisecond {
 			e.collapse()
@@ -192,29 +195,48 @@ func (e *edgeMode) setState(st edgeState) {
 	if e.state == st {
 		return
 	}
+	wasFocused := st == edgeHidden && e.win != nil && e.win.IsFocused()
 	e.state = st
 	e.hoverSince = time.Time{}
 	e.leaveSince = time.Time{}
 	e.dragLeftAt = time.Time{}
 	if st == edgeHidden {
+		e.searching = false
+		e.query = ""
 		e.tmplID = ""
 		e.tmplQuery = ""
+		e.list.ScrollTo(0, ui.Start)
 	} else {
 		e.disp = cursorDisplay()
 		e.openedAt = time.Now()
 		e.needSlide = st == edgeOut
+	}
+	if wasFocused {
+		e.win.Hide()
 	}
 	e.applyBounds()
 	if e.win != nil {
 		if st == edgeOut {
 			e.win.Show()
 			e.win.Focus()
+		} else if wasFocused {
+			e.win.ShowInactive()
 		}
 		e.win.Invalidate()
 	}
 }
 
 func (e *edgeMode) expand() {
+	if e.state == edgeOut {
+		if e.win != nil {
+			e.win.Show()
+			e.win.Focus()
+		}
+		if e.searching {
+			e.searchInput.Focus()
+		}
+		return
+	}
 	e.setState(edgeOut)
 }
 
@@ -231,16 +253,35 @@ func (e *edgeMode) view(c *ui.Context) {
 		e.tmplID = ""
 	}
 
+	if e.state == edgeOut && c.Shortcut(ui.Cmd, ui.KeyF) && !c.ShortcutRepeated() {
+		e.searching = true
+		e.searchInput.SelectAll(c)
+	}
+
 	if e.state == edgeOut && c.Shortcut(0, ui.KeyEscape) {
 		if e.tmplID != "" {
 			e.tmplID = ""
 			e.tmplQuery = ""
-		} else if e.query != "" {
+			if e.searching {
+				e.searchInput.Focus(c)
+			}
+		} else if e.searching {
+			e.searching = false
 			e.query = ""
 			e.list.ScrollTo(0, ui.Start)
+			e.searchInput.CancelFocus(c)
 		} else {
 			e.collapse()
 			return
+		}
+	}
+
+	if e.state == edgeOut && !e.searching && !e.searchInput.Focused(c) && !e.tmplInput.Focused(c) {
+		if ch, ok := widget.TypedSearchKey(c); ok {
+			e.searching = true
+			e.query = ch
+			e.list.ScrollTo(0, ui.Start)
+			e.searchInput.Focus(c)
 		}
 	}
 
@@ -454,9 +495,9 @@ func (e *edgeMode) viewPanel(c *ui.Context, p *theme.Palette, lib *model.Library
 		slide := panel.AnimateTo("slide", 0, ui.Animation{Spring: ui.SpringOptions{Duration: 320 * time.Millisecond, Bounce: 0.08}})
 		panel.Translate(slide, 0)
 
-		// Collapse if pointer leaves the panel for 600ms (unless typing in search/template).
+		// Collapse if pointer leaves the panel for 600ms (unless typing or viewing a template).
 		_, _, over := wrap.PointerPosition()
-		if over || e.searchInput.Focused(c) || e.tmplInput.Focused(c) {
+		if over || e.searching || e.query != "" || e.searchInput.Focused(c) || e.tmplID != "" || e.tmplInput.Focused(c) {
 			e.leaveSince = time.Time{}
 		} else if delay := 400*time.Millisecond - time.Since(e.openedAt); delay > 0 {
 			c.After(delay)
@@ -490,13 +531,74 @@ func (e *edgeMode) viewPanel(c *ui.Context, p *theme.Palette, lib *model.Library
 
 		panel.Children(func() {
 			defer widget.Toast(c, e.app, p, 12)
-			// Header: search + new + collapse
-			ui.Row(c.Key("eg-hdr")).Height(50).Padding(0, 8, 0, 12).Gap(6).AlignItems(ui.Center).Children(func() {
-				sbox := ui.Row(c.Key("eg-sbox")).Grow(1).Height(30).PaddingX(10).Gap(7).Radius(9).
-					Background(p.Field).AlignItems(ui.Center)
+			// Single-row header: browse (group pills + search icon + new + collapse) OR search (input + close)
+			ui.Row(c.Key("eg-hdr")).Height(48).Padding(0, 8, 0, 10).Gap(6).AlignItems(ui.Center).
+				BorderWidth(0, 0, 1, 0).BorderColor(p.LineSoft).Children(func() {
+				if !e.searching {
+					if len(lib.Groups) > 0 {
+						scroll := widget.AutoScrollbarSlim(c, ui.ScrollHorizontal(c.Key("eg-tabs"))).
+							Grow(1).MinWidth(0).Height(30).ScrollbarInsets(0, 2, 0, 2).Padding(2, 0)
+						scroll.Children(func() {
+							ui.Row(c.Key("eg-tabs-row")).Gap(4).AlignItems(ui.Center).Children(func() {
+								for i := range lib.Groups {
+									g := &lib.Groups[i]
+									selected := g.ID == e.groupID
+									pill := widget.Pill(c.Key("eg-grp-"+g.ID), p, g.Name, selected)
+									widget.RevealSelectedTab(pill, selected, i)
+									if pill.Clicked() {
+										e.groupID = g.ID
+										e.app.SetModeGroup(model.ModeEdge, g.ID)
+										e.tmplID = ""
+										e.list.ScrollTo(0, ui.Start)
+									}
+								}
+							})
+						})
+					} else {
+						ui.Spacer(c)
+					}
+
+					searchBtn := widget.IconButton(c.Key("eg-search-btn"), p, theme.IconSearch, "搜索书签").Shrink(0)
+					if searchBtn.Clicked() {
+						e.searching = true
+						e.searchInput.Focus(c)
+					}
+
+					addBtn := widget.IconButton(c.Key("eg-add"), p, theme.IconPlus, "新建书签").Shrink(0)
+					if addBtn.Clicked() {
+						e.collapse()
+						if e.app.Win.ShowEditor != nil {
+							var gid, sid string
+							if len(lib.Groups) > 0 {
+								g := activeGroup(lib, e.groupID)
+								gid, sid = g.ID, firstSubID(g)
+							}
+							e.app.Win.ShowEditor(app.EditorRequest{GroupID: gid, SubID: sid})
+						}
+					}
+					collapseIcon := theme.IconCollapseRight
+					if e.side == "left" {
+						collapseIcon = theme.IconCollapseLeft
+					}
+					hideBtn := widget.IconButton(c.Key("eg-hide"), p, collapseIcon, "收回屏幕边缘").Shrink(0)
+					if hideBtn.Clicked() {
+						e.collapse()
+					}
+					return
+				}
+
+				focused := e.searchInput.Focused(c)
+				hasQ := e.query != ""
+				sbox := ui.Row(c.Key("eg-sbox")).Grow(1).MinWidth(0).Height(30).Padding(0, 6, 0, 10).Gap(6).Radius(9).
+					AlignItems(ui.Center)
+				if focused || hasQ {
+					sbox.Background(p.Surface).Border(1.5, p.Accent)
+				} else {
+					sbox.Background(p.Field).Border(1.5, ui.Transparent)
+				}
 				sbox.Children(func() {
-					ui.Icon(c, theme.IconSearch).FontSize(14).TextColor(p.Muted)
-					in := ui.TextInputBase(c.Key("eg-q"), &e.query).Bind(&e.searchInput).Grow(1).
+					ui.Icon(c, theme.IconSearch).FontSize(14).TextColor(p.Muted).Shrink(0)
+					in := ui.TextInputBase(c.Key("eg-q"), &e.query).Bind(&e.searchInput).Grow(1).MinWidth(0).
 						Label("搜索书签").Placeholder("搜索书签").TextColor(p.Text).PlaceholderColor(p.Muted)
 					if in.Changed() {
 						e.list.ScrollTo(0, ui.Start)
@@ -510,58 +612,39 @@ func (e *edgeMode) viewPanel(c *ui.Context, p *theme.Palette, lib *model.Library
 							}
 						}
 					}
-				})
-				addBtn := widget.IconButton(c, p, theme.IconPlus, "新建书签")
-				if addBtn.Clicked() {
-					e.collapse()
-					if e.app.Win.ShowEditor != nil {
-						var gid, sid string
-						if len(lib.Groups) > 0 {
-							g := activeGroup(lib, e.groupID)
-							gid, sid = g.ID, firstSubID(g)
+					if hasQ {
+						clr := ui.ButtonBase(c.Key("eg-qclr")).Size(18, 18).Radius(5).Center().
+							TextColor(p.Muted).Label("清空搜索").Tooltip("清空搜索").Shrink(0)
+						if clr.Hovered() {
+							clr.Background(p.RowSel).TextColor(p.Text)
 						}
-						e.app.Win.ShowEditor(app.EditorRequest{GroupID: gid, SubID: sid})
+						clr.Children(func() { ui.Icon(c, theme.IconClose).FontSize(11) })
+						if clr.Clicked() {
+							e.query = ""
+							e.list.ScrollTo(0, ui.Start)
+							e.searchInput.Focus(c)
+						}
 					}
-				}
-				collapseIcon := theme.IconCollapseRight
-				if e.side == "left" {
-					collapseIcon = theme.IconCollapseLeft
-				}
-				hideBtn := widget.IconButton(c, p, collapseIcon, "收回屏幕边缘")
-				if hideBtn.Clicked() {
-					e.collapse()
+				})
+				closeSearch := widget.IconButton(c.Key("eg-search-close"), p, theme.IconClose, "退出搜索").Shrink(0)
+				if closeSearch.Clicked() {
+					e.searching = false
+					e.query = ""
+					e.list.ScrollTo(0, ui.Start)
+					e.searchInput.CancelFocus(c)
 				}
 			})
 
-			// Group pills
 			q := strings.TrimSpace(e.query)
-			if q == "" && len(lib.Groups) > 0 {
-				scroll := widget.AutoScrollbarSlim(c, ui.ScrollHorizontal(c.Key("eg-tabs"))).MinWidth(0).Shrink(0).
-					ScrollbarInsets(0, 10, 1, 10).Height(32).Padding(0, 10, 6, 10).
-					BorderWidth(0, 0, 1, 0).BorderColor(p.LineSoft)
-				scroll.Children(func() {
-					ui.Row(c.Key("eg-tabs-row")).Gap(4).AlignItems(ui.Center).Children(func() {
-						for i := range lib.Groups {
-							g := &lib.Groups[i]
-							selected := g.ID == e.groupID
-							pill := widget.Pill(c.Key("eg-grp-"+g.ID), p, g.Name, selected)
-							widget.RevealSelectedTab(pill, selected, i)
-							if pill.Clicked() {
-								e.groupID = g.ID
-								e.app.SetModeGroup(model.ModeEdge, g.ID)
-								e.tmplID = ""
-								e.list.ScrollTo(0, ui.Start)
-							}
-						}
-					})
-				})
-			}
 
 			if b := templateBookmark(lib, e.tmplID); b != nil {
-				ui.Box(c.Key("eg-tmpl-wrap")).Padding(4, 10).Children(func() {
+				ui.Box(c.Key("eg-tmpl-wrap")).Padding(6, 10, 4, 10).Children(func() {
 					renderTemplateBar(c, e.app, b, &e.tmplQuery, &e.tmplInput, p.Dark, func() {
 						e.tmplID = ""
 						e.tmplQuery = ""
+						if e.state == edgeOut && e.searching {
+							e.searchInput.Focus(c)
+						}
 					})
 				})
 			}

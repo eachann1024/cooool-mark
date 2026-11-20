@@ -313,10 +313,6 @@ func abs32(v float32) float32 {
 func (s *mainState) buildBody(c *ui.Context, p *theme.Palette) {
 	body := ui.Column(c).Grow(1).MinHeight(0).TabStop(false).Bind(&s.contentHandle)
 	body.Children(func() {
-		if strings.TrimSpace(s.query) != "" {
-			s.buildSearchBody(c, p)
-			return
-		}
 		s.buildBrowseBody(c, p)
 	})
 }
@@ -941,151 +937,6 @@ func (s *mainState) searchHits() []app.Hit {
 	return cache.hits
 }
 
-func (s *mainState) buildSearchBody(c *ui.Context, p *theme.Palette) {
-	a := s.app
-	lib := a.Store.Lib()
-	q := strings.TrimSpace(s.query)
-	isURL := looksLikeURL(q)
-	hits := s.searchHits()
-
-	total := len(hits)
-	if isURL {
-		total++
-	}
-	if total == 0 {
-		s.searchIdx = 0
-	} else {
-		s.searchIdx = max(0, min(s.searchIdx, total-1))
-	}
-
-	// Scope chips bar.
-	widget.AutoScrollbarSlim(c, ui.ScrollHorizontal(c.Key("search-scopes"))).ScrollbarInsets(0, 24, 0, 24).FillWidth().Height(39).Shrink(0).Children(func() {
-		ui.Row(c).AlignItems(ui.Center).Gap(6).Padding(10, 24, 4, 24).Children(func() {
-			s.buildScopeChip(c, p, "", "全部")
-			for _, g := range lib.Groups {
-				s.buildScopeChip(c.Key("scope-"+g.ID), p, g.ID, g.Name)
-			}
-		})
-	})
-
-	if !isURL && len(hits) == 0 {
-		s.searchList.ScrollTo(0, ui.Start)
-		s.buildEmptySearch(c, p, q)
-		return
-	}
-
-	cols, gap := 1, float32(2)
-	if a.View == "grid" {
-		gap = 8
-		availW := s.contentHandle.Bounds(c).W - 48
-		if availW <= 0 {
-			availW = 648
-		}
-		cols = max(1, int((availW+gap)/(168+gap)))
-	}
-	offset := 0
-	if isURL {
-		offset = 1
-	}
-	if s.searchScrollMoved {
-		row := 0
-		if s.searchIdx >= offset {
-			row = 1 + (s.searchIdx-offset)/cols
-		}
-		s.searchList.ScrollIntoView(row)
-		s.searchScrollMoved = false
-	}
-	n := 1 + (len(hits)+cols-1)/cols
-	widget.AutoScrollbar(c, ui.List(c.Key("search-results"), &s.searchList, n)).Grow(1).MinHeight(0).FillWidth().
-		ItemKey(func(i int) any {
-			if i == 0 {
-				return "heading"
-			}
-			return "hit-" + hits[(i-1)*cols].B.ID
-		}).
-		Rows(func(row ui.ListRow) {
-			c := row.Context
-			if row.Index == 0 {
-				bottom := float32(6)
-				if n == 1 {
-					bottom = 48
-				}
-				ui.Column(c).FillWidth().Padding(8, 24, bottom, 24).Children(func() {
-					if isURL {
-						s.buildPasteURLCard(c, p, lib, q, s.searchIdx == 0)
-					} else {
-						ui.Textf(c, "%d 个结果", len(hits)).FontSize(12).TextColor(p.Muted).Padding(2, 10, 4, 10)
-					}
-				})
-				return
-			}
-
-			first := (row.Index - 1) * cols
-			items := hits[first:min(first+cols, len(hits))]
-			bottom := gap
-			if row.Index == n-1 {
-				bottom = 48
-			}
-			ui.Column(c).FillWidth().Padding(0, 24, bottom, 24).Gap(6).Children(func() {
-				if a.View == "grid" {
-					ui.Grid(c).Columns(cols).Gap(gap).Children(func() {
-						for i, hit := range items {
-							s.buildSearchCard(c, p, hit, first+i+offset)
-						}
-					})
-				} else {
-					s.buildSearchRow(c, p, items[0], first+offset)
-				}
-				for _, hit := range items {
-					if s.tplBookmarkID == hit.B.ID {
-						s.buildTemplatePrompt(c, p, hit.B)
-						break
-					}
-				}
-			})
-		})
-}
-
-func (s *mainState) buildEmptySearch(c *ui.Context, p *theme.Palette, q string) {
-	a := s.app
-	widget.AutoScrollbar(c, ui.Scroll(c)).Grow(1).MinHeight(0).Padding(8, 24, 48, 24).Children(func() {
-		ui.Column(c).Margin(64, 0, 0, 0).FillWidth().Center().Children(func() {
-			card := ui.Column(c).MaxWidth(380).Padding(28, 32).Radius(14).
-				Background(p.Surface).Border(1, p.Line).Center().Gap(14)
-			card.Children(func() {
-				ui.Row(c).Size(52, 52).Radius(14).Background(p.Field).Center().Children(func() {
-					ui.Icon(c, theme.IconEmptySearch).FontSize(24).TextColor(p.Muted)
-				})
-				widget.Title(c, p, "还没有匹配的书签", 19)
-				ui.Row(c).Wrap().Center().Gap(8).Children(func() {
-					if s.searchScope != "" {
-						allBtn := widget.Primary(c, p, "在全部分组中搜索").Label("在全部分组中搜索").Tooltip("切换到全部分组继续搜索")
-						if allBtn.Clicked() {
-							s.searchScope = ""
-							s.searchIdx = 0
-						}
-						clr := widget.Secondary(c, p, "清空搜索").Label("清空搜索").Tooltip("清空搜索关键词")
-						if clr.Clicked() {
-							s.clearSearch()
-						}
-					} else {
-						clr := widget.Primary(c, p, "清空搜索").Label("清空搜索").Tooltip("清空搜索关键词")
-						if clr.Clicked() {
-							s.clearSearch()
-						}
-					}
-					if a.Win.ShowEditor != nil {
-						newBtn := widget.Secondary(c, p, "新建书签").Label("新建书签").Tooltip("新建书签")
-						if newBtn.Clicked() {
-							a.Win.ShowEditor(app.EditorRequest{Title: q, GroupID: a.Group, SubID: a.Sub})
-						}
-					}
-				})
-			})
-		})
-	})
-}
-
 func (s *mainState) buildScopeChip(c *ui.Context, p *theme.Palette, groupID, name string) {
 	on := s.searchScope == groupID
 	b := ui.ButtonBase(c).Label(name).Tooltip(name).Height(25).MaxWidth(168).Shrink(0).
@@ -1108,6 +959,7 @@ func (s *mainState) buildScopeChip(c *ui.Context, p *theme.Palette, groupID, nam
 		s.searchScope = groupID
 		s.searchIdx = 0
 		s.searchList.ScrollTo(0, ui.Start)
+		s.searchHandle.Focus(c)
 	}
 }
 
@@ -1145,132 +997,13 @@ func (s *mainState) buildPasteURLCard(c *ui.Context, p *theme.Palette, lib *mode
 	})
 
 	if card.Clicked() && a.Win.ShowEditor != nil {
+		s.closeSearch(c)
 		if existing != nil {
 			a.Win.ShowEditor(app.EditorRequest{ID: existing.ID})
 		} else {
 			a.Win.ShowEditor(app.EditorRequest{URL: fullURL, GroupID: a.Group, SubID: a.Sub})
 		}
 	}
-}
-
-func (s *mainState) buildSearchRow(c *ui.Context, p *theme.Palette, hit app.Hit, idx int) {
-	a := s.app
-	b := hit.B
-	on := idx == s.searchIdx
-	keyC := c.Key("sr-" + b.ID)
-	row := ui.Row(keyC).MinHeight(36).Padding(6, 10, 6, 12).Radius(9).Gap(11).AlignItems(ui.Center).
-		Role(ui.RoleOption).Label(b.Title)
-	menuOpen := ui.Local(row, "srMenuOpen", func() bool { return false })
-	hovered := row.Hovered()
-	if on {
-		row.Background(p.RowSel)
-	} else if hovered {
-		row.Background(p.Hover)
-	}
-
-	path := hit.Path
-	if path == "" {
-		path = a.PathOf(b)
-	}
-
-	var mainArea ui.Element
-	row.Children(func() {
-		mainArea = ui.Row(c).Grow(1).MinWidth(0).Gap(11).AlignItems(ui.Center)
-		mainArea.Children(func() {
-			s.buildTile(c, b, 26)
-			ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
-				ui.Row(c).Gap(5).AlignItems(ui.Center).MinWidth(0).Children(func() {
-					ui.RichText(c, highlightedTitleSpans(b.Title, hit.Ranges, p.AccentBg, p.AccentText)...).
-						FontSize(13.5).FontWeight(500).TextColor(p.Text).SingleLine().Shrink(1).MinWidth(0)
-					if b.IsTemplate() {
-						ui.Icon(c, theme.IconBraces).FontSize(12).TextColor(p.Primary).Shrink(0)
-					}
-				})
-				ui.Text(c, shortDomain(b.URL)).FontSize(12).TextColor(p.Muted).SingleLine()
-			})
-			ui.Text(c, path).FontSize(12).TextColor(p.Muted).MaxWidth(160).SingleLine().Shrink(0).Tooltip(path)
-		})
-
-		if hovered || *menuOpen {
-			ui.Row(c).Gap(2).AlignItems(ui.Center).Shrink(0).Children(func() {
-				s.buildBookmarkHoverActions(c, p, b, menuOpen, 26, 13.5)
-			})
-		} else if on {
-			ui.Row(c).Padding(2, 6).Radius(6).Background(p.Surface).Border(1, p.Line).Shrink(0).Children(func() {
-				ui.Text(c, "↵").FontSize(11.5).TextColor(p.Muted).SingleLine()
-			})
-		}
-	})
-
-	if mainArea.Clicked() {
-		s.searchIdx = idx
-	}
-	if mainArea.DoubleClicked() {
-		s.activateBookmark(c, b)
-	}
-	row.PopoverMenu(func(m *ui.Menu) {
-		s.buildBookmarkMenu(c, m, b)
-	}, menuOptions(p))
-}
-
-func (s *mainState) buildSearchCard(c *ui.Context, p *theme.Palette, hit app.Hit, idx int) {
-	a := s.app
-	b := hit.B
-	on := idx == s.searchIdx
-	card := ui.Row(c.Key("sgrid-"+b.ID)).MinWidth(0).MinHeight(56).Padding(8, 12).Radius(10).
-		AlignItems(ui.Center).Role(ui.RoleOption).Label(b.Title)
-	menuOpen := ui.Local(card, "sgMenuOpen", func() bool { return false })
-	hovered := card.Hovered()
-	activeHover := hovered || *menuOpen
-	switch {
-	case on:
-		card.Background(softAccentBg(p)).Border(1, p.Accent)
-	case activeHover:
-		card.Background(p.Hover).Border(1, p.Line.Mix(p.Text, 0.06))
-	default:
-		card.Background(p.Surface).Border(1, p.Line)
-	}
-
-	path := hit.Path
-	if path == "" {
-		path = a.PathOf(b)
-	}
-
-	var mainArea ui.Element
-	card.Children(func() {
-		mainArea = ui.Row(c).Grow(1).MinWidth(0).Gap(10).AlignItems(ui.Center)
-		mainArea.Children(func() {
-			s.buildTile(c, b, 32)
-			textCol := ui.Column(c).Grow(1).MinWidth(0).Gap(2)
-			if activeHover {
-				textCol.Padding(0, 84, 0, 0)
-			}
-			textCol.Children(func() {
-				ui.Row(c).Gap(5).AlignItems(ui.Center).FillWidth().MinWidth(0).Children(func() {
-					ui.RichText(c, highlightedTitleSpans(b.Title, hit.Ranges, p.AccentBg, p.AccentText)...).
-						FontSize(13.5).FontWeight(500).TextColor(p.Text).SingleLine().Shrink(1).MinWidth(0)
-					if b.IsTemplate() {
-						ui.Icon(c, theme.IconBraces).FontSize(12).TextColor(p.Primary).Shrink(0)
-					}
-				})
-				ui.Text(c, path).FontSize(12).TextColor(p.Muted).SingleLine()
-			})
-		})
-
-		if activeHover {
-			s.buildGridHoverToolbar(c, p, b, menuOpen)
-		}
-	})
-
-	if mainArea.Clicked() {
-		s.searchIdx = idx
-	}
-	if mainArea.DoubleClicked() {
-		s.activateBookmark(c, b)
-	}
-	card.PopoverMenu(func(m *ui.Menu) {
-		s.buildBookmarkMenu(c, m, b)
-	}, menuOptions(p))
 }
 
 func polishedBadge(c *ui.Context, p *theme.Palette) {

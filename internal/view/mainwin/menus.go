@@ -2,7 +2,6 @@ package mainwin
 
 import (
 	"context"
-	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -273,6 +272,7 @@ func (s *mainState) activateSearchIndex(c *ui.Context, hits []app.Hit, isURL boo
 	if isURL && idx == 0 {
 		if a.Win.ShowEditor != nil {
 			fullURL := ensureURLScheme(strings.TrimSpace(s.query))
+			s.closeSearch(c)
 			if existing := a.Store.Lib().FindURL(fullURL); existing != nil {
 				a.Win.ShowEditor(app.EditorRequest{ID: existing.ID})
 			} else {
@@ -286,7 +286,7 @@ func (s *mainState) activateSearchIndex(c *ui.Context, hits []app.Hit, isURL boo
 		hitIdx--
 	}
 	if hitIdx >= 0 && hitIdx < len(hits) {
-		s.activateBookmark(c, hits[hitIdx].B)
+		s.activateSearchBookmark(c, hits[hitIdx].B)
 	}
 }
 
@@ -369,49 +369,13 @@ func (s *mainState) refreshBookmarkIcon(id string) {
 }
 
 func looksLikeURL(q string) bool {
-	q = strings.TrimSpace(q)
-	if q == "" || strings.ContainsAny(q, " \t\n\r") {
-		return false
-	}
-	low := strings.ToLower(q)
-	if strings.HasPrefix(low, "http://") || strings.HasPrefix(low, "https://") {
-		u, err := url.Parse(q)
-		return err == nil && u.Host != ""
-	}
-	dot := strings.IndexByte(q, '.')
-	if dot <= 0 || dot >= len(q)-1 {
-		return false
-	}
-	host := q
-	if slash := strings.IndexAny(host, "/?#"); slash >= 0 {
-		host = host[:slash]
-	}
-	parts := strings.Split(host, ".")
-	if len(parts) < 2 {
-		return false
-	}
-	tld := parts[len(parts)-1]
-	return len(tld) >= 2 && !strings.ContainsAny(tld, "0123456789")
+	return widget.LooksLikeURL(q)
 }
 
 func ensureURLScheme(q string) string {
-	low := strings.ToLower(q)
-	if strings.HasPrefix(low, "http://") || strings.HasPrefix(low, "https://") {
-		return q
-	}
-	return "https://" + q
+	return widget.EnsureURLScheme(q)
 }
 
 func shortDomain(raw string) string {
-	u, err := url.Parse(raw)
-	if err != nil || u.Host == "" {
-		s := strings.TrimPrefix(strings.TrimPrefix(raw, "https://"), "http://")
-		s = strings.TrimPrefix(s, "www.")
-		return s
-	}
-	host := strings.TrimPrefix(u.Host, "www.")
-	if u.Path != "" && u.Path != "/" {
-		return host + u.Path
-	}
-	return host
+	return widget.ShortDomain(raw)
 }

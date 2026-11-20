@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"log"
+	"os"
+	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -21,15 +24,35 @@ import (
 	"cooool-mark/internal/view/settings"
 )
 
+func hasBackgroundFlag(args []string) bool {
+	for _, a := range args {
+		switch strings.ToLower(strings.TrimSpace(a)) {
+		case "--background", "-background", "--hidden", "-hidden", "--silent", "-silent":
+			return true
+		}
+	}
+	return false
+}
+
 func main() {
 	mygo.App.SetName("Cooool Mark")
+	if !mygo.App.RequestSingleInstanceLock() {
+		return
+	}
 	app.SetDefaultIcon(theme.DefaultIcon)
+
+	bgFlag := hasBackgroundFlag(os.Args[1:])
+	peeked := app.PeekSettings()
+	if runtime.GOOS == "darwin" && (bgFlag || (peeked.LaunchInBackground && peeked.HideDockWhenClosed && peeked.HasSummonMode())) {
+		mygo.App.SetActivationPolicy(mygo.ActivationPolicyAccessory)
+	}
 
 	mygo.App.WhenReady(func() {
 		a, err := app.New()
 		if err != nil {
 			log.Fatal(err)
 		}
+		a.StealthBackground = bgFlag
 		a.Search = search.New()
 		a.Fetch = fetch.New(a)
 		a.AI = ai.New(a)
@@ -38,13 +61,14 @@ func main() {
 		a.AI.Configure(a.Settings)
 
 		a.Win = app.Windows{
-			ShowMain:     func() { mainwin.Show(a) },
-			ShowSearch:   func(q string) { mainwin.ShowSearch(a, q) },
-			ShowEditor:   func(r app.EditorRequest) { editor.Show(a, r) },
-			ShowSettings: func(p string) { settings.Show(a, p) },
-			ShowImport:   func(p string) { manage.ShowImport(a, p) },
-			ApplyModes:   func() { mode.Apply(a) },
-			HideSummoned: mode.HideSummoned,
+			ShowMain:        func() { mainwin.Show(a) },
+			ShowSearch:      func(q string) { mainwin.ShowSearch(a, q) },
+			ShowQuickSearch: func() { mode.ToggleQuickSearch(a) },
+			ShowEditor:      func(r app.EditorRequest) { editor.Show(a, r) },
+			ShowSettings:    func(p string) { settings.Show(a, p) },
+			ShowImport:      func(p string) { manage.ShowImport(a, p) },
+			ApplyModes:      func() { mode.Apply(a) },
+			HideSummoned:    mode.HideSummoned,
 		}
 
 		mygo.App.SetMenu(appMenu(a))
@@ -91,8 +115,29 @@ func main() {
 			_ = a.Store.Flush()
 		})
 
+		mygo.App.OnWindowAllClosed(func() {
+			if runtime.GOOS != "darwin" && !a.Settings.HasSummonMode() {
+				mygo.App.Quit()
+			}
+		})
+		mygo.App.OnActivate(func(bool) {
+			if !a.HasRegularWindow() && a.Win.ShowMain != nil {
+				a.Win.ShowMain()
+			}
+		})
+		mygo.App.OnSecondInstance(func(args []string, _ string) {
+			if !hasBackgroundFlag(args) && a.Win.ShowMain != nil {
+				a.Win.ShowMain()
+			}
+		})
+
 		mode.Apply(a)
-		a.Win.ShowMain()
+		startSilent := bgFlag || mygo.App.WasOpenedAtLogin() || a.Settings.LaunchInBackground
+		if !startSilent {
+			a.Win.ShowMain()
+		} else {
+			a.SyncDockPolicy()
+		}
 	})
 	if err := mygo.App.Run(); err != nil {
 		log.Fatal(err)
@@ -112,6 +157,8 @@ func appMenu(a *app.App) *mygo.Menu {
 			{Label: "查找", Accelerator: "CmdOrCtrl+F", Click: click(func() { a.Win.ShowSearch("") })},
 			mygo.Separator(),
 			{Label: "导入…", Click: click(func() { a.Win.ShowImport("") })},
+			mygo.Separator(),
+			{Role: mygo.RoleClose},
 			mygo.Separator(),
 			{Label: "设置…", Accelerator: "CmdOrCtrl+,", Click: click(func() { a.Win.ShowSettings("general") })},
 		}},

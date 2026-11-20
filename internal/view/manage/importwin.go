@@ -35,6 +35,7 @@ var (
 )
 
 func showImport(a *app.App, path string) {
+	a.PrepareRegularWindow()
 	if importWin != nil {
 		importWin.Show()
 		importWin.Focus()
@@ -54,7 +55,7 @@ func showImport(a *app.App, path string) {
 		Content: ui.View(st.view),
 	})
 	st.win, importWin, importModel = w, w, st
-	a.AddWindow(w)
+	a.AddRegularWindow(w)
 	w.OnClosed(func() {
 		st.closed = true
 		st.loadSeq++
