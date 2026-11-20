@@ -41,7 +41,6 @@ type edgeMode struct {
 	state       edgeState
 	side        string // "left" or "right"
 	groupID     string
-	searching   bool
 	menuOpen    bool
 	query       string
 	searchInput ui.Handle

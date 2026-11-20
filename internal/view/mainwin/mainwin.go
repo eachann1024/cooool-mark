@@ -133,7 +133,11 @@ func Show(a *app.App) {
 		win.Show()
 		win.Focus()
 		if !state.moveOpen {
-			state.searchHandle.SelectAll()
+			if state.searchOpen {
+				state.searchHandle.SelectAll()
+			} else {
+				state.contentHandle.Focus()
+			}
 		}
 		return
 	}
@@ -154,7 +158,11 @@ func Show(a *app.App) {
 		a.FlushSettings()
 	})
 	win.OnClosed(func() { win = nil })
-	state.contentHandle.Focus()
+	if state.searchOpen && !state.moveOpen {
+		state.searchHandle.SelectAll()
+	} else {
+		state.contentHandle.Focus()
+	}
 }
 
 // FocusSearch opens or focuses the main window search overlay while preserving

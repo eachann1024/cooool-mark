@@ -21,7 +21,6 @@ type trayMode struct {
 	detached       *mygo.Window
 	menu           *mygo.Menu
 	groupID        string
-	searching      bool
 	menuOpen       bool
 	query          string
 	flyoutSearch   ui.Handle

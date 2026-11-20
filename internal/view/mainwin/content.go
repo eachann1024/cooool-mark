@@ -738,9 +738,9 @@ func gridCardSpecFor(size string) gridCardSpec {
 	case model.CardCompact:
 		return gridCardSpec{minW: 150, h: 42, gap: 6, tile: 22, padX: 10, padY: 0, radius: 9, titleSize: 13}
 	case model.CardDetail:
-		return gridCardSpec{minW: 280, h: 112, gap: 12, tile: 40, padX: 16, padY: 14, radius: 13, titleSize: 14.5}
+		return gridCardSpec{minW: 280, h: 128, gap: 12, tile: 40, padX: 16, padY: 14, radius: 13, titleSize: 14.5}
 	default:
-		return gridCardSpec{minW: 220, h: 70, gap: 10, tile: 34, padX: 14, padY: 8, radius: 11, titleSize: 14}
+		return gridCardSpec{minW: 220, h: 74, gap: 10, tile: 34, padX: 14, padY: 8, radius: 11, titleSize: 14}
 	}
 }
 
@@ -825,9 +825,9 @@ func (s *mainState) buildBookmarkGridCard(c *ui.Context, p *theme.Palette, g *mo
 				// bottom edge, leaving blank space when the text is short.
 				ui.Column(c).Grow(1).MinWidth(0).FillHeight().Justify(ui.SpaceBetween).Children(func() {
 					ui.Column(c).FillWidth().MinWidth(0).Gap(4).Children(func() {
-						titleRow(2, 600)
+						titleRow(1, 600)
 						if note != "" {
-							ui.Text(c, note).FontSize(12.5).TextColor(p.Text2).MaxLines(2).Ellipsis("…").LineHeight(1.4)
+							ui.Text(c, note).FontSize(12.5).TextColor(p.Text2).MaxLines(3).Ellipsis("…").LineHeight(1.4)
 						}
 					})
 					if domain != "" {
@@ -840,14 +840,14 @@ func (s *mainState) buildBookmarkGridCard(c *ui.Context, p *theme.Palette, g *mo
 
 			default:
 				s.buildTile(c, b, spec.tile)
-				subText := domain
-				if a.Settings.ShowNote && note != "" {
-					subText = note
-				}
+				// One-line title; the note (when shown) gets up to two lines,
+				// otherwise the domain sits on one line.
 				ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
-					titleRow(2, 500)
-					if subText != "" {
-						ui.Text(c, subText).FontSize(12).TextColor(p.Muted).SingleLine()
+					titleRow(1, 500)
+					if a.Settings.ShowNote && note != "" {
+						ui.Text(c, note).FontSize(12).TextColor(p.Muted).MaxLines(2).Ellipsis("…").LineHeight(1.35)
+					} else if domain != "" {
+						ui.Text(c, domain).FontSize(12).TextColor(p.Muted).SingleLine()
 					}
 				})
 			}

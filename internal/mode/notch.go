@@ -37,7 +37,6 @@ type notchMode struct {
 	win          *mygo.Window
 	state        notchState
 	groupID      string
-	searching    bool
 	menuOpen     bool
 	query        string
 	searchInput  ui.Handle
