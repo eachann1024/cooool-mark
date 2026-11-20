@@ -40,9 +40,10 @@ type edgeMode struct {
 	win         *mygo.Window
 	state       edgeState
 	side        string // "left" or "right"
-	groupID     string
-	menuOpen    bool
-	query       string
+	groupID         string
+	menuOpen        bool
+	autoHideOnLeave bool
+	query           string
 	searchInput ui.Handle
 	hoverSince  time.Time
 	leaveSince  time.Time
@@ -203,7 +204,7 @@ func (e *edgeMode) setState(st edgeState) {
 	e.dragLeftAt = time.Time{}
 	if st == edgeHidden {
 		e.menuOpen = false
-		e.searching = false
+		e.autoHideOnLeave = false
 		e.query = ""
 		e.tmplID = ""
 		e.tmplQuery = ""
@@ -221,6 +222,7 @@ func (e *edgeMode) setState(st edgeState) {
 		if st == edgeOut {
 			e.win.Show()
 			e.win.Focus()
+			e.searchInput.SelectAll()
 		} else if wasFocused {
 			e.win.ShowInactive()
 		}
@@ -228,15 +230,14 @@ func (e *edgeMode) setState(st edgeState) {
 	}
 }
 
-func (e *edgeMode) expand() {
+func (e *edgeMode) expand(autoHide bool) {
+	e.autoHideOnLeave = autoHide
 	if e.state == edgeOut {
 		if e.win != nil {
 			e.win.Show()
 			e.win.Focus()
 		}
-		if e.searching {
-			e.searchInput.Focus()
-		}
+		e.searchInput.SelectAll()
 		return
 	}
 	e.setState(edgeOut)
@@ -265,32 +266,12 @@ func (e *edgeMode) view(c *ui.Context) {
 	}
 
 	if !e.menuOpen && e.state == edgeOut && c.Shortcut(ui.Cmd, ui.KeyF) && !c.ShortcutRepeated() {
-		e.searching = true
 		e.searchInput.SelectAll(c)
 	}
 
-	if !e.menuOpen && e.state == edgeOut && c.Shortcut(0, ui.KeyEscape) {
-		if e.tmplID != "" {
-			e.tmplID = ""
-			e.tmplQuery = ""
-			if e.searching {
-				e.searchInput.Focus(c)
-			}
-		} else if e.searching {
-			e.searching = false
-			e.query = ""
-			e.list.ScrollTo(0, ui.Start)
-			e.searchInput.CancelFocus(c)
-		} else {
-			e.collapse()
-			return
-		}
-	}
-
-	if !e.menuOpen && e.state == edgeOut && !e.searching && !e.searchInput.Focused(c) && !e.tmplInput.Focused(c) {
+	if !e.menuOpen && e.state == edgeOut && !e.searchInput.Focused(c) && !e.tmplInput.Focused(c) {
 		if ch, ok := widget.TypedSearchKey(c); ok {
-			e.searching = true
-			e.query = ch
+			e.query += ch
 			e.list.ScrollTo(0, ui.Start)
 			e.searchInput.Focus(c)
 		}
@@ -309,6 +290,27 @@ func (e *edgeMode) view(c *ui.Context) {
 		e.viewDrop(c, p, lib)
 	case edgeOut:
 		e.viewPanel(c, p, lib, &menuOpenThisFrame)
+	}
+
+	// Evaluate Escape after TextInputBase so e.query is synced with text typed this frame.
+	if !e.menuOpen && !menuOpenThisFrame && e.state == edgeOut && c.Shortcut(0, ui.KeyEscape) {
+		if e.tmplID != "" {
+			e.tmplID = ""
+			e.tmplQuery = ""
+			e.searchInput.Focus(c)
+			if e.win != nil {
+				e.win.Invalidate()
+			}
+		} else if e.query != "" {
+			e.query = ""
+			e.list.ScrollTo(0, ui.Start)
+			e.searchInput.Focus(c)
+			if e.win != nil {
+				e.win.Invalidate()
+			}
+		} else {
+			e.collapse()
+		}
 	}
 }
 
@@ -366,7 +368,7 @@ func (e *edgeMode) viewHandle(c *ui.Context, p *theme.Palette) {
 			}
 		})
 		if btn.Clicked() {
-			e.expand()
+			e.expand(false)
 			return
 		}
 		if btn.Hovered() {
@@ -374,7 +376,7 @@ func (e *edgeMode) viewHandle(c *ui.Context, p *theme.Palette) {
 				e.hoverSince = time.Now()
 				c.After(140 * time.Millisecond)
 			} else if time.Since(e.hoverSince) >= 140*time.Millisecond {
-				e.expand()
+				e.expand(true)
 			} else {
 				c.After(50 * time.Millisecond)
 			}
@@ -515,9 +517,9 @@ func (e *edgeMode) viewPanel(c *ui.Context, p *theme.Palette, lib *model.Library
 		slide := panel.AnimateTo("slide", 0, ui.Animation{Spring: ui.SpringOptions{Duration: 320 * time.Millisecond, Bounce: 0.08}})
 		panel.Translate(slide, 0)
 
-		// Collapse if pointer leaves the panel for 600ms (unless typing, viewing a template, or a menu is open).
+		// Collapse hover-opened panel when pointer leaves for 600ms (unless typing, template, or menu open).
 		_, _, over := wrap.PointerPosition()
-		if over || e.menuOpen || e.searching || e.query != "" || e.searchInput.Focused(c) || e.tmplID != "" || e.tmplInput.Focused(c) {
+		if !e.autoHideOnLeave || over || e.menuOpen || e.query != "" || e.tmplID != "" || e.tmplInput.Focused(c) {
 			e.leaveSince = time.Time{}
 		} else if delay := 400*time.Millisecond - time.Since(e.openedAt); delay > 0 {
 			c.After(delay)
@@ -551,79 +553,60 @@ func (e *edgeMode) viewPanel(c *ui.Context, p *theme.Palette, lib *model.Library
 
 		panel.Children(func() {
 			defer widget.Toast(c, e.app, p, 12)
-			// Single-row header: browse (group pills + search icon + new + collapse) OR search (input + close)
-			ui.Row(c.Key("eg-hdr")).Height(48).Padding(0, 8, 0, 10).Gap(6).AlignItems(ui.Center).
-				BorderWidth(0, 0, 1, 0).BorderColor(p.LineSoft).Children(func() {
-				if !e.searching {
-					if len(lib.Groups) > 0 {
-						scroll := widget.AutoScrollbarSlim(c, ui.ScrollHorizontal(c.Key("eg-tabs"))).
-							Grow(1).MinWidth(0).Height(30).ScrollbarInsets(0, 2, 0, 2).Padding(2, 0)
-						scroll.Children(func() {
-							ui.Row(c.Key("eg-tabs-row")).Gap(4).AlignItems(ui.Center).Children(func() {
-								for i := range lib.Groups {
-									g := &lib.Groups[i]
-									selected := g.ID == e.groupID
-									pill := widget.Pill(c.Key("eg-grp-"+g.ID), p, g.Name, selected)
-									widget.RevealSelectedTab(pill, selected, i)
-									if pill.Clicked() {
-										e.groupID = g.ID
-										e.app.SetModeGroup(model.ModeEdge, g.ID)
-										e.tmplID = ""
-										e.list.ScrollTo(0, ui.Start)
-									}
+			// Top row: group tabs + new + collapse, followed by persistent auto-focused search input.
+			ui.Row(c.Key("eg-hdr")).Height(46).Padding(0, 8, 0, 10).Gap(6).AlignItems(ui.Center).Children(func() {
+				if len(lib.Groups) > 0 {
+					scroll := widget.AutoScrollbarSlim(c, ui.ScrollHorizontal(c.Key("eg-tabs"))).
+						Grow(1).MinWidth(0).Height(30).ScrollbarInsets(0, 2, 0, 2).Padding(2, 0)
+					scroll.Children(func() {
+						ui.Row(c.Key("eg-tabs-row")).Gap(4).AlignItems(ui.Center).Children(func() {
+							for i := range lib.Groups {
+								g := &lib.Groups[i]
+								selected := g.ID == e.groupID && strings.TrimSpace(e.query) == ""
+								pill := widget.Pill(c.Key("eg-grp-"+g.ID), p, g.Name, selected)
+								widget.RevealSelectedTab(pill, selected, i)
+								if pill.Clicked() {
+									e.groupID = g.ID
+									e.app.SetModeGroup(model.ModeEdge, g.ID)
+									e.query = ""
+									e.tmplID = ""
+									e.list.ScrollTo(0, ui.Start)
+									e.searchInput.Focus(c)
 								}
-							})
-						})
-					} else {
-						ui.Spacer(c)
-					}
-
-					searchBtn := widget.IconButton(c.Key("eg-search-btn"), p, theme.IconSearch, locales.MenuSearchBookmarks()).Shrink(0)
-					if searchBtn.Clicked() {
-						e.searching = true
-						e.searchInput.Focus(c)
-					}
-
-					addBtn := widget.IconButton(c.Key("eg-add"), p, theme.IconPlus, locales.MenuNewBookmark()).Shrink(0)
-					if addBtn.Clicked() {
-						e.collapse()
-						if e.app.Win.ShowEditor != nil {
-							var gid, sid string
-							if len(lib.Groups) > 0 {
-								g := activeGroup(lib, e.groupID)
-								gid, sid = g.ID, firstSubID(g)
 							}
-							e.app.Win.ShowEditor(app.EditorRequest{GroupID: gid, SubID: sid})
-						}
-					}
-					collapseIcon := theme.IconCollapseRight
-					if e.side == "left" {
-						collapseIcon = theme.IconCollapseLeft
-					}
-					hideBtn := widget.IconButton(c.Key("eg-hide"), p, collapseIcon, locales.ActionCollapseEdge()).Shrink(0)
-					if hideBtn.Clicked() {
-						e.collapse()
-					}
-					return
+						})
+					})
+				} else {
+					ui.Spacer(c)
 				}
 
-				focused := e.searchInput.Focused(c)
-				hasQ := e.query != ""
-				sbox := ui.Row(c.Key("eg-sbox")).Grow(1).MinWidth(0).Height(30).Padding(0, 6, 0, 10).Gap(6).Radius(9).
-					AlignItems(ui.Center)
-				if focused || hasQ {
-					sbox.Background(p.Surface).Border(1.5, p.Accent)
-				} else {
-					sbox.Background(p.Field).Border(1.5, ui.Transparent)
-				}
-				sbox.Children(func() {
-					ui.Icon(c, theme.IconSearch).FontSize(14).TextColor(p.Muted).Shrink(0)
-					in := ui.TextInputBase(c.Key("eg-q"), &e.query).Bind(&e.searchInput).Grow(1).MinWidth(0).
-						Label(locales.MainSearchPlaceholder()).Placeholder(locales.MainSearchPlaceholder()).TextColor(p.Text).PlaceholderColor(p.Muted)
-					if in.Changed() {
-						e.list.ScrollTo(0, ui.Start)
+				addBtn := widget.IconButton(c.Key("eg-add"), p, theme.IconPlus, locales.MenuNewBookmark()).Shrink(0)
+				if addBtn.Clicked() {
+					e.collapse()
+					if e.app.Win.ShowEditor != nil {
+						var gid, sid string
+						if len(lib.Groups) > 0 {
+							g := activeGroup(lib, e.groupID)
+							gid, sid = g.ID, firstSubID(g)
+						}
+						e.app.Win.ShowEditor(app.EditorRequest{GroupID: gid, SubID: sid})
 					}
-					if in.Submitted() {
+				}
+				collapseIcon := theme.IconCollapseRight
+				if e.side == "left" {
+					collapseIcon = theme.IconCollapseLeft
+				}
+				hideBtn := widget.IconButton(c.Key("eg-hide"), p, collapseIcon, locales.ActionCollapseEdge()).Shrink(0)
+				if hideBtn.Clicked() {
+					e.collapse()
+				}
+			})
+
+			ui.Row(c.Key("eg-srow")).Padding(0, 10, 8, 10).AlignItems(ui.Center).
+				BorderWidth(0, 0, 1, 0).BorderColor(p.LineSoft).Children(func() {
+				renderModeSearchBox(c, p, "eg", &e.query, &e.searchInput, p.Field,
+					func() { e.list.ScrollTo(0, ui.Start) },
+					func() {
 						hits := searchBookmarks(e.app, e.query, "")
 						if len(hits) > 0 {
 							e.openItem(hits[0])
@@ -631,28 +614,8 @@ func (e *edgeMode) viewPanel(c *ui.Context, p *theme.Palette, lib *model.Library
 								e.tmplInput.Focus(c)
 							}
 						}
-					}
-					if hasQ {
-						clr := ui.ButtonBase(c.Key("eg-qclr")).Size(18, 18).Radius(5).Center().
-							TextColor(p.Muted).Label(locales.ActionClearSearch()).Tooltip(locales.ActionClearSearch()).Shrink(0)
-						if clr.Hovered() {
-							clr.Background(p.RowSel).TextColor(p.Text)
-						}
-						clr.Children(func() { ui.Icon(c, theme.IconClose).FontSize(11) })
-						if clr.Clicked() {
-							e.query = ""
-							e.list.ScrollTo(0, ui.Start)
-							e.searchInput.Focus(c)
-						}
-					}
-				})
-				closeSearch := widget.IconButton(c.Key("eg-search-close"), p, theme.IconClose, locales.ActionCloseSearch()).Shrink(0)
-				if closeSearch.Clicked() {
-					e.searching = false
-					e.query = ""
-					e.list.ScrollTo(0, ui.Start)
-					e.searchInput.CancelFocus(c)
-				}
+					},
+				)
 			})
 
 			q := strings.TrimSpace(e.query)
@@ -662,7 +625,7 @@ func (e *edgeMode) viewPanel(c *ui.Context, p *theme.Palette, lib *model.Library
 					renderTemplateBar(c, e.app, b, &e.tmplQuery, &e.tmplInput, p.Dark, func() {
 						e.tmplID = ""
 						e.tmplQuery = ""
-						if e.state == edgeOut && e.searching {
+						if e.state == edgeOut {
 							e.searchInput.Focus(c)
 						}
 					})

@@ -222,9 +222,7 @@ func (t *trayMode) toggleAttached() {
 			t.detached.Show()
 		}
 		t.detached.Focus()
-		if t.searching {
-			t.detachedSearch.Focus()
-		}
+		t.detachedSearch.SelectAll()
 		return
 	}
 	if t.flyout != nil {
@@ -238,7 +236,6 @@ func (t *trayMode) showAttached() {
 	if t.tray == nil || t.flyout != nil {
 		return
 	}
-	t.searching = false
 	t.query = ""
 	t.tmplID = ""
 	t.tmplQuery = ""
@@ -257,11 +254,11 @@ func (t *trayMode) showAttached() {
 	})
 	t.flyout = w
 	t.app.AddWindow(w)
+	t.flyoutSearch.SelectAll()
 	w.OnClosed(func() {
 		if t.flyout == w {
 			t.flyout = nil
 			if t.detached == nil {
-				t.searching = false
 				t.query = ""
 			}
 		}
@@ -272,9 +269,7 @@ func (t *trayMode) tearOff() {
 	if t.detached != nil {
 		t.detached.Show()
 		t.detached.Focus()
-		if t.searching {
-			t.detachedSearch.Focus()
-		}
+		t.detachedSearch.SelectAll()
 		return
 	}
 	var bx, by int
@@ -315,13 +310,10 @@ func (t *trayMode) tearOff() {
 	t.app.AddWindow(w)
 	w.Show()
 	w.Focus()
-	if t.searching {
-		t.detachedSearch.Focus()
-	}
+	t.detachedSearch.SelectAll()
 	w.OnClosed(func() {
 		if t.detached == w {
 			t.detached = nil
-			t.searching = false
 			t.query = ""
 		}
 	})
@@ -364,33 +356,12 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 	tmplH := t.tmplHandle(detached)
 
 	if !t.menuOpen && c.Shortcut(ui.Cmd, ui.KeyF) && !c.ShortcutRepeated() {
-		t.searching = true
 		searchH.SelectAll(c)
 	}
 
-	if !t.menuOpen && c.Shortcut(0, ui.KeyEscape) {
-		if t.tmplID != "" {
-			t.tmplID = ""
-			t.tmplQuery = ""
-			if t.searching {
-				searchH.Focus(c)
-			}
-		} else if t.searching {
-			t.searching = false
-			t.query = ""
-			t.flyoutList.ScrollTo(0, ui.Start)
-			t.detachedList.ScrollTo(0, ui.Start)
-			searchH.CancelFocus(c)
-		} else if !detached {
-			t.hideAttached()
-			return
-		}
-	}
-
-	if !t.menuOpen && !t.searching && !searchH.Focused(c) && !tmplH.Focused(c) {
+	if !t.menuOpen && !searchH.Focused(c) && !tmplH.Focused(c) {
 		if ch, ok := widget.TypedSearchKey(c); ok {
-			t.searching = true
-			t.query = ch
+			t.query += ch
 			t.flyoutList.ScrollTo(0, ui.Start)
 			t.detachedList.ScrollTo(0, ui.Start)
 			searchH.Focus(c)
@@ -436,94 +407,77 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 	}
 
 	box.Children(func() {
-		// Single-row header: browse (group pills + search icon + pin/close) OR search (input + close)
-		hdr := ui.Row(c.Key("tray-hdr")).Height(48).Padding(0, 8, 0, 10).Gap(6).AlignItems(ui.Center).
-			BorderWidth(0, 0, 1, 0).BorderColor(p.LineSoft)
+		// Top row: group tabs + pin/reattach (+ close when detached), followed by persistent auto-focused search input.
+		hdr := ui.Row(c.Key("tray-hdr")).Height(44).Padding(0, 8, 0, 10).Gap(6).AlignItems(ui.Center)
 		if detached {
 			hdr.DragWindow()
 		}
 		hdr.Children(func() {
-			if !t.searching {
-				if len(lib.Groups) > 0 {
-					scroll := widget.AutoScrollbarSlim(c, ui.ScrollHorizontal(c.Key("tray-tabs"))).
-						Grow(1).MinWidth(0).Height(30).ScrollbarInsets(0, 2, 0, 2).Padding(2, 0)
-					scroll.Children(func() {
-						ui.Row(c.Key("tray-tabs-row")).Gap(4).AlignItems(ui.Center).Children(func() {
-							for i := range lib.Groups {
-								g := &lib.Groups[i]
-								selected := g.ID == t.groupID
-								pill := widget.Pill(c.Key("tray-grp-"+g.ID), p, g.Name, selected)
-								widget.RevealSelectedTab(pill, selected, i)
-								if pill.Clicked() {
-									t.groupID = g.ID
-									t.app.SetModeGroup(model.ModeTray, g.ID)
-									t.tmplID = ""
-									t.flyoutList.ScrollTo(0, ui.Start)
-									t.detachedList.ScrollTo(0, ui.Start)
-								}
+			if len(lib.Groups) > 0 {
+				scroll := widget.AutoScrollbarSlim(c, ui.ScrollHorizontal(c.Key("tray-tabs"))).
+					Grow(1).MinWidth(0).Height(30).ScrollbarInsets(0, 2, 0, 2).Padding(2, 0)
+				scroll.Children(func() {
+					ui.Row(c.Key("tray-tabs-row")).Gap(4).AlignItems(ui.Center).Children(func() {
+						for i := range lib.Groups {
+							g := &lib.Groups[i]
+							selected := g.ID == t.groupID && strings.TrimSpace(t.query) == ""
+							pill := widget.Pill(c.Key("tray-grp-"+g.ID), p, g.Name, selected)
+							widget.RevealSelectedTab(pill, selected, i)
+							if pill.Clicked() {
+								t.groupID = g.ID
+								t.app.SetModeGroup(model.ModeTray, g.ID)
+								t.query = ""
+								t.tmplID = ""
+								t.flyoutList.ScrollTo(0, ui.Start)
+								t.detachedList.ScrollTo(0, ui.Start)
+								searchH.Focus(c)
 							}
-						})
-					})
-				} else {
-					ui.Spacer(c)
-				}
-
-				searchBtn := widget.IconButton(c.Key("tray-search-btn"), p, theme.IconSearch, locales.MenuSearchBookmarks()).Shrink(0)
-				if searchBtn.Clicked() {
-					t.searching = true
-					searchH.Focus(c)
-				}
-
-				pinLabel := locales.ActionDetachWindow()
-				pinIcon := theme.IconPin
-				if detached {
-					pinLabel = locales.ActionAttachMenuBar()
-					pinIcon = theme.IconPinFilled
-				}
-				pinBtn := widget.IconButton(c.Key("tray-pin"), p, pinIcon, pinLabel).Shrink(0)
-				if detached {
-					pinBtn.Background(p.AccentBg).TextColor(p.Primary)
-				}
-				if pinBtn.Clicked() {
-					if detached {
-						t.reattach()
-					} else {
-						t.tearOff()
-					}
-				}
-				if detached {
-					closeBtn := widget.IconButton(c.Key("tray-close"), p, theme.IconClose, locales.ActionClose()).Shrink(0)
-					if closeBtn.Clicked() {
-						if t.detached != nil {
-							t.detached.Close()
 						}
-					}
-				}
-				return
+					})
+				})
+			} else {
+				ui.Spacer(c)
 			}
 
-			fieldBg := p.Text.Alpha(0.06)
-			if !c.Vibrancy() || reduceTrans {
-				fieldBg = p.Field
+			pinLabel := locales.ActionDetachWindow()
+			pinIcon := theme.IconPin
+			if detached {
+				pinLabel = locales.ActionAttachMenuBar()
+				pinIcon = theme.IconPinFilled
 			}
-			focused := searchH.Focused(c)
-			hasQ := t.query != ""
-			sbox := ui.Row(c.Key("tray-sbox")).Grow(1).MinWidth(0).Height(30).Padding(0, 6, 0, 10).Gap(6).Radius(9).
-				AlignItems(ui.Center)
-			if focused || hasQ {
-				sbox.Background(p.Surface).Border(1.5, p.Accent)
-			} else {
-				sbox.Background(fieldBg).Border(1.5, ui.Transparent)
+			pinBtn := widget.IconButton(c.Key("tray-pin"), p, pinIcon, pinLabel).Shrink(0)
+			if detached {
+				pinBtn.Background(p.AccentBg).TextColor(p.Primary)
 			}
-			sbox.Children(func() {
-				ui.Icon(c, theme.IconSearch).FontSize(14).TextColor(p.Muted).Shrink(0)
-				in := ui.TextInputBase(c.Key("tray-q"), &t.query).Bind(searchH).Grow(1).MinWidth(0).
-					Label(locales.MainSearchPlaceholder()).Placeholder(locales.MainSearchPlaceholder()).TextColor(p.Text).PlaceholderColor(p.Muted)
-				if in.Changed() {
+			if pinBtn.Clicked() {
+				if detached {
+					t.reattach()
+				} else {
+					t.tearOff()
+				}
+			}
+			if detached {
+				closeBtn := widget.IconButton(c.Key("tray-close"), p, theme.IconClose, locales.ActionClose()).Shrink(0)
+				if closeBtn.Clicked() {
+					if t.detached != nil {
+						t.detached.Close()
+					}
+				}
+			}
+		})
+
+		fieldBg := p.Text.Alpha(0.06)
+		if !c.Vibrancy() || reduceTrans {
+			fieldBg = p.Field
+		}
+		ui.Row(c.Key("tray-srow")).Padding(0, 10, 8, 10).AlignItems(ui.Center).
+			BorderWidth(0, 0, 1, 0).BorderColor(p.LineSoft).Children(func() {
+			renderModeSearchBox(c, p, "tray", &t.query, searchH, fieldBg,
+				func() {
 					t.flyoutList.ScrollTo(0, ui.Start)
 					t.detachedList.ScrollTo(0, ui.Start)
-				}
-				if in.Submitted() {
+				},
+				func() {
 					hits := searchBookmarks(t.app, t.query, "")
 					if len(hits) > 0 {
 						t.openItem(hits[0])
@@ -531,30 +485,8 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 							tmplH.Focus(c)
 						}
 					}
-				}
-				if hasQ {
-					clr := ui.ButtonBase(c.Key("tray-qclr")).Size(18, 18).Radius(5).Center().
-						TextColor(p.Muted).Label(locales.ActionClearSearch()).Tooltip(locales.ActionClearSearch()).Shrink(0)
-					if clr.Hovered() {
-						clr.Background(p.RowSel).TextColor(p.Text)
-					}
-					clr.Children(func() { ui.Icon(c, theme.IconClose).FontSize(11) })
-					if clr.Clicked() {
-						t.query = ""
-						t.flyoutList.ScrollTo(0, ui.Start)
-						t.detachedList.ScrollTo(0, ui.Start)
-						searchH.Focus(c)
-					}
-				}
-			})
-			closeSearch := widget.IconButton(c.Key("tray-search-close"), p, theme.IconClose, locales.ActionCloseSearch()).Shrink(0)
-			if closeSearch.Clicked() {
-				t.searching = false
-				t.query = ""
-				t.flyoutList.ScrollTo(0, ui.Start)
-				t.detachedList.ScrollTo(0, ui.Start)
-				searchH.CancelFocus(c)
-			}
+				},
+			)
 		})
 
 		q := strings.TrimSpace(t.query)
@@ -564,9 +496,7 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 				renderTemplateBar(c, t.app, b, &t.tmplQuery, tmplH, p.Dark, func() {
 					t.tmplID = ""
 					t.tmplQuery = ""
-					if t.searching {
-						searchH.Focus(c)
-					}
+					searchH.Focus(c)
 				})
 			})
 		}
@@ -659,6 +589,31 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 		})
 		widget.Toast(c, t.app, p, 52)
 	})
+
+	// Evaluate Escape after TextInputBase so t.query is synced with text typed this frame.
+	if !t.menuOpen && !menuOpenThisFrame && c.Shortcut(0, ui.KeyEscape) {
+		inv := func() {
+			if detached && t.detached != nil {
+				t.detached.Invalidate()
+			} else if !detached && t.flyout != nil {
+				t.flyout.Invalidate()
+			}
+		}
+		if t.tmplID != "" {
+			t.tmplID = ""
+			t.tmplQuery = ""
+			searchH.Focus(c)
+			inv()
+		} else if t.query != "" {
+			t.query = ""
+			t.flyoutList.ScrollTo(0, ui.Start)
+			t.detachedList.ScrollTo(0, ui.Start)
+			searchH.Focus(c)
+			inv()
+		} else if !detached {
+			t.hideAttached()
+		}
+	}
 }
 
 func (t *trayMode) currentItems(lib *model.Library, q string) []*model.Bookmark {

@@ -214,7 +214,6 @@ func (n *notchMode) setState(st notchState) {
 	n.dragLeftAt = time.Time{}
 	if st == notchClosed {
 		n.menuOpen = false
-		n.searching = false
 		n.query = ""
 		n.tmplID = ""
 		n.tmplQuery = ""
@@ -235,6 +234,7 @@ func (n *notchMode) setState(st notchState) {
 	if st == notchOpen {
 		n.win.Show()
 		n.win.Focus()
+		n.searchInput.SelectAll()
 	} else if wasFocused {
 		n.win.ShowInactive()
 	}
@@ -247,9 +247,7 @@ func (n *notchMode) expand() {
 			n.win.Show()
 			n.win.Focus()
 		}
-		if n.searching {
-			n.searchInput.Focus()
-		}
+		n.searchInput.SelectAll()
 		return
 	}
 	n.setState(notchOpen)
@@ -323,34 +321,12 @@ func (n *notchMode) view(c *ui.Context) {
 	}
 
 	if !n.menuOpen && n.state == notchOpen && c.Shortcut(ui.Cmd, ui.KeyF) && !c.ShortcutRepeated() {
-		n.searching = true
 		n.searchInput.SelectAll(c)
 	}
 
-	if !n.menuOpen && n.state == notchOpen && c.Shortcut(0, ui.KeyEscape) {
-		if n.tmplID != "" {
-			n.tmplID = ""
-			n.tmplQuery = ""
-			n.syncOpenHeight()
-			if n.searching {
-				n.searchInput.Focus(c)
-			}
-		} else if n.searching {
-			n.searching = false
-			n.query = ""
-			n.list.ScrollTo(0, ui.Start)
-			n.syncOpenHeight()
-			n.searchInput.CancelFocus(c)
-		} else {
-			n.collapse()
-			return
-		}
-	}
-
-	if !n.menuOpen && n.state == notchOpen && !n.searching && !n.searchInput.Focused(c) && !n.tmplInput.Focused(c) {
+	if !n.menuOpen && n.state == notchOpen && !n.searchInput.Focused(c) && !n.tmplInput.Focused(c) {
 		if ch, ok := widget.TypedSearchKey(c); ok {
-			n.searching = true
-			n.query = ch
+			n.query += ch
 			n.list.ScrollTo(0, ui.Start)
 			n.syncOpenHeight()
 			n.searchInput.Focus(c)
@@ -486,6 +462,29 @@ func (n *notchMode) view(c *ui.Context) {
 			}
 		})
 	})
+
+	// Evaluate Escape after TextInputBase so n.query is synced with text typed this frame.
+	if !n.menuOpen && !menuOpenThisFrame && n.state == notchOpen && c.Shortcut(0, ui.KeyEscape) {
+		if n.tmplID != "" {
+			n.tmplID = ""
+			n.tmplQuery = ""
+			n.syncOpenHeight()
+			n.searchInput.Focus(c)
+			if n.win != nil {
+				n.win.Invalidate()
+			}
+		} else if n.query != "" {
+			n.query = ""
+			n.list.ScrollTo(0, ui.Start)
+			n.syncOpenHeight()
+			n.searchInput.Focus(c)
+			if n.win != nil {
+				n.win.Invalidate()
+			}
+		} else {
+			n.collapse()
+		}
+	}
 }
 
 func (n *notchMode) renderDrop(c *ui.Context, lib *model.Library) {
@@ -507,105 +506,89 @@ func (n *notchMode) renderOpen(c *ui.Context, p *theme.Palette, lib *model.Libra
 	body.Children(func() {
 		defer widget.Toast(c, n.app, p, 12)
 		q := strings.TrimSpace(n.query)
-		// Header: browse (group pills + search button + Open Main) OR search (search input + close + Open Main)
+		// Header: group pills + persistent search input + Open Main
 		ui.Row(c.Key("notch-hdr")).Height(30).AlignItems(ui.Center).Gap(6).Children(func() {
-			if !n.searching {
-				if len(lib.Groups) > 0 {
-					scroll := widget.AutoScrollbarSlim(c, ui.ScrollHorizontal(c.Key("notch-tabs"))).MinWidth(0).Shrink(1).ScrollbarInsets(0, 2, 0, 2).Padding(0, 0, 4, 0).Grow(1).Height(30)
-					scroll.Children(func() {
-						ui.Row(c.Key("notch-tabs-row")).Gap(4).AlignItems(ui.Center).Children(func() {
-							for i := range lib.Groups {
-								g := &lib.Groups[i]
-								sel := g.ID == n.groupID
-								pill := ui.ButtonBase(c.Key(g.ID)).Height(26).PaddingX(10).Radius(999).
-									MaxWidth(156).Shrink(0).Label(g.Name).Tooltip(g.Name).AlignItems(ui.Center)
-								widget.RevealSelectedTab(pill, sel, i)
+			if len(lib.Groups) > 0 {
+				scroll := widget.AutoScrollbarSlim(c, ui.ScrollHorizontal(c.Key("notch-tabs"))).MinWidth(0).Shrink(1).ScrollbarInsets(0, 2, 0, 2).Padding(0, 0, 4, 0).Grow(1).Height(30)
+				scroll.Children(func() {
+					ui.Row(c.Key("notch-tabs-row")).Gap(4).AlignItems(ui.Center).Children(func() {
+						for i := range lib.Groups {
+							g := &lib.Groups[i]
+							sel := g.ID == n.groupID && q == ""
+							pill := ui.ButtonBase(c.Key(g.ID)).Height(26).PaddingX(10).Radius(999).
+								MaxWidth(156).Shrink(0).Label(g.Name).Tooltip(g.Name).AlignItems(ui.Center)
+							widget.RevealSelectedTab(pill, sel, i)
+							if sel {
+								pill.Background(ui.RGBA(255, 255, 255, 0.16)).TextColor(ui.Hex("#ffffff"))
+							} else if pill.Hovered() {
+								pill.Background(ui.RGBA(255, 255, 255, 0.10)).TextColor(ui.Hex("#eae8e1"))
+							} else {
+								pill.TextColor(ui.RGBA(234, 232, 225, 0.60))
+							}
+							pill.Children(func() {
+								t := ui.Text(c, g.Name).SingleLine()
 								if sel {
-									pill.Background(ui.RGBA(255, 255, 255, 0.16)).TextColor(ui.Hex("#ffffff"))
-								} else if pill.Hovered() {
-									pill.Background(ui.RGBA(255, 255, 255, 0.10)).TextColor(ui.Hex("#eae8e1"))
-								} else {
-									pill.TextColor(ui.RGBA(234, 232, 225, 0.60))
+									t.FontWeight(500)
 								}
-								pill.Children(func() {
-									t := ui.Text(c, g.Name).SingleLine()
-									if sel {
-										t.FontWeight(500)
-									}
-								})
-								if pill.Clicked() {
-									n.query = ""
-									n.groupID = g.ID
-									n.app.SetModeGroup(model.ModeNotch, g.ID)
-									n.tmplID = ""
-									n.list.ScrollTo(0, ui.Start)
-									n.syncOpenHeight()
-								}
+							})
+							if pill.Clicked() {
+								n.query = ""
+								n.groupID = g.ID
+								n.app.SetModeGroup(model.ModeNotch, g.ID)
+								n.tmplID = ""
+								n.list.ScrollTo(0, ui.Start)
+								n.syncOpenHeight()
+								n.searchInput.Focus(c)
 							}
-						})
+						}
 					})
-				} else {
-					ui.Spacer(c)
-				}
-
-				searchBtn := notchIconBtn(c, "notch-search-btn", theme.IconSearch, locales.MenuSearchBookmarks())
-				if searchBtn.Clicked() {
-					n.searching = true
-					n.searchInput.Focus(c)
-				}
-			} else {
-				focused := n.searchInput.Focused(c)
-				hasQ := n.query != ""
-				sbox := ui.Row(c.Key("notch-sbox")).Grow(1).MinWidth(0).Height(30).Padding(0, 6, 0, 10).Gap(6).Radius(9).
-					AlignItems(ui.Center)
-				if focused || hasQ {
-					sbox.Background(ui.RGBA(255, 255, 255, 0.16)).Border(1.5, ui.Hex("#e0875f"))
-				} else {
-					sbox.Background(ui.RGBA(255, 255, 255, 0.11)).Border(1.5, ui.RGBA(255, 255, 255, 0.08))
-				}
-				sbox.Children(func() {
-					ui.Icon(c, theme.IconSearch).FontSize(13).TextColor(ui.RGBA(234, 232, 225, 0.65)).Shrink(0)
-					in := ui.TextInputBase(c.Key("notch-q"), &n.query).Bind(&n.searchInput).Grow(1).MinWidth(0).
-						Label(locales.MainSearchPlaceholder()).Placeholder(locales.MainSearchPlaceholder()).TextColor(ui.Hex("#ffffff")).
-						PlaceholderColor(ui.RGBA(234, 232, 225, 0.60))
-					if in.Changed() {
-						n.list.ScrollTo(0, ui.Start)
-						n.syncOpenHeight()
-					}
-					if in.Submitted() {
-						hits := searchBookmarks(n.app, n.query, "")
-						if len(hits) > 0 {
-							n.openItem(hits[0])
-							if n.tmplID != "" {
-								n.tmplInput.Focus(c)
-							}
-						}
-					}
-					if hasQ {
-						clr := ui.ButtonBase(c.Key("notch-qclr")).Size(18, 18).Radius(5).Center().
-							TextColor(ui.RGBA(234, 232, 225, 0.70)).Label(locales.ActionClearSearch()).Tooltip(locales.ActionClearSearch()).Shrink(0)
-						if clr.Hovered() {
-							clr.Background(ui.RGBA(255, 255, 255, 0.14)).TextColor(ui.Hex("#ffffff"))
-						}
-						clr.Children(func() { ui.Icon(c, theme.IconClose).FontSize(11) })
-						if clr.Clicked() {
-							n.query = ""
-							n.list.ScrollTo(0, ui.Start)
-							n.syncOpenHeight()
-							n.searchInput.Focus(c)
-						}
-					}
 				})
+			} else {
+				ui.Spacer(c)
+			}
 
-				closeSearch := notchIconBtn(c, "notch-search-close", theme.IconClose, locales.ActionCloseSearch())
-				if closeSearch.Clicked() {
-					n.searching = false
-					n.query = ""
+			focused := n.searchInput.Focused(c)
+			hasQ := n.query != ""
+			sbox := ui.Row(c.Key("notch-sbox")).Width(186).Shrink(0).Height(30).Padding(0, 6, 0, 10).Gap(6).Radius(9).
+				AlignItems(ui.Center)
+			if focused || hasQ {
+				sbox.Background(ui.RGBA(255, 255, 255, 0.16)).Border(1.5, ui.Hex("#e0875f"))
+			} else {
+				sbox.Background(ui.RGBA(255, 255, 255, 0.11)).Border(1.5, ui.RGBA(255, 255, 255, 0.08))
+			}
+			sbox.Children(func() {
+				ui.Icon(c, theme.IconSearch).FontSize(13).TextColor(ui.RGBA(234, 232, 225, 0.65)).Shrink(0)
+				in := ui.TextInputBase(c.Key("notch-q"), &n.query).Bind(&n.searchInput).Grow(1).MinWidth(0).
+					Label(locales.MainSearchPlaceholder()).Placeholder(locales.MainSearchPlaceholder()).TextColor(ui.Hex("#ffffff")).
+					PlaceholderColor(ui.RGBA(234, 232, 225, 0.60))
+				if in.Changed() {
 					n.list.ScrollTo(0, ui.Start)
 					n.syncOpenHeight()
-					n.searchInput.CancelFocus(c)
 				}
-			}
+				if in.Submitted() {
+					hits := searchBookmarks(n.app, n.query, "")
+					if len(hits) > 0 {
+						n.openItem(hits[0])
+						if n.tmplID != "" {
+							n.tmplInput.Focus(c)
+						}
+					}
+				}
+				if hasQ {
+					clr := ui.ButtonBase(c.Key("notch-qclr")).Size(18, 18).Radius(5).Center().
+						TextColor(ui.RGBA(234, 232, 225, 0.70)).Label(locales.ActionClearSearch()).Tooltip(locales.ActionClearSearch()).Shrink(0)
+					if clr.Hovered() {
+						clr.Background(ui.RGBA(255, 255, 255, 0.14)).TextColor(ui.Hex("#ffffff"))
+					}
+					clr.Children(func() { ui.Icon(c, theme.IconClose).FontSize(11) })
+					if clr.Clicked() {
+						n.query = ""
+						n.list.ScrollTo(0, ui.Start)
+						n.syncOpenHeight()
+						n.searchInput.Focus(c)
+					}
+				}
+			})
 
 			mainBtn := notchIconBtn(c, "notch-main", theme.IconExternal, locales.MenuOpenMain())
 			if mainBtn.Clicked() {
@@ -621,7 +604,7 @@ func (n *notchMode) renderOpen(c *ui.Context, p *theme.Palette, lib *model.Libra
 				n.tmplID = ""
 				n.tmplQuery = ""
 				n.syncOpenHeight()
-				if n.state == notchOpen && n.searching {
+				if n.state == notchOpen {
 					n.searchInput.Focus(c)
 				}
 			})

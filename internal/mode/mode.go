@@ -106,7 +106,7 @@ func ToggleEdge(a *app.App) {
 		a.Settings.SetMode(model.ModeEdge, true)
 		a.SaveSettings()
 		if curEdge != nil {
-			curEdge.expand()
+			curEdge.expand(false)
 		}
 		return
 	}
@@ -119,7 +119,7 @@ func ToggleEdge(a *app.App) {
 	if curEdge.state == edgeOut {
 		curEdge.collapse()
 	} else {
-		curEdge.expand()
+		curEdge.expand(false)
 	}
 }
 
@@ -426,6 +426,55 @@ func renderTemplateBar(c *ui.Context, a *app.App, b *model.Bookmark, query *stri
 		cancel.Children(func() { ui.Text(c, locales.ActionCancel()).FontSize(11).SingleLine() })
 		if cancel.Clicked() {
 			onCancel()
+		}
+	})
+}
+
+// renderModeSearchBox renders the compact search input shared by summon mode panels.
+func renderModeSearchBox(
+	c *ui.Context,
+	p *theme.Palette,
+	keyPrefix string,
+	query *string,
+	handle *ui.Handle,
+	fieldBg ui.Color,
+	onScrollTop func(),
+	onSubmit func(),
+) {
+	focused := handle.Focused(c)
+	hasQ := *query != ""
+	sbox := ui.Row(c.Key(keyPrefix+"-sbox")).Grow(1).MinWidth(0).Height(30).Padding(0, 6, 0, 10).Gap(6).Radius(9).
+		AlignItems(ui.Center)
+	if focused || hasQ {
+		sbox.Background(p.Surface).Border(1.5, p.Accent)
+	} else {
+		sbox.Background(fieldBg).Border(1.5, ui.Transparent)
+	}
+	sbox.Children(func() {
+		ui.Icon(c, theme.IconSearch).FontSize(14).TextColor(p.Muted).Shrink(0)
+		in := ui.TextInputBase(c.Key(keyPrefix+"-q"), query).Bind(handle).Grow(1).MinWidth(0).
+			Label(locales.MainSearchPlaceholder()).Placeholder(locales.MainSearchPlaceholder()).
+			TextColor(p.Text).PlaceholderColor(p.Muted)
+		if in.Changed() && onScrollTop != nil {
+			onScrollTop()
+		}
+		if in.Submitted() && onSubmit != nil {
+			onSubmit()
+		}
+		if hasQ {
+			clr := ui.ButtonBase(c.Key(keyPrefix+"-qclr")).Size(18, 18).Radius(5).Center().
+				TextColor(p.Muted).Label(locales.ActionClearSearch()).Tooltip(locales.ActionClearSearch()).Shrink(0)
+			if clr.Hovered() {
+				clr.Background(p.RowSel).TextColor(p.Text)
+			}
+			clr.Children(func() { ui.Icon(c, theme.IconClose).FontSize(11) })
+			if clr.Clicked() {
+				*query = ""
+				if onScrollTop != nil {
+					onScrollTop()
+				}
+				handle.Focus(c)
+			}
 		}
 	})
 }
