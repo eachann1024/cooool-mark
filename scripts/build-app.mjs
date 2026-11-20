@@ -158,7 +158,8 @@ function goBuild({ goos, goarch, outFile, profile, tempDir }) {
   const env = { ...process.env, CGO_ENABLED: "0", GOOS: goos, GOARCH: goarch };
   if (tempDir) env.TMPDIR = tempDir;
 
-  const ldflags = [];
+  const version = readAppVersion();
+  const ldflags = [`-X cooool-mark/internal/app.BuildVersion=${version}`];
   if (profile === "release" || goos !== "darwin") ldflags.push("-s", "-w");
   if (goos === "windows") ldflags.push("-H=windowsgui");
 

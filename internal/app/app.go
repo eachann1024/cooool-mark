@@ -21,6 +21,9 @@ import (
 	"cooool-mark/internal/store"
 )
 
+// BuildVersion is injected at release build time via -ldflags.
+var BuildVersion = "1.0.0"
+
 // Toast is the one transient message at the bottom of a window, with an
 // optional action (撤销, 重试…).
 type Toast struct {

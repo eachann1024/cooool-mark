@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'go.mod'
+      - 'go.sum'
+      - 'main.go'
+      - 'internal/**'
+      - 'resources/**'
+      - 'scripts/ci/setup-go.sh'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'go.mod'
+      - 'go.sum'
+      - 'main.go'
+      - 'internal/**'
+      - 'resources/**'
+      - 'scripts/ci/setup-go.sh'
+      - '.github/workflows/ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cooool-mark-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CGO_ENABLED: '0'
+
+jobs:
+  check:
+    name: Go check & cross-platform build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Go
+        run: bash scripts/ci/setup-go.sh
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/go-mod
+          key: go-mod-${{ runner.os }}-${{ runner.arch }}-go1.27-${{ hashFiles('go.sum') }}
+      - name: Cache Go build
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/go-build
+          key: go-build-ci-${{ runner.os }}-${{ runner.arch }}-go1.27-${{ github.sha }}
+          restore-keys: |
+            go-build-ci-${{ runner.os }}-${{ runner.arch }}-go1.27-
+      - name: Cross-platform vet, build, and test
+        run: |
+          echo "==> Checking linux/amd64"
+          go vet ./...
+          go build -o /dev/null .
+
+          echo "==> Checking windows/amd64, darwin/arm64 & darwin/amd64 in parallel"
+          (
+            GOOS=windows GOARCH=amd64 go vet ./...
+            GOOS=windows GOARCH=amd64 go build -o /dev/null .
+          ) &
+          pid_win=$!
+          (
+            GOOS=darwin GOARCH=arm64 go vet ./...
+            GOOS=darwin GOARCH=arm64 go build -o /dev/null .
+            GOOS=darwin GOARCH=amd64 go build -o /dev/null .
+          ) &
+          pid_mac=$!
+
+          wait "$pid_win"
+          wait "$pid_mac"
+          echo "==> Running go test ./..."
+          go test ./...

@@ -1,8 +1,26 @@
 {
   "name": "Cooool Mark",
+  "slug": "cooool-mark",
   "identifier": "app.cooool.mark",
-  "version": "0.1.0",
+  "version": "1.0.0",
+  "copyright": "Copyright © 2026 Cooool Mark Contributors",
+  "license": "Apache-2.0",
+  "icon": "resources/icon.png",
   "out": "build",
-  "ios": { "minimumSystemVersion": "17.0" },
-  "android": { "minSdk": 26 }
+  "macos": {
+    "minimumSystemVersion": "12.0",
+    "signingIdentity": "-",
+    "dmgTitle": "Cooool Mark"
+  },
+  "linux": {
+    "categories": [
+      "Utility"
+    ]
+  },
+  "ios": {
+    "minimumSystemVersion": "17.0"
+  },
+  "android": {
+    "minSdk": 26
+  }
 }

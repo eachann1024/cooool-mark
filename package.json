@@ -1,11 +1,14 @@
 {
   "name": "cooool-mark",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
+  "license": "Apache-2.0",
   "scripts": {
     "dev": "CGO_ENABLED=0 go run .",
     "check": "go vet ./...",
     "build": "bun scripts/build-app.mjs",
-    "build:ci": "bun scripts/build-app.mjs --no-install"
+    "build:ci": "bun scripts/build-app.mjs --no-install",
+    "build:windows": "bun scripts/build-app.mjs --platform windows --arch x64 --no-install",
+    "build:linux": "bun scripts/build-app.mjs --platform linux --arch x64 --no-install"
   }
 }

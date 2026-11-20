@@ -1,0 +1,321 @@
+# 不要往 GitHub Release 添加允许名单以外的附件。唯一名单是 scripts/release/allowed-assets.mjs 里的 5 个安装包。
+# Do not add GitHub Release assets beyond the allowlist. The only list is the 5 installers in scripts/release/allowed-assets.mjs.
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'updates/feed.json'
+      - 'docs/**'
+      - 'README.md'
+      - 'README.en.md'
+      - 'AGENTS.md'
+      - 'LICENSE'
+      - 'NOTICE'
+      - 'THIRD_PARTY_NOTICES.md'
+      - '.github/pull_request_template.md'
+      - '.github/workflows/ci.yml'
+      - 'scripts/build_readme_svgs.py'
+      - '**/*_test.go'
+  schedule:
+    # 每日兜底补偿：若此前 push 触发失败或被取消，自动从上一版补发积压改动。
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish GitHub Release after building installers
+        type: boolean
+        default: true
+      force:
+        description: Build even when no new user-facing commits exist
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  # Serialize releases on main so consecutive pushes never compute the same next version.
+  group: cooool-mark-packages-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  SOURCE_SHA: ${{ github.sha }}
+  CGO_ENABLED: '0'
+
+jobs:
+  prepare:
+    name: Select version and release notes
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+        github.event_name == 'schedule' ||
+        (github.event_name == 'push' &&
+          !(github.event.commits[1] == null &&
+            github.event.head_commit.author.name == 'github-actions[bot]' &&
+            startsWith(github.event.head_commit.message, 'chore(release): v'))))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build || 'no' }}
+      publish: ${{ steps.check.outputs.publish || 'no' }}
+      version: ${{ steps.check.outputs.version }}
+      release_tag: ${{ steps.check.outputs.release_tag }}
+      auto_bump: ${{ steps.check.outputs.auto_bump || 'false' }}
+      sync_only_tag: ${{ steps.check.outputs.sync_only_tag || '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Setup Node 22
+        run: bash scripts/ci/setup-node.sh 22
+      - name: Check commits and generate release plan
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PUBLISH: ${{ github.event_name == 'push' || github.event_name == 'schedule' || inputs.publish == true }}
+          FORCE: ${{ inputs.force == true }}
+        run: node scripts/release/select-release.mjs
+      - uses: actions/upload-artifact@v4
+        if: steps.check.outputs.should_build == 'yes'
+        with:
+          name: release-plan-${{ env.SOURCE_SHA }}
+          path: release-plan.json
+          if-no-files-found: error
+          retention-days: 5
+
+  release-macos:
+    name: macOS arm64 & x64 DMG
+    needs: [prepare]
+    if: needs.prepare.outputs.should_build == 'yes' && github.ref == 'refs/heads/main'
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - name: Setup Node & Go
+        run: |
+          bash scripts/ci/setup-node.sh 22 &
+          pid_node=$!
+          bash scripts/ci/setup-go.sh &
+          pid_go=$!
+          wait "$pid_node"
+          wait "$pid_go"
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/go-mod
+          key: go-mod-${{ runner.os }}-${{ runner.arch }}-go1.27-${{ hashFiles('go.sum') }}
+      - name: Cache Go build
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/go-build
+          key: go-build-release-${{ runner.os }}-${{ runner.arch }}-go1.27-${{ github.sha }}
+          restore-keys: |
+            go-build-release-${{ runner.os }}-${{ runner.arch }}-go1.27-
+            go-build-ci-${{ runner.os }}-${{ runner.arch }}-go1.27-
+      - name: Build release .app and DMG
+        env:
+          COOOOL_ARCHES: arm64,x64
+          COOOOL_RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: node scripts/release/package-release.mjs
+      - name: Resolve allowlisted macOS installers
+        id: installer
+        shell: bash
+        run: |
+          {
+            echo "arm64=$(node scripts/release/allowed-assets.mjs macos arm64 dmg)"
+            echo "x64=$(node scripts/release/allowed-assets.mjs macos x64 dmg)"
+          } >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cooool-mark-installer-macos
+          path: |
+            dist/release/${{ steps.installer.outputs.arm64 }}
+            dist/release/${{ steps.installer.outputs.x64 }}
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 14
+
+  release-linux-windows:
+    name: Linux & Windows x64 installers
+    needs: [prepare]
+    if: needs.prepare.outputs.should_build == 'yes' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/go-mod
+          key: go-mod-${{ runner.os }}-${{ runner.arch }}-go1.27-${{ hashFiles('go.sum') }}
+      - name: Cache Go build
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/go-build
+          key: go-build-release-${{ runner.os }}-${{ runner.arch }}-go1.27-${{ github.sha }}
+          restore-keys: |
+            go-build-release-${{ runner.os }}-${{ runner.arch }}-go1.27-
+            go-build-ci-${{ runner.os }}-${{ runner.arch }}-go1.27-
+      - name: Cache appimagetool
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/appimagetool
+          key: appimagetool-1.9.1-x86_64
+      - name: Setup Node, Go, and packaging tools
+        run: |
+          bash scripts/ci/setup-node.sh 22 &
+          pid_node=$!
+          bash scripts/ci/setup-go.sh &
+          pid_go=$!
+          (
+            missing=()
+            command -v patchelf >/dev/null 2>&1 || missing+=(patchelf)
+            command -v makensis >/dev/null 2>&1 || missing+=(nsis)
+            if [ "${#missing[@]}" -gt 0 ]; then
+              sudo apt-get update -qq
+              sudo apt-get install -y -qq --no-install-recommends "${missing[@]}"
+            fi
+          ) &
+          pid_apt=$!
+          (
+            APPIMAGETOOL_SHA256="ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0"
+            if ! echo "$APPIMAGETOOL_SHA256  $RUNNER_TEMP/appimagetool" | sha256sum -c - >/dev/null 2>&1; then
+              rm -f "$RUNNER_TEMP/appimagetool"
+              curl -fsSL --retry 3 -o "$RUNNER_TEMP/appimagetool" \
+                "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage"
+              echo "$APPIMAGETOOL_SHA256  $RUNNER_TEMP/appimagetool" | sha256sum -c -
+            fi
+            chmod +x "$RUNNER_TEMP/appimagetool"
+          ) &
+          pid_app=$!
+          wait "$pid_node"
+          wait "$pid_go"
+          wait "$pid_apt"
+          wait "$pid_app"
+          echo "APPIMAGETOOL=$RUNNER_TEMP/appimagetool" >> "$GITHUB_ENV"
+          echo "APPIMAGE_ARCH=x86_64" >> "$GITHUB_ENV"
+      - name: Build Linux and Windows installers
+        env:
+          COOOOL_ARCH: x64
+          COOOOL_RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          node scripts/release/go-release.mjs linux amd64
+          COOOOL_REUSE_BINARY=1 node scripts/release/package-linux.mjs &
+          pid_app=$!
+          COOOOL_REUSE_BINARY=1 node scripts/release/package-native.mjs &
+          pid_deb=$!
+          COOOOL_SKIP_VERSION_SYNC=1 node scripts/release/go-release.mjs windows amd64
+          COOOOL_REUSE_BINARY=1 node scripts/release/package-windows.mjs &
+          pid_win=$!
+          wait "$pid_app"
+          wait "$pid_deb"
+          wait "$pid_win"
+      - name: Resolve allowlisted Linux and Windows installers
+        id: installer
+        shell: bash
+        run: |
+          {
+            echo "app=$(node scripts/release/allowed-assets.mjs linux x64 AppImage)"
+            echo "deb=$(node scripts/release/allowed-assets.mjs linux x64 deb)"
+            echo "win=$(node scripts/release/allowed-assets.mjs windows x64 exe)"
+          } >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cooool-mark-installer-linux-windows-x64
+          path: |
+            dist/release/${{ steps.installer.outputs.app }}
+            dist/release/${{ steps.installer.outputs.deb }}
+            dist/release/${{ steps.installer.outputs.win }}
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish GitHub Release
+    needs: [prepare, release-macos, release-linux-windows]
+    if: >-
+      needs.prepare.outputs.should_build == 'yes' &&
+      github.ref == 'refs/heads/main' &&
+      needs.release-macos.result == 'success' &&
+      needs.release-linux-windows.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - name: Setup Node 22
+        run: bash scripts/ci/setup-node.sh 22
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-plan-${{ env.SOURCE_SHA }}
+          path: .
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cooool-mark-installer-*
+          merge-multiple: true
+          path: dist/release
+      - uses: actions/upload-artifact@v4
+        if: needs.prepare.outputs.publish != 'yes'
+        with:
+          name: cooool-mark-release-${{ env.SOURCE_SHA }}
+          path: dist/release/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish GitHub Release
+        if: needs.prepare.outputs.publish == 'yes'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: node scripts/release/publish-release.mjs
+      - name: Prune and verify release assets
+        if: needs.prepare.outputs.publish == 'yes'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+        run: node scripts/release/prune-release-assets.mjs
+
+  recover-post-publish:
+    name: Recover post-publish feed sync
+    needs: [prepare]
+    if: >-
+      needs.prepare.outputs.should_build != 'yes' &&
+      needs.prepare.outputs.sync_only_tag != '' &&
+      (github.event_name != 'workflow_dispatch' || inputs.publish == true) &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - name: Setup Node 22
+        run: bash scripts/ci/setup-node.sh 22
+      - name: Sync version manifests and updates/feed.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.sync_only_tag }}
+        run: node scripts/release/publish-release.mjs --sync-only --tag "$RELEASE_TAG"

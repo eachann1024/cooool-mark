@@ -1,0 +1,15 @@
+Cooool Mark
+Copyright 2026 eachann1024
+
+https://github.com/eachann1024/cooool-mark
+
+When using or modifying this project, retain this NOTICE file and credit Cooool Mark / eachann1024.
+
+This product includes or builds on third-party open-source software, including:
+
+1. MyGo (https://github.com/egoist/mygo)
+2. Purego (https://github.com/ebitengine/purego)
+3. go-pinyin (https://github.com/mozillazg/go-pinyin)
+4. golang.org/x/net (https://pkg.go.dev/golang.org/x/net)
+
+Additional third-party attributions and licenses are listed in THIRD_PARTY_NOTICES.md.

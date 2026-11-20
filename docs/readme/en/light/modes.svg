@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="212" viewBox="0 0 1200 212" role="img" aria-label="Cooool Mark Local &amp; Sync: Local JSON &amp; iCloud, Browser Import, Daily Backup, Native Lightweight" preserveAspectRatio="xMidYMid meet">
+  <defs>
+    <clipPath id="frMEL"><rect x="0" y="0" width="1200" height="212" rx="18"/></clipPath>
+  </defs>
+  <style>
+
+  .sans{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Helvetica Neue",sans-serif}
+  .serif{font-family:"Songti SC","Noto Serif CJK SC",Georgia,serif}
+  .mono{font-family:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+
+  .e-d1{animation:e-dot 6s ease-in-out 0s infinite}
+  .e-d2{animation:e-dot 6s ease-in-out 1.5s infinite}
+  .e-d3{animation:e-dot 6s ease-in-out 3.0s infinite}
+  .e-d4{animation:e-dot 6s ease-in-out 4.5s infinite}
+  @keyframes e-dot{0%,100%{opacity:.28}25%,40%{opacity:1}}
+
+  @media(prefers-reduced-motion:reduce){*{animation:none!important}}
+  </style>
+  <g clip-path="url(#frMEL)">
+    <rect width="1200" height="212" fill="#faf9f5"/>
+    <text class="sans" x="32" y="52" font-size="22" font-weight="700" fill="#1f1e1d">Ready out of the box, your data stays yours</text>
+    <text class="sans" x="1146" y="50" text-anchor="end" font-size="15.5" font-weight="600" fill="#9a4a2e">Latest Release</text>
+    <g transform="translate(1160 44) scale(0.9)" fill="none" stroke="#9a4a2e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M-4.5 4.5 L4.5 -4.5 M-1.5 -4.5 H4.5 V1.5"/></g>
+    <rect x="32" y="76" width="272" height="108" rx="12" fill="#ffffff" stroke="#ebe8df" stroke-width="1.2"/>
+    <rect x="50" y="94" width="30" height="30" rx="8" fill="#efe0d7"/><path d="M59 106 h12 l-3-3 M71 113 h-12 l3 3" fill="none" stroke="#d97757" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="sans" x="90" y="115" font-size="17.5" font-weight="700" fill="#1f1e1d">Local &amp; iCloud</text>
+    <circle class="e-d1" cx="284" cy="108" r="4" fill="#d97757"/>
+    <text class="sans" x="50" y="158" font-size="14.5" fill="#4f4d47">Plain JSON · Any sync folder</text>
+    <rect x="320" y="76" width="272" height="108" rx="12" fill="#ffffff" stroke="#ebe8df" stroke-width="1.2"/>
+    <rect x="338" y="94" width="30" height="30" rx="8" fill="#efe0d7"/><path d="M353 103 v11 M349 111 l4 4 4-4" fill="none" stroke="#d97757" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="sans" x="378" y="115" font-size="17.5" font-weight="700" fill="#1f1e1d">One-Click Import</text>
+    <circle class="e-d2" cx="572" cy="108" r="4" fill="#d97757"/>
+    <text class="sans" x="338" y="158" font-size="14.5" fill="#4f4d47">Chrome / Safari HTML · Backups</text>
+    <rect x="608" y="76" width="272" height="108" rx="12" fill="#ffffff" stroke="#ebe8df" stroke-width="1.2"/>
+    <rect x="626" y="94" width="30" height="30" rx="8" fill="#efe0d7"/><rect x="634" y="103" width="14" height="12" rx="3" fill="none" stroke="#d97757" stroke-width="1.8"/><line x1="634" y1="107" x2="648" y2="107" stroke="#d97757" stroke-width="1.6"/>
+    <text class="sans" x="666" y="115" font-size="17.5" font-weight="700" fill="#1f1e1d">Always Reachable</text>
+    <circle class="e-d3" cx="860" cy="108" r="4" fill="#d97757"/>
+    <text class="sans" x="626" y="158" font-size="14.5" fill="#4f4d47">Notch · Edge · Tray · Window</text>
+    <rect x="896" y="76" width="272" height="108" rx="12" fill="#ffffff" stroke="#ebe8df" stroke-width="1.2"/>
+    <rect x="914" y="94" width="30" height="30" rx="8" fill="#efe0d7"/><path d="M922 115 l4-6 4 3 5-8" fill="none" stroke="#d97757" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <text class="sans" x="954" y="115" font-size="17.5" font-weight="700" fill="#1f1e1d">Lightweight Native</text>
+    <circle class="e-d4" cx="1148" cy="108" r="4" fill="#d97757"/>
+    <text class="sans" x="914" y="158" font-size="14.5" fill="#4f4d47">Pure Go + MyGo · No Electron</text>
+  </g>
+  <rect x="0.75" y="0.75" width="1198.5" height="210.5" rx="17.25" fill="none" stroke="#ebe8df" stroke-width="1.5"/>
+</svg>
