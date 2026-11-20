@@ -32,12 +32,23 @@ func (s *mainState) buildHeader(c *ui.Context, p *theme.Palette) {
 					ScrollbarInsets(0, 4, 2, 4).Grow(1).MinWidth(0).FillHeight().AlignItems(ui.Center).Padding(0, 6, 0, 0)
 				pills.Children(func() {
 					row := ui.Row(c.Key("main-tabs-row")).AlignItems(ui.Center).Gap(4)
+					s.subSort.Axis = ui.Horizontal
+					ids := make([]string, len(g.Subs))
+					index := make(map[string]int, len(g.Subs))
+					for i, sub := range g.Subs {
+						ids[i], index[sub.ID] = sub.ID, i
+					}
 					row.Children(func() {
-						for i, sub := range g.Subs {
+						for _, id := range s.subSort.Order(ids) {
+							i := index[id]
+							sub := g.Subs[i]
 							selected := sub.ID == a.Sub && strings.TrimSpace(s.query) == ""
 							s.buildSubPill(c, p, lib, g, i, sub, selected)
 						}
 					})
+					if order, ok := s.subSort.Dropped(); ok {
+						a.ReorderSubs(g.ID, order)
+					}
 				})
 				if s.addingSub {
 					s.buildNewSubInput(c, p, g.ID)
@@ -136,7 +147,14 @@ func (s *mainState) buildSubPill(c *ui.Context, p *theme.Palette, lib *model.Lib
 	if drop, ok := ui.Drop[dragPayload](pill); ok {
 		a.Move(drop.IDs, g.ID, sub.ID)
 	}
-	if pill.Clicked() {
+	quiet := s.subSort.Item(sub.ID, pill, pill)
+	if s.subSort.Active(sub.ID) {
+		if !selected {
+			pill.Background(p.RowSel).TextColor(p.Text)
+		}
+		pill.Shadow(0, 4, 12, -4, sortLiftShadow(p))
+	}
+	if pill.Clicked() && !quiet {
 		s.clearSearch()
 		s.scrollToSub = sub.ID
 		s.stopBrowseFollow()

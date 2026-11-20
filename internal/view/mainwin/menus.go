@@ -24,6 +24,13 @@ func styleMenuPanel(p *theme.Palette, panel ui.Element) {
 		NoShadow().Shadow(0, 12, 32, -10, shadow)
 }
 
+func sortLiftShadow(p *theme.Palette) ui.Color {
+	if p.Dark {
+		return ui.RGBA(0, 0, 0, 0.45)
+	}
+	return ui.RGBA(25, 15, 9, 0.18)
+}
+
 func styleMenuItem(item ui.Element) {
 	item.MinHeight(29).PaddingX(10).Radius(6)
 }

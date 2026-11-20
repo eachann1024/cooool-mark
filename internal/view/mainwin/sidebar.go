@@ -46,14 +46,24 @@ func (s *mainState) buildSidebar(c *ui.Context, p *theme.Palette) {
 				*lastSelected = a.Group
 			}
 			counts := countBookmarksByGroup(lib)
+			ids := make([]string, len(lib.Groups))
+			index := make(map[string]int, len(lib.Groups))
+			for i, g := range lib.Groups {
+				ids[i], index[g.ID] = g.ID, i
+			}
 			col.Children(func() {
-				for i, g := range lib.Groups {
+				for _, id := range s.groupSort.Order(ids) {
+					i := index[id]
+					g := lib.Groups[i]
 					s.buildSidebarGroupItem(c, p, lib, i, g, counts[g.ID], revealGroup == g.ID)
 				}
 				if s.addingGroup {
 					s.buildNewGroupInput(c, p)
 				}
 			})
+			if order, ok := s.groupSort.Dropped(); ok {
+				a.ReorderGroups(order)
+			}
 		})
 
 		// Bottom bar: new group button (only when the sidebar isn't showing its empty state).
@@ -211,7 +221,11 @@ func (s *mainState) buildSidebarGroupItem(c *ui.Context, p *theme.Palette, lib *
 		}
 	})
 
-	if mainArea.Clicked() {
+	quiet := s.groupSort.Item(g.ID, row, mainArea)
+	if s.groupSort.Active(g.ID) {
+		row.Background(p.SideSel).Shadow(0, 6, 16, -6, sortLiftShadow(p))
+	}
+	if mainArea.Clicked() && !quiet {
 		s.closeSearch(c)
 		s.cursorID = ""
 		s.subTabsScroll.X = 0

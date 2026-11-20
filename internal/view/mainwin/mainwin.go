@@ -56,6 +56,8 @@ type mainState struct {
 
 	// Scroll & navigation.
 	subTabsScroll       ui.ScrollState
+	groupSort           widget.Sorter
+	subSort             widget.Sorter
 	browseList          ui.ListState
 	browseScroll        ui.ScrollState
 	browseScrollInited  bool
@@ -93,6 +95,10 @@ type mainState struct {
 	newGroupHandle   ui.Handle
 	tplInputHandle   ui.Handle
 	moveFilterHandle ui.Handle
+
+	// pendingSearchCaret places the search field's caret after a paste from
+	// its menu, once the field shows the new text. Negative means none.
+	pendingSearchCaret int
 
 	// Inline group/sub-group editing.
 	renamingGroupID string
@@ -206,7 +212,7 @@ func ShowSearch(a *app.App, q string) {
 
 func ensureState(a *app.App) {
 	if state == nil {
-		state = &mainState{app: a}
+		state = &mainState{app: a, pendingSearchCaret: -1}
 	} else {
 		state.app = a
 	}
