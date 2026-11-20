@@ -2,7 +2,7 @@
   "name": "Cooool Mark",
   "slug": "cooool-mark",
   "identifier": "app.cooool.mark",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "copyright": "Copyright © 2026 Cooool Mark Contributors",
   "license": "Apache-2.0",
   "icon": "resources/icon.png",
@@ -16,13 +16,18 @@
   ],
   "fileAssociations": [
     {
-      "ext": ["html", "htm"],
+      "ext": [
+        "html",
+        "htm"
+      ],
       "name": "HTML Bookmarks",
       "mimeType": "text/html",
       "role": "Viewer"
     },
     {
-      "ext": ["json"],
+      "ext": [
+        "json"
+      ],
       "name": "Cooool Mark Backup",
       "mimeType": "application/json",
       "role": "Viewer"
