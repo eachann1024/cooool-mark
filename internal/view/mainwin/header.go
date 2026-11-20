@@ -23,12 +23,13 @@ func (s *mainState) buildHeader(c *ui.Context, p *theme.Palette) {
 
 	header := ui.Row(c).Height(h).Shrink(0).AlignItems(ui.Center).Gap(8).
 		Padding(0, padR, 0, 16).DragWindow()
+	var pills ui.Element
 	header.Children(func() {
 		if showSubBar {
-			// Sub-group pills zone: scrollable tabs + pinned "+" button.
-			ui.Row(c.Key("main-tabs-zone")).Grow(1).MinWidth(0).AlignItems(ui.Center).Gap(4).Children(func() {
-				pills := widget.AutoScrollbarSlim(c, ui.ScrollHorizontal(c.Key("main-tabs"))).
-					ScrollbarInsets(0, 4, 0, 4).Grow(1).MinWidth(0).Height(32).Padding(2, 6, 4, 0)
+			// Sub-group pills zone: full-height horizontally scrollable tabs.
+			ui.Row(c.Key("main-tabs-zone")).Grow(1).MinWidth(0).FillHeight().AlignItems(ui.Center).Gap(4).Children(func() {
+				pills = widget.AutoScrollbarSlimState(c, ui.ScrollHorizontal(c.Key("main-tabs")), &s.subTabsScroll).
+					ScrollbarInsets(0, 4, 2, 4).Grow(1).MinWidth(0).FillHeight().AlignItems(ui.Center).Padding(0, 6, 0, 0)
 				pills.Children(func() {
 					row := ui.Row(c.Key("main-tabs-row")).AlignItems(ui.Center).Gap(4)
 					row.Children(func() {
@@ -40,33 +41,10 @@ func (s *mainState) buildHeader(c *ui.Context, p *theme.Palette) {
 				})
 				if s.addingSub {
 					s.buildNewSubInput(c, p, g.ID)
-				} else {
-					addSub := ui.ButtonBase(c.Key("add-sub-btn")).Label(locales.ActionNewSub()).Tooltip(locales.ActionNewSub()).
-						Size(26, 26).Radius(999).Center().TextColor(p.Muted).Shrink(0)
-					if addSub.Hovered() {
-						addSub.Background(p.RowSel).TextColor(p.Text)
-					}
-					addSub.Children(func() { ui.Icon(c, theme.IconPlus).FontSize(14) })
-					if addSub.Clicked() {
-						s.startAddSub(c)
-					}
 				}
 			})
-
-			ui.Box(c).Size(1, 16).Background(p.Line).Shrink(0)
 		} else {
 			ui.Box(c).Grow(1).MinWidth(0)
-		}
-
-		// Action buttons (compact search icon frees header width for sub-group tabs).
-		searchBtn := widget.IconButton(c.Key("open-search-btn"), p, theme.IconSearch, locales.MenuSearchBookmarks()).Shrink(0)
-		if searchBtn.Clicked() {
-			s.openSearch(c, "", false)
-		}
-
-		newBtn := widget.IconButton(c, p, theme.IconPlus, locales.MenuNewBookmark()).Shrink(0)
-		if newBtn.Clicked() && a.Win.ShowEditor != nil {
-			a.Win.ShowEditor(app.EditorRequest{GroupID: a.Group, SubID: a.Sub})
 		}
 
 		isGrid := a.View == "grid"
@@ -74,41 +52,34 @@ func (s *mainState) buildHeader(c *ui.Context, p *theme.Palette) {
 		if isGrid {
 			viewIcon, viewLabel = theme.IconList, locales.ActionSwitchToList()
 		}
-		viewBtn := widget.IconButton(c, p, viewIcon, viewLabel).Shrink(0)
-		if viewBtn.Clicked() {
-			s.toggleView()
-		}
 
-		if isGrid {
-			sizeIcon := theme.IconCardStandard
-			switch model.NormalizeCardSize(a.Settings.CardSize) {
-			case model.CardCompact:
-				sizeIcon = theme.IconCardCompact
-			case model.CardDetail:
-				sizeIcon = theme.IconCardDetail
-			}
-			sizeBtn := widget.IconButton(c.Key("card-size-btn"), p, sizeIcon, locales.MenuCardSize()).Shrink(0)
-			sizeBtn.PopoverMenuButton(func(m *ui.Menu) {
-				s.buildCardSizeItems(m)
-			}, menuButtonOptions(p, nil, true))
-		}
-
-		moreBtn := widget.IconButton(c, p, theme.IconMore, locales.MenuMore()).Shrink(0)
+		moreBtn := widget.IconButton(c.Key("more-btn"), p, theme.IconMore, locales.MenuMore()).Shrink(0)
 		moreBtn.PopoverMenuButton(func(m *ui.Menu) {
+			if m.Item(locales.MenuSearchBookmarks()).Icon(theme.MenuIcon(theme.IconSearch)).Shortcut(ui.Cmd, ui.KeyF).Chosen() {
+				s.openSearch(c, "", false)
+			}
 			if m.Item(locales.MenuNewBookmark()).Icon(theme.MenuIcon(theme.IconPlus)).Shortcut(ui.Cmd, ui.KeyN).Chosen() {
 				if a.Win.ShowEditor != nil {
 					a.Win.ShowEditor(app.EditorRequest{GroupID: a.Group, SubID: a.Sub})
 				}
+			}
+			if g != nil {
+				if m.Item(locales.ActionNewSub()).Icon(theme.MenuIcon(theme.IconFolderPlus)).Chosen() {
+					s.startAddSub(c)
+				}
+			}
+			m.Separator()
+			if m.Item(viewLabel).Icon(theme.MenuIcon(viewIcon)).Shortcut(ui.Cmd, ui.KeyL).Chosen() {
+				s.toggleView()
+			}
+			if isGrid {
+				s.buildCardSizeMenu(m)
 			}
 			m.Separator()
 			if m.Item(locales.MenuImport()).Icon(theme.MenuIcon(theme.IconImport)).Chosen() {
 				if a.Win.ShowImport != nil {
 					a.Win.ShowImport("")
 				}
-			}
-			m.Separator()
-			if isGrid {
-				s.buildCardSizeMenu(m)
 			}
 			m.Submenu(locales.MenuAppearance(), func(sm *ui.Menu) {
 				modes := []struct {
@@ -135,6 +106,10 @@ func (s *mainState) buildHeader(c *ui.Context, p *theme.Palette) {
 			}
 		}, menuButtonOptions(p, nil, true))
 	})
+
+	if showSubBar {
+		widget.ScrollHorizontalWheel(header, &s.subTabsScroll, pills)
+	}
 }
 
 func handleInlineEditInput(in ui.Element, focused *bool, onCommit, onCancel func()) {

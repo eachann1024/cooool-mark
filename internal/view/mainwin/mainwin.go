@@ -55,6 +55,7 @@ type mainState struct {
 	searchScrollMoved bool
 
 	// Scroll & navigation.
+	subTabsScroll       ui.ScrollState
 	browseList          ui.ListState
 	browseScroll        ui.ScrollState
 	browseScrollInited  bool
@@ -431,6 +432,7 @@ func (s *mainState) switchGroup(groupID string) {
 	}
 	s.clearSearch()
 	s.cursorID = ""
+	s.subTabsScroll.X = 0
 	s.browseList.ScrollTo(0, ui.Start)
 	s.stopBrowseFollow()
 	s.app.Go(groupID, "")

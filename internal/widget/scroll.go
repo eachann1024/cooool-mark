@@ -32,8 +32,13 @@ func AutoScrollbarState(c *ui.Context, e ui.Element, scroll *ui.ScrollState) ui.
 // translates vertical mouse-wheel scrolling into horizontal movement, and
 // applies soft edge fades when tabs overflow.
 func AutoScrollbarSlim(c *ui.Context, e ui.Element) ui.Element {
+	return AutoScrollbarSlimState(c, e, nil)
+}
+
+// AutoScrollbarSlimState is AutoScrollbarSlim backed by a caller-owned ScrollState.
+func AutoScrollbarSlimState(c *ui.Context, e ui.Element, scroll *ui.ScrollState) ui.Element {
 	t := c.Theme()
-	return autoScrollbar(c, e, theme.SlimScrollbarStyle(t.Dark).Resolve(t), true, nil)
+	return autoScrollbar(c, e, theme.SlimScrollbarStyle(t.Dark).Resolve(t), true, scroll)
 }
 
 // RevealSelectedTab keeps the active tab visible when a strip is opened
@@ -118,6 +123,30 @@ func autoScrollbar(c *ui.Context, e ui.Element, base ui.ScrollbarStyle, horizont
 	return e.Scrollbars(true).KeepScrollbars(true).ScrollbarStyle(s)
 }
 
+// ScrollHorizontalWheel forwards scroll events on e (such as a wider header
+// bar around a horizontal strip) to scroll horizontally. When passthrough is
+// valid and hovered, native horizontal / Shift+wheel scrolling is left to it.
+func ScrollHorizontalWheel(e ui.Element, scroll *ui.ScrollState, passthrough ui.Element) ui.Element {
+	st := ui.Local(e, "horizontal-wheel-proxy", func() autoScrollState { return autoScrollState{} })
+	e.HandleInput(func(ev ui.InputEvent) bool {
+		if ev.Kind != ui.InputScroll || scroll == nil || scroll.MaxX <= 0.5 {
+			return false
+		}
+		if passthrough.Valid() && passthrough.Hovered() && (ev.Mods&ui.Shift != 0 || abs32(ev.DX) >= abs32(ev.DY)) {
+			return false
+		}
+		delta := ev.DY
+		if abs32(ev.DX) > abs32(ev.DY) {
+			delta = ev.DX
+		}
+		if delta == 0 {
+			return false
+		}
+		return scrollHorizontalDelta(st, scroll, delta, ev.Precise)
+	})
+	return e
+}
+
 func attachHorizontalWheel(e ui.Element, st *autoScrollState, scroll *ui.ScrollState) {
 	e.HandleInput(func(ev ui.InputEvent) bool {
 		if ev.Kind != ui.InputScroll || ev.DY == 0 || scroll.MaxX <= 0.5 {
@@ -126,32 +155,35 @@ func attachHorizontalWheel(e ui.Element, st *autoScrollState, scroll *ui.ScrollS
 		if ev.Mods&ui.Shift != 0 || abs32(ev.DX) >= abs32(ev.DY) {
 			return false
 		}
-		delta := ev.DY
-		if ev.Precise {
-			next := max(0, min(scroll.X+delta, scroll.MaxX))
-			if next == scroll.X && !scroll.Scrolling() {
-				return false
-			}
-			st.targetX = next
-			if scroll.Scrolling() {
-				scroll.ScrollTo(next, scroll.Y, ui.Animation{Duration: time.Microsecond})
-			} else {
-				scroll.X = next
-			}
-			return true
-		}
-		baseX := scroll.X
-		if scroll.Scrolling() && (delta > 0) == (st.targetX > scroll.X) {
-			baseX = st.targetX
-		}
-		next := max(0, min(baseX+delta, scroll.MaxX))
+		return scrollHorizontalDelta(st, scroll, ev.DY, ev.Precise)
+	})
+}
+
+func scrollHorizontalDelta(st *autoScrollState, scroll *ui.ScrollState, delta float32, precise bool) bool {
+	if precise {
+		next := max(0, min(scroll.X+delta, scroll.MaxX))
 		if next == scroll.X && !scroll.Scrolling() {
 			return false
 		}
 		st.targetX = next
-		scroll.ScrollTo(next, scroll.Y, ui.Animation{Duration: 150 * time.Millisecond, Ease: ui.EaseOut})
+		if scroll.Scrolling() {
+			scroll.ScrollTo(next, scroll.Y, ui.Animation{Duration: time.Microsecond})
+		} else {
+			scroll.X = next
+		}
 		return true
-	})
+	}
+	baseX := scroll.X
+	if scroll.Scrolling() && (delta > 0) == (st.targetX > scroll.X) {
+		baseX = st.targetX
+	}
+	next := max(0, min(baseX+delta, scroll.MaxX))
+	if next == scroll.X && !scroll.Scrolling() {
+		return false
+	}
+	st.targetX = next
+	scroll.ScrollTo(next, scroll.Y, ui.Animation{Duration: 150 * time.Millisecond, Ease: ui.EaseOut})
+	return true
 }
 
 func applyHorizontalEdgeFade(e ui.Element, scroll *ui.ScrollState) {
