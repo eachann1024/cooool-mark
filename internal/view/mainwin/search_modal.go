@@ -296,7 +296,6 @@ func (s *mainState) buildModalSearchRow(c *ui.Context, p *theme.Palette, hit app
 	on := idx == s.searchIdx
 	row := ui.Row(c.Key("smr-"+b.ID)).MinHeight(38).Padding(6, 10, 6, 12).Radius(9).Gap(11).
 		AlignItems(ui.Center).Cursor(ui.CursorPointer).Role(ui.RoleOption).Label(b.Title)
-	menuOpen := ui.Local(row, "smrMenuOpen", func() bool { return false })
 	hovered := row.Hovered()
 	if on {
 		row.Background(p.RowSel)
@@ -312,40 +311,33 @@ func (s *mainState) buildModalSearchRow(c *ui.Context, p *theme.Palette, hit app
 		path = a.PathOf(b)
 	}
 
-	var mainArea ui.Element
 	row.Children(func() {
-		mainArea = ui.Row(c).Grow(1).MinWidth(0).Gap(11).AlignItems(ui.Center)
-		mainArea.Children(func() {
-			s.buildTile(c, b, 26)
-			ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
-				ui.Row(c).Gap(5).AlignItems(ui.Center).MinWidth(0).Children(func() {
-					ui.RichText(c, highlightedTitleSpans(b.Title, hit.Ranges, p.AccentBg, p.AccentText)...).
-						FontSize(13.5).FontWeight(500).TextColor(p.Text).SingleLine().Shrink(1).MinWidth(0)
-					if b.IsTemplate() {
-						ui.Icon(c, theme.IconBraces).FontSize(12).TextColor(p.Primary).Shrink(0)
-					}
-				})
-				ui.Text(c, shortDomain(b.URL)).FontSize(12).TextColor(p.Muted).SingleLine()
+		s.buildTile(c, b, 26)
+		ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
+			ui.Row(c).Gap(5).AlignItems(ui.Center).MinWidth(0).Children(func() {
+				ui.RichText(c, highlightedTitleSpans(b.Title, hit.Ranges, p.AccentBg, p.AccentText)...).
+					FontSize(13.5).FontWeight(500).TextColor(p.Text).SingleLine().Shrink(1).MinWidth(0)
+				if b.IsTemplate() {
+					ui.Icon(c, theme.IconBraces).FontSize(12).TextColor(p.Primary).Shrink(0)
+				}
 			})
-			ui.Text(c, path).FontSize(12).TextColor(p.Muted).MaxWidth(140).SingleLine().Shrink(0).Tooltip(path)
+			ui.Text(c, shortDomain(b.URL)).FontSize(12).TextColor(p.Muted).SingleLine()
 		})
+		ui.Text(c, path).FontSize(12).TextColor(p.Muted).MaxWidth(140).SingleLine().Shrink(0).Tooltip(path)
 
-		if hovered || *menuOpen {
-			ui.Row(c).Gap(2).AlignItems(ui.Center).Shrink(0).Children(func() {
-				s.buildBookmarkHoverActions(c, p, b, menuOpen, 26, 13.5)
-			})
-		} else if on {
+		if on {
 			ui.Row(c).Padding(2, 6).Radius(6).Background(p.Surface).Border(1, p.Line).Shrink(0).Children(func() {
 				ui.Text(c, "↵").FontSize(11.5).TextColor(p.Muted).SingleLine()
 			})
 		}
 	})
 
-	if mainArea.Clicked() {
+	if row.Clicked() {
 		s.searchIdx = idx
 		s.activateSearchBookmark(c, b)
 	}
 	row.PopoverMenu(func(m *ui.Menu) {
+		s.searchIdx = idx
 		s.buildBookmarkMenu(c, m, b)
 	}, menuOptions(p))
 }

@@ -60,7 +60,11 @@ func (s *mainState) buildBookmarkMenu(c *ui.Context, m *ui.Menu, b *model.Bookma
 	icon := theme.MenuIcon
 
 	if m.Item(locales.ActionOpen()).Icon(icon(theme.IconExternal)).Shortcut(0, ui.KeyEnter).Chosen() {
-		s.activateBookmark(c, b)
+		if s.searchOpen {
+			s.activateSearchBookmark(c, b)
+		} else {
+			s.activateBookmark(c, b)
+		}
 	}
 
 	if m.Item(locales.ActionCopyURL()).Icon(icon(theme.IconLink)).Shortcut(ui.Cmd, ui.KeyC).Chosen() {
