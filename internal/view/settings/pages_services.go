@@ -150,7 +150,7 @@ func (s *state) localModelsSection(c *ui.Context, p *theme.Palette) {
 			}
 			ui.Column(c.Key("model-"+m.id)).FillWidth().Padding(10, 12).Gap(8).Radius(9).Background(bg).Border(1, border).Children(func() {
 				ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
-					pick := ui.ButtonBase(c).Row().Gap(8).AlignItems(ui.Center).Grow(1).Cursor(ui.CursorPointer)
+					pick := ui.ButtonBase(c).Row().Gap(8).AlignItems(ui.Center).Justify(ui.Start).Grow(1).MinWidth(0).Cursor(ui.CursorPointer)
 					pick.Children(func() {
 						dot := ui.Box(c).Size(14, 14).Radius(7).Shrink(0)
 						if selected {
@@ -403,7 +403,7 @@ func (s *state) storageCard(c *ui.Context, p *theme.Palette) {
 				}
 				row.Children(func() {
 					ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
-						pick := ui.ButtonBase(c).Row().FillWidth().Gap(10).AlignItems(ui.Center)
+						pick := ui.ButtonBase(c).Row().FillWidth().Gap(10).AlignItems(ui.Center).Justify(ui.Start)
 						if !opt.disabled {
 							pick.Cursor(ui.CursorPointer)
 						} else {
