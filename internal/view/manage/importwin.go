@@ -33,8 +33,9 @@ type importState struct {
 }
 
 var (
-	importWin   *mygo.Window
-	importModel *importState
+	importWin     *mygo.Window
+	importModel   *importState
+	importPicking bool
 )
 
 // RefreshChrome updates the import window title and requests a redraw when open.
@@ -47,15 +48,56 @@ func RefreshChrome() {
 
 func showImport(a *app.App, path string) {
 	a.PrepareRegularWindow()
+	if path != "" {
+		openImportWindow(a, []string{path})
+		return
+	}
 	if importWin != nil && !importWin.IsDestroyed() {
 		importWin.SetTitle(locales.ImportWindowTitle())
 		importWin.Show()
 		importWin.Focus()
 		importWin.Invalidate()
-		if path != "" && importModel != nil {
-			importModel.enqueue(path)
-		} else if importModel != nil && importModel.plan == nil && !importModel.loading && !importModel.picking && importModel.err == "" {
+		if importModel != nil && importModel.plan == nil && !importModel.loading && !importModel.picking && importModel.err == "" {
 			importModel.pickFile()
+		}
+		return
+	}
+	if importPicking {
+		return
+	}
+	importPicking = true
+	go func() {
+		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
+			Title:   locales.ImportPickTitle(),
+			Filters: []mygo.FileFilter{{Name: locales.ImportPickFilter(), Extensions: []string{"html", "htm", "json"}}},
+		})
+		a.Post(func() {
+			importPicking = false
+			if err != nil {
+				a.SayErr(locales.ImportPickFailed(err.Error()), "", nil)
+				return
+			}
+			if len(paths) == 0 {
+				return
+			}
+			openImportWindow(a, paths)
+		})
+	}()
+}
+
+func openImportWindow(a *app.App, paths []string) {
+	if len(paths) == 0 {
+		return
+	}
+	if importWin != nil && !importWin.IsDestroyed() {
+		importWin.SetTitle(locales.ImportWindowTitle())
+		importWin.Show()
+		importWin.Focus()
+		importWin.Invalidate()
+		if importModel != nil {
+			for _, p := range paths {
+				importModel.enqueue(p)
+			}
 		}
 		return
 	}
@@ -82,10 +124,9 @@ func showImport(a *app.App, path string) {
 			importWin, importModel = nil, nil
 		}
 	})
-	if path != "" {
-		st.loadFile(path)
-	} else {
-		st.pickFile()
+	st.loadFile(paths[0])
+	for _, extra := range paths[1:] {
+		st.enqueue(extra)
 	}
 }
 

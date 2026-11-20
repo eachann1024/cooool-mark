@@ -47,6 +47,11 @@ func (s *mainState) buildHeader(c *ui.Context, p *theme.Palette) {
 			ui.Box(c).Grow(1).MinWidth(0)
 		}
 
+		newBtn := widget.IconButton(c.Key("new-bookmark-btn"), p, theme.IconPlus, locales.MenuNewBookmark()).Shrink(0)
+		if newBtn.Clicked() && a.Win.ShowEditor != nil {
+			a.Win.ShowEditor(app.EditorRequest{GroupID: a.Group, SubID: a.Sub})
+		}
+
 		isGrid := a.View == "grid"
 		viewIcon, viewLabel := theme.IconGrid, locales.ActionSwitchToGrid()
 		if isGrid {
