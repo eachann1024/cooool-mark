@@ -10,7 +10,6 @@
 
   .h-hover{animation:h-hover 7s ease-in-out infinite}
   .h-toolbar{animation:h-toolbar 7s ease-in-out infinite}
-  .h-caret{animation:h-caret 1.15s steps(1,end) infinite}
   .h-pill{animation:h-pill 7s ease-in-out infinite}
   @keyframes h-hover{
     0%,14%,100%{opacity:0}
@@ -20,7 +19,6 @@
     0%,18%,100%{opacity:0;transform:translateX(6px)}
     32%,70%{opacity:1;transform:translateX(0)}
   }
-  @keyframes h-caret{0%,49%{opacity:1}50%,100%{opacity:0}}
   @keyframes h-pill{0%,100%{opacity:.85}50%{opacity:1}}
 
   @media(prefers-reduced-motion:reduce){*{animation:none!important}}
@@ -41,8 +39,8 @@
     <text class="sans" x="52" y="272" font-size="15.5" fill="#6c6b64">Native Go desktop app · Free for macOS, Windows &amp; Linux</text>
 
     <rect x="52" y="320" width="192" height="46" rx="23" fill="#b5583a"/>
-    <text class="sans" x="134" y="349" text-anchor="middle" font-size="16" font-weight="600" fill="#ffffff">Download Latest</text>
-    <g transform="translate(214 343) scale(0.95)" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M-4.5 4.5 L4.5 -4.5 M-1.5 -4.5 H4.5 V1.5"/></g>
+    <text class="sans" x="138" y="349" text-anchor="middle" font-size="16" font-weight="600" fill="#ffffff">Download Latest</text>
+    <g transform="translate(218 343) scale(0.95)" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M-4.5 4.5 L4.5 -4.5 M-1.5 -4.5 H4.5 V1.5"/></g>
 
     <text class="mono" x="266" y="349" font-size="14.5" font-weight="500" fill="#9a4a2e">eachann1024/cooool-mark</text>
 
@@ -76,12 +74,11 @@
       <text class="sans" x="819" y="66" text-anchor="middle" font-size="12.5" font-weight="600" fill="#9a4a2e">AI</text>
       <text class="sans" x="862" y="66" text-anchor="middle" font-size="12.5" fill="#6c6b64">Dev</text>
 
-      <!-- Search Input -->
+      <!-- Search Input (unfocused placeholder, no caret) -->
       <rect x="976" y="48" width="156" height="28" rx="7" fill="#f0eee6"/>
       <circle cx="991" cy="61" r="4.2" fill="none" stroke="#6c6b64" stroke-width="1.4"/>
       <line x1="994" y1="64" x2="997" y2="67" stroke="#6c6b64" stroke-width="1.4" stroke-linecap="round"/>
       <text class="sans" x="1004" y="66" font-size="12" fill="#6c6b64">Search...</text>
-      <rect class="h-caret" x="1058" y="55" width="1.8" height="14" rx="0.9" fill="#d97757"/>
 
       <!-- Section Heading with Count & Rule -->
       <text class="serif" x="744" y="114" font-size="15" font-weight="700" fill="#1f1e1d">Daily</text>

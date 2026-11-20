@@ -103,12 +103,12 @@ COPY = {
         "f2_title": "拼音秒搜，贴网址即入库",
         "f2_sub": "支持拼音首字母、域名与标签检索 · 粘贴链接回车收藏",
         "f2_query": "shm / github.com",
-        "f2_caret_x": 836,
+        "f2_caret_x": 829,
         "f2_save": "回车收藏这个网址",
         "f2_hit": "书签目录",
         "f3_title": "本地 AI 润色，自动抓图标",
         "f3_sub": "自动补全标题、备注与图标 · 支持离线 Qwen 与 OpenAI 兼容",
-        "f3_raw": "https://github.com/egoist/mygo",
+        "f3_raw": "https://github.com/ego...",
         "f3_done": "MyGo 原生桌面框架",
         "f3_badge": "已润色",
         "f3_chips": ["Qwen 本地模型", "OpenAI 兼容", "自动抓图标"],
@@ -136,7 +136,8 @@ COPY = {
             ("永久免费", "Apache 2.0 源码公开"),
         ],
         "hi_cta": "查看全部版本",
-        "hi_cta_tx": 1072,
+        "hi_cta_tx": 1070,
+        "hi_cta_ax": 1137,
     },
     "en": {
         "hero_label": "Cooool Mark — Bookmarks at hand. Instant search.",
@@ -146,8 +147,8 @@ COPY = {
         "hero_sub2": "Native Go desktop app · Free for macOS, Windows &amp; Linux",
         "hero_cta": "Download Latest",
         "hero_cta_w": 192,
-        "hero_cta_tx": 134,
-        "hero_cta_ax": 214,
+        "hero_cta_tx": 138,
+        "hero_cta_ax": 218,
         "hero_repo_x": 266,
         "hero_side1": "General",
         "hero_side2": "Daily",
@@ -172,12 +173,12 @@ COPY = {
         "f2_title": "Instant search &amp; paste-to-save",
         "f2_sub": "Pinyin, domain &amp; tag lookup · paste any URL and hit Enter",
         "f2_query": "github.com",
-        "f2_caret_x": 784,
+        "f2_caret_x": 779,
         "f2_save": "Press Enter to save URL",
         "f2_hit": "Bookmarks",
         "f3_title": "Local AI polish &amp; auto icons",
         "f3_sub": "Auto-fetch titles &amp; icons · offline Qwen or OpenAI-compatible",
-        "f3_raw": "https://github.com/egoist/mygo",
+        "f3_raw": "https://github.com/ego...",
         "f3_done": "MyGo Native Desktop UI",
         "f3_badge": "Polished",
         "f3_chips": ["Local Qwen", "OpenAI API", "Auto Favicon"],
@@ -205,7 +206,8 @@ COPY = {
             ("Free Forever", "Apache 2.0 open source"),
         ],
         "hi_cta": "All Releases",
-        "hi_cta_tx": 1070,
+        "hi_cta_tx": 1074,
+        "hi_cta_ax": 1134,
     },
 }
 
@@ -251,7 +253,6 @@ def build_hero(P: dict, T: dict, tag: str) -> str:
     css = """
   .h-hover{animation:h-hover 7s ease-in-out infinite}
   .h-toolbar{animation:h-toolbar 7s ease-in-out infinite}
-  .h-caret{animation:h-caret 1.15s steps(1,end) infinite}
   .h-pill{animation:h-pill 7s ease-in-out infinite}
   @keyframes h-hover{
     0%,14%,100%{opacity:0}
@@ -261,7 +262,6 @@ def build_hero(P: dict, T: dict, tag: str) -> str:
     0%,18%,100%{opacity:0;transform:translateX(6px)}
     32%,70%{opacity:1;transform:translateX(0)}
   }
-  @keyframes h-caret{0%,49%{opacity:1}50%,100%{opacity:0}}
   @keyframes h-pill{0%,100%{opacity:.85}50%{opacity:1}}
 """
     icon_uri = app_icon_b64()
@@ -338,12 +338,11 @@ def build_hero(P: dict, T: dict, tag: str) -> str:
       <text class="sans" x="819" y="66" text-anchor="middle" font-size="12.5" font-weight="600" fill="{P['accentStrong']}">{T['hero_tab2']}</text>
       <text class="sans" x="862" y="66" text-anchor="middle" font-size="12.5" fill="{P['muted']}">{T['hero_tab3']}</text>
 
-      <!-- Search Input -->
+      <!-- Search Input (unfocused placeholder, no caret) -->
       <rect x="976" y="48" width="156" height="28" rx="7" fill="{P['shell']}"/>
       <circle cx="991" cy="61" r="4.2" fill="none" stroke="{P['muted']}" stroke-width="1.4"/>
       <line x1="994" y1="64" x2="997" y2="67" stroke="{P['muted']}" stroke-width="1.4" stroke-linecap="round"/>
       <text class="sans" x="1004" y="66" font-size="12" fill="{P['muted']}">{T['hero_search']}</text>
-      <rect class="h-caret" x="1058" y="55" width="1.8" height="14" rx="0.9" fill="{P['accent']}"/>
 
       <!-- Section Heading with Count & Rule -->
       <text class="serif" x="744" y="114" font-size="15" font-weight="700" fill="{P['ink']}">{T['hero_sec']}</text>
@@ -381,11 +380,11 @@ def build_features(P: dict, T: dict, tag: str) -> str:
   .f-edge{animation:f-edge 6s cubic-bezier(.22,1,.36,1) infinite}
   .f-caret{animation:f-caret 1.1s steps(1,end) infinite}
   .f-save{animation:f-save 5.5s ease-in-out infinite}
-  .f-spark{transform-origin:308px 420px;animation:f-spark 5s ease-in-out infinite}
+  .f-spark{transform-origin:305px 398px;animation:f-spark 5s ease-in-out infinite}
   .f-badge{animation:f-badge 5s ease-in-out infinite}
   .f-tpl{animation:f-tpl 5s ease-in-out infinite}
-  @keyframes f-notch{0%,15%,100%{transform:translateY(0)}40%,72%{transform:translateY(14px)}}
-  @keyframes f-edge{0%,20%,100%{transform:translateX(0)}48%,78%{transform:translateX(-14px)}}
+  @keyframes f-notch{0%,28%,85%,100%{transform:translateY(0)}45%,68%{transform:translateY(-22px)}}
+  @keyframes f-edge{0%,22%,80%,100%{transform:translateX(0)}42%,64%{transform:translateX(14px)}}
   @keyframes f-caret{0%,49%{opacity:1}50%,100%{opacity:0}}
   @keyframes f-save{0%,100%{opacity:.78;transform:translateY(0)}50%{opacity:1;transform:translateY(-2px)}}
   @keyframes f-spark{0%,100%{opacity:.5;transform:scale(.95)}50%{opacity:1;transform:scale(1.08)}}
@@ -407,19 +406,19 @@ def build_features(P: dict, T: dict, tag: str) -> str:
     </defs>
     <g clip-path="url(#scrClip{tag})">
       <rect x="76" y="128" width="186" height="90" fill="{P['paper']}"/>
-      <rect x="134" y="128" width="70" height="10" rx="4" fill="{P['notch']}"/>
       <g class="f-notch">
-        <rect x="116" y="130" width="106" height="32" rx="7" fill="{P['notch']}"/>
-        <rect x="128" y="139" width="16" height="14" rx="4" fill="{P['accent']}"/>
-        <rect x="150" y="139" width="16" height="14" rx="4" fill="#3b6e8f"/>
-        <rect x="172" y="139" width="16" height="14" rx="4" fill="#5b4a8a"/>
-        <rect x="194" y="139" width="16" height="14" rx="4" fill="#0a6f8e"/>
+        <rect x="112" y="122" width="102" height="44" rx="8" fill="{P['notch']}"/>
+        <rect x="122" y="141" width="16" height="14" rx="4" fill="{P['accent']}"/>
+        <rect x="144" y="141" width="16" height="14" rx="4" fill="#3b6e8f"/>
+        <rect x="166" y="141" width="16" height="14" rx="4" fill="#5b4a8a"/>
+        <rect x="188" y="141" width="16" height="14" rx="4" fill="#0a6f8e"/>
       </g>
+      <rect x="132" y="124" width="62" height="12" rx="5" fill="{P['notch']}"/>
       <g class="f-edge">
-        <rect x="238" y="144" width="38" height="62" rx="6" fill="{P['accentSoft']}" stroke="{P['accent']}" stroke-width="1.2"/>
-        <rect x="246" y="154" width="22" height="5" rx="2.5" fill="{P['accent']}"/>
-        <rect x="246" y="166" width="18" height="5" rx="2.5" fill="{P['accent']}" opacity=".6"/>
-        <rect x="246" y="178" width="20" height="5" rx="2.5" fill="{P['accent']}" opacity=".4"/>
+        <rect x="230" y="146" width="36" height="60" rx="6" fill="{P['accentSoft']}" stroke="{P['accent']}" stroke-width="1.2"/>
+        <rect x="238" y="156" width="20" height="5" rx="2.5" fill="{P['accent']}"/>
+        <rect x="238" y="168" width="16" height="5" rx="2.5" fill="{P['accent']}" opacity=".6"/>
+        <rect x="238" y="180" width="18" height="5" rx="2.5" fill="{P['accent']}" opacity=".4"/>
       </g>
     </g>
     <rect x="76" y="128" width="186" height="90" rx="8" fill="none" stroke="{P['border']}" stroke-width="1.2"/>
@@ -474,7 +473,7 @@ def build_features(P: dict, T: dict, tag: str) -> str:
     <rect x="56" y="362" width="506" height="114" rx="10" fill="{P['bg']}" stroke="{P['border']}" stroke-width="1"/>
     <!-- Raw URL -> Polished Card -->
     <rect x="72" y="374" width="212" height="48" rx="9" fill="{P['shell']}" stroke="{P['border']}" stroke-width="1"/>
-    <text class="mono" x="84" y="403" font-size="11.5" fill="{P['muted']}">{T['f3_raw'][:26]}...</text>
+    <text class="mono" x="84" y="403" font-size="11.5" fill="{P['muted']}">{T['f3_raw']}</text>
 
     <g class="f-spark">
       <path d="M294 398 h22 m-6 -5 l6 5 l-6 5" fill="none" stroke="{P['accent']}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -507,8 +506,8 @@ def build_features(P: dict, T: dict, tag: str) -> str:
     <rect x="656" y="376" width="470" height="36" rx="8" fill="{P['paper']}" stroke="{P['border']}" stroke-width="1.1"/>
     <text class="mono" x="670" y="399" font-size="13" fill="{P['muted']}">{T['f4_tpl']}</text>
     <g class="f-tpl">
-      <rect x="852" y="384" width="54" height="20" rx="5" fill="{P['accentSoft']}"/>
-      <text class="mono" x="879" y="399" text-anchor="middle" font-size="13" font-weight="600" fill="{P['accentStrong']}">{T['f4_q']}</text>
+      <rect x="831" y="384" width="50" height="20" rx="5" fill="{P['accentSoft']}"/>
+      <text class="mono" x="856" y="399" text-anchor="middle" font-size="13" font-weight="600" fill="{P['accentStrong']}">{T['f4_q']}</text>
     </g>
     <rect x="1054" y="382" width="62" height="24" rx="6" fill="{P['accentBtn']}"/>
     <text class="sans" x="1085" y="398" text-anchor="middle" font-size="12" font-weight="600" fill="#ffffff">{T['f4_enter']}</text>
@@ -600,7 +599,7 @@ def build_highlights(P: dict, T: dict, tag: str) -> str:
     parts.append(
         f'    <rect x="998" y="40" width="168" height="46" rx="23" fill="{P["accentSoft"]}"/>\n'
         f'    <text class="sans" x="{T["hi_cta_tx"]}" y="69" text-anchor="middle" font-size="15.5" font-weight="600" fill="{P["accentStrong"]}">{T["hi_cta"]}</text>\n'
-        f'    {arrow_ne(1140, 63, P["accentStrong"], 0.92)}'
+        f'    {arrow_ne(T["hi_cta_ax"], 63, P["accentStrong"], 0.92)}'
     )
     return frame(1200, 126, f"C{tag}", T["hi_label"], P, "", "\n".join(parts))
 
