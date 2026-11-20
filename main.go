@@ -114,7 +114,7 @@ func main() {
 			ShowMain:           func() { mainwin.Show(a) },
 			FocusSearch:        func() { mainwin.FocusSearch(a) },
 			ShowSearch:         func(q string) { mainwin.ShowSearch(a, q) },
-			ShowQuickSearch:    func() { mode.ToggleQuickSearch(a) },
+			ShowQuickSearch:    func() { mainwin.ShowSearch(a, "") },
 			ShowEditor:         func(r app.EditorRequest) { editor.Show(a, r) },
 			ShowSettings:       func(p string) { settings.Show(a, p) },
 			ShowImport:         func(p string) { manage.ShowImport(a, p) },
@@ -387,7 +387,6 @@ func appMenu(a *app.App) *mygo.Menu {
 				a.Win.ShowSearch("")
 			}
 		})},
-		{Label: locales.MenuQuickSearch(), Click: click(func() { a.Win.ShowQuickSearch() })},
 		mygo.Separator(),
 		{Label: locales.MenuImport(), Click: click(func() { a.Win.ShowImport("") })},
 		{Label: locales.MenuExport(), Submenu: []*mygo.MenuItem{

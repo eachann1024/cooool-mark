@@ -285,7 +285,7 @@ func (a *App) AddRegularWindow(w *mygo.Window) {
 			}
 		}
 		a.SyncDockPolicy()
-		// A hidden QuickSearch window keeps mygo.Windows() non-empty on
+		// Hidden summon windows keep mygo.Windows() non-empty on
 		// Windows/Linux, so OnWindowAllClosed will not fire on its own.
 		if runtime.GOOS != "darwin" && !a.HasRegularWindow() && !a.HasActiveSummon() {
 			mygo.App.Quit()

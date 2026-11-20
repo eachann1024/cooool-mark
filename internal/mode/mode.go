@@ -38,7 +38,6 @@ func Apply(a *app.App) {
 	syncNotch(a, a.Settings.ModeOn(model.ModeNotch))
 	syncTray(a, a.Settings.ModeOn(model.ModeTray))
 	syncEdge(a, a.Settings.ModeOn(model.ModeEdge))
-	syncQuickSearch(a, a.Settings.GlobalSearchOn())
 }
 
 // Close removes the summon surfaces before MyGo asks the remaining windows to close.
@@ -46,7 +45,6 @@ func Close() {
 	syncNotch(nil, false)
 	syncTray(nil, false)
 	syncEdge(nil, false)
-	syncQuickSearch(nil, false)
 }
 
 // HasActiveSummonMode reports whether at least one persistent summon surface
@@ -65,9 +63,6 @@ func HideSummoned() {
 	}
 	if curEdge != nil {
 		curEdge.collapse()
-	}
-	if curQuick != nil {
-		curQuick.hide()
 	}
 }
 
@@ -165,16 +160,6 @@ func RefreshChrome(a *app.App) {
 		if curEdge.win != nil {
 			curEdge.win.SetTitle(locales.ModeEdgeTitle())
 			curEdge.win.Invalidate()
-		}
-	}
-	if curQuick != nil {
-		if a != nil {
-			curQuick.app = a
-			quickApp = a
-		}
-		if curQuick.win != nil {
-			curQuick.win.SetTitle(locales.ModeQuickSearchTitle())
-			curQuick.win.Invalidate()
 		}
 	}
 }
