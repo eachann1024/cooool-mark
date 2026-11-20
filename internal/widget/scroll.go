@@ -19,7 +19,13 @@ type autoScrollState struct {
 // AutoScrollbar reveals the scrollbar when the scroll position changes.
 func AutoScrollbar(c *ui.Context, e ui.Element) ui.Element {
 	t := c.Theme()
-	return autoScrollbar(c, e, t.ScrollbarStyle.Resolve(t), false)
+	return autoScrollbar(c, e, t.ScrollbarStyle.Resolve(t), false, nil)
+}
+
+// AutoScrollbarState is AutoScrollbar backed by a caller-owned ScrollState.
+func AutoScrollbarState(c *ui.Context, e ui.Element, scroll *ui.ScrollState) ui.Element {
+	t := c.Theme()
+	return autoScrollbar(c, e, t.ScrollbarStyle.Resolve(t), false, scroll)
 }
 
 // AutoScrollbarSlim uses a smaller scrollbar for compact horizontal strips,
@@ -27,7 +33,7 @@ func AutoScrollbar(c *ui.Context, e ui.Element) ui.Element {
 // applies soft edge fades when tabs overflow.
 func AutoScrollbarSlim(c *ui.Context, e ui.Element) ui.Element {
 	t := c.Theme()
-	return autoScrollbar(c, e, theme.SlimScrollbarStyle(t.Dark).Resolve(t), true)
+	return autoScrollbar(c, e, theme.SlimScrollbarStyle(t.Dark).Resolve(t), true, nil)
 }
 
 // RevealSelectedTab keeps the active tab visible when a strip is opened
@@ -49,28 +55,32 @@ func RevealSelectedTab(tab ui.Element, selected bool, index int) {
 func WheelScrollHorizontal(e ui.Element) ui.Element {
 	st := ui.Local(e, "horizontal-wheel", func() autoScrollState { return autoScrollState{} })
 	e.TrackScroll(&st.scroll)
-	attachHorizontalWheel(e, st)
+	attachHorizontalWheel(e, st, &st.scroll)
 	return e
 }
 
-func autoScrollbar(c *ui.Context, e ui.Element, base ui.ScrollbarStyle, horizontalWheel bool) ui.Element {
+func autoScrollbar(c *ui.Context, e ui.Element, base ui.ScrollbarStyle, horizontalWheel bool, external *ui.ScrollState) ui.Element {
 	st := ui.Local(e, "auto-scrollbar", func() autoScrollState { return autoScrollState{} })
-	e.TrackScroll(&st.scroll)
+	scroll := &st.scroll
+	if external != nil {
+		scroll = external
+	}
+	e.TrackScroll(scroll)
 	if horizontalWheel {
-		attachHorizontalWheel(e, st)
+		attachHorizontalWheel(e, st, scroll)
 		if !st.inited {
 			// Request one post-layout pass so MaxX and Bounds are ready for edge fade immediately.
 			c.AnimationFrame()
 		}
-		applyHorizontalEdgeFade(e, st)
+		applyHorizontalEdgeFade(e, scroll)
 	}
 
 	moved := false
 	if st.inited {
-		dx, dy := st.scroll.X-st.lastX, st.scroll.Y-st.lastY
+		dx, dy := scroll.X-st.lastX, scroll.Y-st.lastY
 		moved = dx*dx+dy*dy > 0.01
 	}
-	st.lastX, st.lastY = st.scroll.X, st.scroll.Y
+	st.lastX, st.lastY = scroll.X, scroll.Y
 	st.inited = true
 
 	overTrack := false
@@ -78,8 +88,8 @@ func autoScrollbar(c *ui.Context, e ui.Element, base ui.ScrollbarStyle, horizont
 		px, py, over := e.PointerPosition()
 		b := e.Bounds()
 		hit := max(base.TrackWidth, 10)
-		overTrack = over && (st.scroll.MaxY > 0.5 && px >= b.W-hit ||
-			st.scroll.MaxX > 0.5 && py >= b.H-hit)
+		overTrack = over && (scroll.MaxY > 0.5 && px >= b.W-hit ||
+			scroll.MaxX > 0.5 && py >= b.H-hit)
 	}
 
 	const alphaKey = "auto-scrollbar-alpha"
@@ -108,9 +118,9 @@ func autoScrollbar(c *ui.Context, e ui.Element, base ui.ScrollbarStyle, horizont
 	return e.Scrollbars(true).KeepScrollbars(true).ScrollbarStyle(s)
 }
 
-func attachHorizontalWheel(e ui.Element, st *autoScrollState) {
+func attachHorizontalWheel(e ui.Element, st *autoScrollState, scroll *ui.ScrollState) {
 	e.HandleInput(func(ev ui.InputEvent) bool {
-		if ev.Kind != ui.InputScroll || ev.DY == 0 || st.scroll.MaxX <= 0.5 {
+		if ev.Kind != ui.InputScroll || ev.DY == 0 || scroll.MaxX <= 0.5 {
 			return false
 		}
 		if ev.Mods&ui.Shift != 0 || abs32(ev.DX) >= abs32(ev.DY) {
@@ -118,38 +128,38 @@ func attachHorizontalWheel(e ui.Element, st *autoScrollState) {
 		}
 		delta := ev.DY
 		if ev.Precise {
-			next := max(0, min(st.scroll.X+delta, st.scroll.MaxX))
-			if next == st.scroll.X && !st.scroll.Scrolling() {
+			next := max(0, min(scroll.X+delta, scroll.MaxX))
+			if next == scroll.X && !scroll.Scrolling() {
 				return false
 			}
 			st.targetX = next
-			if st.scroll.Scrolling() {
-				st.scroll.ScrollTo(next, st.scroll.Y, ui.Animation{Duration: time.Microsecond})
+			if scroll.Scrolling() {
+				scroll.ScrollTo(next, scroll.Y, ui.Animation{Duration: time.Microsecond})
 			} else {
-				st.scroll.X = next
+				scroll.X = next
 			}
 			return true
 		}
-		baseX := st.scroll.X
-		if st.scroll.Scrolling() && (delta > 0) == (st.targetX > st.scroll.X) {
+		baseX := scroll.X
+		if scroll.Scrolling() && (delta > 0) == (st.targetX > scroll.X) {
 			baseX = st.targetX
 		}
-		next := max(0, min(baseX+delta, st.scroll.MaxX))
-		if next == st.scroll.X && !st.scroll.Scrolling() {
+		next := max(0, min(baseX+delta, scroll.MaxX))
+		if next == scroll.X && !scroll.Scrolling() {
 			return false
 		}
 		st.targetX = next
-		st.scroll.ScrollTo(next, st.scroll.Y, ui.Animation{Duration: 150 * time.Millisecond, Ease: ui.EaseOut})
+		scroll.ScrollTo(next, scroll.Y, ui.Animation{Duration: 150 * time.Millisecond, Ease: ui.EaseOut})
 		return true
 	})
 }
 
-func applyHorizontalEdgeFade(e ui.Element, st *autoScrollState) {
-	if st.scroll.MaxX <= 0.5 {
+func applyHorizontalEdgeFade(e ui.Element, scroll *ui.ScrollState) {
+	if scroll.MaxX <= 0.5 {
 		return
 	}
-	hasLeft := st.scroll.X > 1
-	hasRight := st.scroll.X < st.scroll.MaxX-1
+	hasLeft := scroll.X > 1
+	hasRight := scroll.X < scroll.MaxX-1
 	if !hasLeft && !hasRight {
 		return
 	}

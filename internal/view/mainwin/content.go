@@ -154,6 +154,13 @@ func (s *mainState) ensureBrowseCache(lib *model.Library, g *model.Group, view s
 	c.rows = rows
 	c.subRow = subRow
 	c.bmRow = bmRow
+	if s.subHeaderHandles != nil {
+		for id := range s.subHeaderHandles {
+			if _, ok := subRow[id]; !ok {
+				delete(s.subHeaderHandles, id)
+			}
+		}
+	}
 
 	preserveRow = -1
 	if anchorBM != "" {
@@ -166,6 +173,140 @@ func (s *mainState) ensureBrowseCache(lib *model.Library, g *model.Group, view s
 		}
 	}
 	return rows, subRow, bmRow, preserveRow
+}
+
+func (s *mainState) stopBrowseFollow() {
+	s.browseFollowActive = false
+	s.browseFollowPending = false
+}
+
+func (s *mainState) subHeaderHandle(subID string) *ui.Handle {
+	if s.subHeaderHandles == nil {
+		s.subHeaderHandles = make(map[string]*ui.Handle)
+	}
+	h := s.subHeaderHandles[subID]
+	if h == nil {
+		h = &ui.Handle{}
+		s.subHeaderHandles[subID] = h
+	}
+	return h
+}
+
+func (s *mainState) syncBrowseSubFromScroll(c *ui.Context, lib *model.Library) {
+	a := s.app
+	if strings.TrimSpace(s.query) != "" || !hasLiveBookmark(lib) {
+		s.stopBrowseFollow()
+		return
+	}
+	g := lib.Group(a.Group)
+	if g == nil || len(g.Subs) <= 1 || !hasGroupBookmark(lib, g.ID) {
+		s.stopBrowseFollow()
+		return
+	}
+
+	// Read Visible() on every browse pass so MyGo rebuilds whenever scrolling
+	// changes the visible row range.
+	first, last := s.browseList.Visible()
+	listBounds := s.browseScroll.Bounds(c)
+
+	cache := &s.browseCache
+	stable := cache.library == lib &&
+		cache.revision == lib.Revision &&
+		cache.groupID == g.ID &&
+		cache.view == a.View &&
+		s.lastBrowseGroup == g.ID &&
+		s.scrollToSub == "" &&
+		!s.cursorScrollMoved &&
+		s.browseScrollInited &&
+		listBounds.H > 0 &&
+		abs32(listBounds.W-s.lastBrowseListW) < 0.5 &&
+		abs32(listBounds.H-s.lastBrowseListH) < 0.5
+
+	scrollY := s.browseScroll.Y
+	deltaY := scrollY - s.lastBrowseScrollY
+	moved := abs32(deltaY) > 0.5
+
+	s.lastBrowseScrollY = scrollY
+	s.lastBrowseListW = listBounds.W
+	s.lastBrowseListH = listBounds.H
+	if listBounds.H > 0 {
+		s.browseScrollInited = true
+	}
+
+	if !stable || !s.browseFollowActive || s.browseScroll.MaxY <= 0.5 {
+		s.browseFollowPending = false
+		return
+	}
+	if !moved && !s.browseFollowPending {
+		return
+	}
+
+	if moved {
+		// Re-check once after layout commits the new visible range and header bounds.
+		s.browseFollowPending = true
+		c.AnimationFrame()
+	} else {
+		s.browseFollowPending = false
+	}
+
+	if subID := s.browseSubAtScroll(c, cache.rows, first, last, listBounds, scrollY, deltaY); subID != "" && subID != a.Sub {
+		a.Sub = subID
+	}
+}
+
+func (s *mainState) browseSubAtScroll(c *ui.Context, rows []browseRow, first, last int, listBounds ui.Rect, scrollY, deltaY float32) string {
+	if len(rows) == 0 || first < 0 || last < first || first >= len(rows) {
+		return ""
+	}
+	if last >= len(rows) {
+		last = len(rows) - 1
+	}
+	if scrollY <= 0.5 {
+		return rows[0].sub.ID
+	}
+
+	idx := first
+	if rows[idx].kind == browseRowTail && idx+1 < len(rows) {
+		idx++
+	}
+	activeSub := rows[idx].sub.ID
+
+	if listBounds.H <= 0 {
+		return activeSub
+	}
+	readingOffset := min(float32(72), listBounds.H*0.18)
+	probeY := listBounds.Y + min(scrollY, readingOffset)
+
+	for i := first; i <= last; i++ {
+		if rows[i].kind != browseRowHeader {
+			continue
+		}
+		h := s.subHeaderHandles[rows[i].sub.ID]
+		if h == nil {
+			continue
+		}
+		b := h.Bounds(c)
+		if b.H <= 0 {
+			continue
+		}
+		headerTop := b.Y - deltaY
+		if headerTop <= probeY {
+			activeSub = rows[i].sub.ID
+		} else {
+			if i == idx && idx > 0 {
+				activeSub = rows[idx-1].sub.ID
+			}
+			break
+		}
+	}
+	return activeSub
+}
+
+func abs32(v float32) float32 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 func (s *mainState) buildBody(c *ui.Context, p *theme.Palette) {
@@ -295,26 +436,51 @@ func (s *mainState) buildBrowseBody(c *ui.Context, p *theme.Palette) {
 	}
 	if s.lastBrowseGroup != "" && s.lastBrowseGroup != g.ID && s.scrollToSub == "" && !s.cursorScrollMoved {
 		s.browseList.ScrollTo(0, ui.Start)
+		s.stopBrowseFollow()
 	}
 	s.lastBrowseGroup = g.ID
 
 	if preserveRow >= 0 {
 		s.browseList.ScrollTo(preserveRow, ui.Start)
+		s.stopBrowseFollow()
 	}
 	if s.scrollToSub != "" {
 		if idx, ok := subRow[s.scrollToSub]; ok {
 			s.browseList.ScrollTo(idx, ui.Start)
 		}
 		s.scrollToSub = ""
+		s.stopBrowseFollow()
 	}
 	if s.cursorScrollMoved {
 		if idx, ok := bmRow[s.cursorID]; ok {
 			s.browseList.ScrollIntoView(idx)
 		}
 		s.cursorScrollMoved = false
+		s.stopBrowseFollow()
 	}
 
-	widget.AutoScrollbar(c, ui.List(c.Key("browse-list"), &s.browseList, len(rows))).Grow(1).MinHeight(0).FillWidth().
+	listW := s.browseScroll.Bounds(c).W
+	browseListEl := widget.AutoScrollbarState(c, ui.List(c.Key("browse-list"), &s.browseList, len(rows)), &s.browseScroll).Grow(1).MinHeight(0).FillWidth()
+	browseListEl.
+		HandleInput(func(ev ui.InputEvent) bool {
+			if ev.Kind == ui.InputScroll && ev.DY != 0 {
+				s.browseFollowActive = true
+			}
+			return false
+		}).
+		ObserveInput(func(ev ui.InputEvent) {
+			switch ev.Kind {
+			case ui.InputPointerDown:
+				if s.browseScroll.MaxY > 0.5 && listW > 0 && ev.X >= listW-18 {
+					s.browseFollowActive = true
+				}
+			case ui.InputKeyDown:
+				switch ev.Key {
+				case ui.KeyPageDown, ui.KeyPageUp, ui.KeyHome, ui.KeyEnd, ui.KeySpace:
+					s.browseFollowActive = true
+				}
+			}
+		}).
 		ItemKey(func(i int) any {
 			r := rows[i]
 			switch r.kind {
@@ -343,7 +509,7 @@ func (s *mainState) buildBrowseBody(c *ui.Context, p *theme.Palette) {
 				if a.View == "grid" {
 					hdPadB, hdPadX = 8, 6
 				}
-				ui.Row(c).FillWidth().Padding(14, 24+hdPadX, hdPadB+extraBottom, 24+hdPadX).AlignItems(ui.Center).Children(func() {
+				ui.Row(c).Bind(s.subHeaderHandle(r.sub.ID)).FillWidth().Padding(14, 24+hdPadX, hdPadB+extraBottom, 24+hdPadX).AlignItems(ui.Center).Children(func() {
 					widget.Title(c, p, r.sub.Name, 14)
 				})
 			case browseRowEmpty:
@@ -639,6 +805,7 @@ func (s *mainState) bindBookmarkRowEvents(c *ui.Context, p *theme.Palette, click
 		if b.SubID != "" {
 			a.Sub = b.SubID
 		}
+		s.stopBrowseFollow()
 		s.contentHandle.Focus(c)
 	}
 	if clickEl.DoubleClicked() {

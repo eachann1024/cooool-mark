@@ -149,6 +149,7 @@ func (s *mainState) buildGroupPill(c *ui.Context, p *theme.Palette, lib *model.L
 		s.clearSearch()
 		s.cursorID = ""
 		s.browseList.ScrollTo(0, ui.Start)
+		s.stopBrowseFollow()
 		a.Go(g.ID, "")
 	}
 

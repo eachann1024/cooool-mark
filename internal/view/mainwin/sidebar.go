@@ -33,7 +33,7 @@ func (s *mainState) buildSidebar(c *ui.Context, p *theme.Palette) {
 		})
 
 		// Sub-group list.
-		nav := widget.AutoScrollbar(c, ui.Scroll(c)).Grow(1).MinHeight(0).Padding(6, 10)
+		nav := widget.AutoScrollbar(c, ui.Scroll(c.Key("sidebar-subs"))).Grow(1).MinHeight(0).Padding(6, 10)
 		nav.Children(func() {
 			if g == nil {
 				s.buildSidebarEmpty(c, p, "还没有分组", "新建分组", func() { s.startAddGroup(c) })
@@ -43,10 +43,16 @@ func (s *mainState) buildSidebar(c *ui.Context, p *theme.Palette) {
 				s.buildSidebarEmpty(c, p, "还没有子分组", "新建子分组", func() { s.startAddSub(c) })
 				return
 			}
-			col := ui.Column(c).Gap(1)
+			col := ui.Column(c.Key("sidebar-subs-col")).Gap(1)
+			lastSelected := ui.Local(col, "selected-sub", func() string { return "" })
+			revealSub := ""
+			if strings.TrimSpace(s.query) == "" && *lastSelected != a.Sub {
+				revealSub = a.Sub
+				*lastSelected = a.Sub
+			}
 			col.Children(func() {
 				for i, sub := range g.Subs {
-					s.buildSidebarSubItem(c, p, lib, g, i, sub)
+					s.buildSidebarSubItem(c, p, lib, g, i, sub, revealSub == sub.ID)
 				}
 				if s.addingSub {
 					s.buildNewSubInput(c, p, g.ID)
@@ -97,7 +103,7 @@ func (s *mainState) buildSidebarEmpty(c *ui.Context, p *theme.Palette, title, bt
 	})
 }
 
-func (s *mainState) buildSidebarSubItem(c *ui.Context, p *theme.Palette, lib *model.Library, g *model.Group, idx int, sub model.Sub) {
+func (s *mainState) buildSidebarSubItem(c *ui.Context, p *theme.Palette, lib *model.Library, g *model.Group, idx int, sub model.Sub, reveal bool) {
 	a := s.app
 	keyC := c.Key("sub-" + sub.ID)
 
@@ -134,6 +140,9 @@ func (s *mainState) buildSidebarSubItem(c *ui.Context, p *theme.Palette, lib *mo
 	selected := sub.ID == a.Sub && strings.TrimSpace(s.query) == ""
 	row := ui.Row(keyC).Height(30).Padding(0, 6, 0, 12).Radius(7).
 		AlignItems(ui.Center).Gap(4).Cursor(ui.CursorPointer)
+	if reveal {
+		row.ScrollIntoView()
+	}
 	menuOpen := ui.Local(row, "subMenuOpen", func() bool { return false })
 
 	drag, dragOver := ui.DragOver[dragPayload](row)
@@ -225,6 +234,7 @@ func (s *mainState) buildSidebarSubItem(c *ui.Context, p *theme.Palette, lib *mo
 	if mainArea.Clicked() {
 		s.clearSearch()
 		s.scrollToSub = sub.ID
+		s.stopBrowseFollow()
 		a.Go(g.ID, sub.ID)
 	}
 	row.PopoverMenu(buildSubMenu, menuOptions(p))
@@ -246,6 +256,7 @@ func (s *mainState) buildNewSubInput(c *ui.Context, p *theme.Palette, groupID st
 				id := a.AddSub(groupID, name)
 				a.Go(groupID, id)
 				s.scrollToSub = id
+				s.stopBrowseFollow()
 			}
 			s.addingSub = false
 			s.newSubFocused = false
@@ -257,6 +268,7 @@ func (s *mainState) buildNewSubInput(c *ui.Context, p *theme.Palette, groupID st
 				id := a.AddSub(groupID, name)
 				a.Go(groupID, id)
 				s.scrollToSub = id
+				s.stopBrowseFollow()
 			}
 			s.addingSub = false
 			s.newSubFocused = false

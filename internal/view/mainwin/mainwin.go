@@ -48,9 +48,17 @@ type mainState struct {
 	searchScrollMoved bool
 
 	// Scroll & navigation.
-	browseList      ui.ListState
-	lastBrowseGroup string
-	scrollToSub     string
+	browseList          ui.ListState
+	browseScroll        ui.ScrollState
+	browseScrollInited  bool
+	browseFollowActive  bool
+	browseFollowPending bool
+	lastBrowseScrollY   float32
+	lastBrowseListW     float32
+	lastBrowseListH     float32
+	subHeaderHandles    map[string]*ui.Handle
+	lastBrowseGroup     string
+	scrollToSub         string
 	groupCache      struct {
 		library  *model.Library
 		revision int64
@@ -165,6 +173,7 @@ func (s *mainState) view(c *ui.Context) {
 	c.Root().Background(p.Bg)
 
 	s.handleGlobalShortcuts(c)
+	s.syncBrowseSubFromScroll(c, lib)
 
 	root := ui.Row(c).Fill().Background(p.Bg).AlignItems(ui.Stretch)
 	root.Children(func() {
@@ -328,6 +337,7 @@ func (s *mainState) moveCursor(ids []string, delta int) {
 	target := ids[idx]
 	s.cursorID = target
 	s.cursorScrollMoved = true
+	s.stopBrowseFollow()
 	if b := a.Store.Lib().Bookmark(target); b != nil && b.SubID != "" {
 		a.Sub = b.SubID
 	}
