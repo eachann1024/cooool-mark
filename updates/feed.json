@@ -1,10 +1,66 @@
 {
   "schema_version": 1,
   "repo": "eachann1024/cooool-mark",
-  "updated_at": "2026-11-20T13:57:02.375Z",
-  "latest_version": "1.0.7",
-  "latest_tag": "v1.0.7",
+  "updated_at": "2026-11-20T14:07:33.435Z",
+  "latest_version": "1.0.8",
+  "latest_tag": "v1.0.8",
   "releases": [
+    {
+      "version": "1.0.8",
+      "tag": "v1.0.8",
+      "published_at": "2026-11-20T14:07:32Z",
+      "html_url": "https://github.com/eachann1024/cooool-mark/releases/tag/v1.0.8",
+      "zh": {
+        "highlights": "",
+        "new": [
+          "滚动浏览书签列表时，左侧子分组选中项会自动联动高亮。"
+        ],
+        "improvements": [],
+        "fixes": [],
+        "other": []
+      },
+      "en": {
+        "highlights": "",
+        "new": [
+          "Support full-header horizontal wheel scrolling and consolidate actions into more menu."
+        ],
+        "improvements": [],
+        "fixes": [],
+        "other": []
+      },
+      "assets": [
+        {
+          "name": "cooool-mark-macos-arm64.dmg",
+          "browser_download_url": "https://github.com/eachann1024/cooool-mark/releases/download/v1.0.8/cooool-mark-macos-arm64.dmg",
+          "size": 7793830,
+          "sha256": "9b95765f100f3d143f5c56a6b28a3c75b6d5ac96fdfe9f632dcffbc8ab37a136"
+        },
+        {
+          "name": "cooool-mark-macos-x64.dmg",
+          "browser_download_url": "https://github.com/eachann1024/cooool-mark/releases/download/v1.0.8/cooool-mark-macos-x64.dmg",
+          "size": 8615911,
+          "sha256": "0f80cd8baa4d9d3afdc4c9650635d6fcfd2adfb1e5ed33aa830cb3e5615942bb"
+        },
+        {
+          "name": "cooool-mark-windows-x64-setup.exe",
+          "browser_download_url": "https://github.com/eachann1024/cooool-mark/releases/download/v1.0.8/cooool-mark-windows-x64-setup.exe",
+          "size": 7656296,
+          "sha256": "17658caeba980314c423c0460e5e0ea152c775ff5a7892f69e321b89b47754f9"
+        },
+        {
+          "name": "cooool-mark-linux-x64.deb",
+          "browser_download_url": "https://github.com/eachann1024/cooool-mark/releases/download/v1.0.8/cooool-mark-linux-x64.deb",
+          "size": 6049138,
+          "sha256": "4a433206b21c63040dffe63e92e9b75732017de8c62f659876c98659d99605df"
+        },
+        {
+          "name": "cooool-mark-linux-x64.AppImage",
+          "browser_download_url": "https://github.com/eachann1024/cooool-mark/releases/download/v1.0.8/cooool-mark-linux-x64.AppImage",
+          "size": 18487800,
+          "sha256": "575cf4ce9acdb28a03d0d1460e0175139206ddf2e1f2967e86704827121efc4d"
+        }
+      ]
+    },
     {
       "version": "1.0.7",
       "tag": "v1.0.7",
@@ -28,38 +84,7 @@
         "fixes": [],
         "other": []
       },
-      "assets": [
-        {
-          "name": "cooool-mark-macos-arm64.dmg",
-          "browser_download_url": "https://github.com/eachann1024/cooool-mark/releases/download/v1.0.7/cooool-mark-macos-arm64.dmg",
-          "size": 7793106,
-          "sha256": "7eba4bd80b6462b2f70d6e66175ecd66ab3a53d46b284f4284421c9770670f29"
-        },
-        {
-          "name": "cooool-mark-macos-x64.dmg",
-          "browser_download_url": "https://github.com/eachann1024/cooool-mark/releases/download/v1.0.7/cooool-mark-macos-x64.dmg",
-          "size": 8614862,
-          "sha256": "0c09b26060d29bb964b57a65cf83610e4a513af22d01432eff8fe417fa9976a3"
-        },
-        {
-          "name": "cooool-mark-windows-x64-setup.exe",
-          "browser_download_url": "https://github.com/eachann1024/cooool-mark/releases/download/v1.0.7/cooool-mark-windows-x64-setup.exe",
-          "size": 7655044,
-          "sha256": "eeff93ce9254d6f137dd19035da2c910f1313676cbf1c5ec7c0f817f69244f79"
-        },
-        {
-          "name": "cooool-mark-linux-x64.deb",
-          "browser_download_url": "https://github.com/eachann1024/cooool-mark/releases/download/v1.0.7/cooool-mark-linux-x64.deb",
-          "size": 6048890,
-          "sha256": "e5bfcb293944698bbbce30f3a5eef91f25ad1e1c9a28ae9cc32b2df84b3bf3a4"
-        },
-        {
-          "name": "cooool-mark-linux-x64.AppImage",
-          "browser_download_url": "https://github.com/eachann1024/cooool-mark/releases/download/v1.0.7/cooool-mark-linux-x64.AppImage",
-          "size": 18483704,
-          "sha256": "3cfcfeced279ce6ca7a3aa4cdf5f10dc0645a3171fd82b6e1ad3cf50a2a619e1"
-        }
-      ]
+      "assets": []
     },
     {
       "version": "1.0.6",
