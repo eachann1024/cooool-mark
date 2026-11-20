@@ -14,7 +14,7 @@ import (
 	"cooool-mark/internal/widget"
 )
 
-func (s *mainState) buildSearchModal(c *ui.Context, p *theme.Palette) {
+func (s *mainState) buildSearchInline(c *ui.Context, p *theme.Palette) {
 	if !s.searchOpen {
 		return
 	}
@@ -41,213 +41,202 @@ func (s *mainState) buildSearchModal(c *ui.Context, p *theme.Palette) {
 		s.searchIdx = max(0, min(s.searchIdx, total-1))
 	}
 
-	wasOpen := s.searchOpen
-	ui.DialogBase(c.Key("search-modal"), &s.searchOpen, func(backdrop, panel ui.Element) {
-		backdrop.Background(p.Overlay).AlignItems(ui.Center).Justify(ui.Start).Padding(52, 24, 24, 24)
-		panel.Width(580).MaxWidthPercent(94).Radius(14).
-			Background(p.Surface).Border(1, p.Line).Clip().
-			Shadow(0, 22, 48, -12, ui.RGBA(25, 15, 9, 0.28))
+	bar := c.TitleBar()
+	h := widget.BarH(bar)
+	padR := max(float32(12), bar.Right+8)
 
-		panel.Children(func() {
-			// Top search input row.
-			var searchIn ui.Element
-			ui.Row(c.Key("sm-hdr")).Height(50).Padding(0, 12, 0, 16).Gap(10).AlignItems(ui.Center).Children(func() {
-				ui.Icon(c, theme.IconSearch).FontSize(16).TextColor(p.Accent).Shrink(0)
-				searchIn = ui.TextInputBase(c.Key("sm-q"), &s.query).Bind(&s.searchHandle).
-					Placeholder(locales.SearchModalPlaceholder()).Label(locales.MainSearchPlaceholder()).
-					FontSize(15).Grow(1).MinWidth(0).TextColor(p.Text).PlaceholderColor(p.Muted)
+	// Header: the search field takes over the sub-group tab bar.
+	var searchIn ui.Element
+	ui.Row(c.Key("si-hdr")).Height(h).Shrink(0).AlignItems(ui.Center).Gap(8).
+		Padding(0, padR, 0, 16).DragWindow().Children(func() {
+		field := ui.Row(c.Key("si-field")).Grow(1).MinWidth(0).Height(30).Radius(8).
+			Padding(0, 6, 0, 10).Gap(8).AlignItems(ui.Center).
+			Background(p.Surface).Border(1.5, p.Accent)
+		field.Children(func() {
+			ui.Icon(c, theme.IconSearch).FontSize(14).TextColor(p.Accent).Shrink(0)
+			searchIn = ui.TextInputBase(c.Key("sm-q"), &s.query).Bind(&s.searchHandle).
+				Placeholder(locales.SearchModalPlaceholder()).Label(locales.MainSearchPlaceholder()).
+				FontSize(13.5).Grow(1).MinWidth(0).TextColor(p.Text).PlaceholderColor(p.Muted)
 
-				if s.query != "" {
-					clr := ui.ButtonBase(c.Key("sm-clear")).Label(locales.ActionClearSearch()).Tooltip(locales.ActionClearSearch()).
-						Size(24, 24).Radius(6).Center().TextColor(p.Muted).Shrink(0)
-					if clr.Hovered() {
-						clr.Background(p.RowSel).TextColor(p.Text)
-					}
-					clr.Children(func() { ui.Icon(c, theme.IconClose).FontSize(13) })
-					if clr.Clicked() {
-						s.query = ""
-						s.searchIdx = 0
-						s.tplBookmarkID = ""
-						s.searchList.ScrollTo(0, ui.Start)
-						s.searchHandle.Focus(c)
-					}
+			if s.query != "" {
+				clr := ui.ButtonBase(c.Key("sm-clear")).Label(locales.ActionClearSearch()).Tooltip(locales.ActionClearSearch()).
+					Size(20, 20).Radius(5).Center().TextColor(p.Muted).Shrink(0)
+				if clr.Hovered() {
+					clr.Background(p.RowSel).TextColor(p.Text)
 				}
-
-				escBtn := ui.ButtonBase(c.Key("sm-esc")).Label(locales.ActionCloseSearch()).Tooltip(locales.SearchModalCloseTip()).
-					Height(24).PaddingX(8).Radius(6).AlignItems(ui.Center).
-					Background(p.Field).TextColor(p.Muted).Shrink(0)
-				if escBtn.Hovered() {
-					escBtn.Background(p.RowSel).TextColor(p.Text)
-				}
-				escBtn.Children(func() { ui.Text(c, "Esc").FontSize(11.5).SingleLine() })
-				if escBtn.Clicked() {
-					s.closeSearch(c)
-				}
-			})
-			ui.Box(c).Height(1).FillWidth().Background(p.Line).Shrink(0)
-
-			start, end := searchIn.TextSelection()
-			hasSel := start != end
-			svc := c.Services()
-			searchIn.OnTextKey(func(k ui.TextKey) bool {
-				if s.moveOpen {
-					return false
-				}
-				b := selectedSearchBookmark(hits, isURL, s.searchIdx)
-				if b == nil {
-					return false
-				}
-				switch {
-				case k.Key == ui.KeyC && k.Mods == ui.Cmd && !hasSel:
-					if b.URL != "" {
-						svc.WriteClipboard(b.URL)
-						a.Say(locales.ToastCopiedURL())
-						return true
-					}
-				case k.Key == ui.KeyC && k.Mods == ui.Cmd|ui.Shift:
-					if b.Title != "" {
-						svc.WriteClipboard(b.Title)
-						a.Say(locales.ToastCopiedTitle())
-						return true
-					}
-				}
-				return false
-			})
-
-			if searchIn.Changed() {
-				s.tplBookmarkID = ""
-				s.searchIdx = 0
-				s.searchList.ScrollTo(0, ui.Start)
-			}
-			if searchIn.Shortcut(0, ui.KeyEscape) {
-				if s.tplBookmarkID != "" {
+				clr.Children(func() { ui.Icon(c, theme.IconClose).FontSize(12) })
+				if clr.Clicked() {
+					s.query = ""
+					s.searchIdx = 0
 					s.tplBookmarkID = ""
-					s.tplQuery = ""
-				} else {
-					s.closeSearch(c)
-				}
-			}
-			if searchIn.Shortcut(0, ui.KeyDown) && total > 0 {
-				s.searchIdx = min(s.searchIdx+1, total-1)
-				s.searchScrollMoved = true
-			}
-			if searchIn.Shortcut(0, ui.KeyUp) && total > 0 {
-				s.searchIdx = max(s.searchIdx-1, 0)
-				s.searchScrollMoved = true
-			}
-			if searchIn.Submitted() && total > 0 {
-				s.activateSearchIndex(c, hits, isURL, s.searchIdx)
-			}
-
-			if !s.moveOpen && !s.tplInputHandle.Focused(c) {
-				if b := selectedSearchBookmark(hits, isURL, s.searchIdx); b != nil {
-					if !s.searchHandle.Focused(c) {
-						if c.Shortcut(ui.Cmd, ui.KeyC) && !c.ShortcutRepeated() {
-							s.copyBookmarkURL(c, b.ID)
-						}
-						if c.Shortcut(ui.Cmd|ui.Shift, ui.KeyC) && !c.ShortcutRepeated() {
-							s.copyBookmarkTitle(c, b.ID)
-						}
-					}
-					if c.Shortcut(ui.Cmd, ui.KeyE) && !c.ShortcutRepeated() {
-						if a.Win.ShowEditor != nil {
-							a.Win.ShowEditor(app.EditorRequest{ID: b.ID})
-						}
-					}
-					if c.Shortcut(ui.Cmd|ui.Shift, ui.KeyM) && !c.ShortcutRepeated() {
-						s.openMoveModal([]string{b.ID})
-					}
+					s.searchList.ScrollTo(0, ui.Start)
+					s.searchHandle.Focus(c)
 				}
 			}
 
-			// Scope chips strip.
-			if len(lib.Groups) > 0 {
-				widget.AutoScrollbarSlim(c, ui.ScrollHorizontal(c.Key("sm-scopes"))).
-					ScrollbarInsets(0, 14, 0, 14).FillWidth().Height(36).Shrink(0).Children(func() {
-					ui.Row(c).AlignItems(ui.Center).Gap(6).Padding(8, 14, 3, 14).Children(func() {
-						s.buildScopeChip(c.Key("sm-scope-all"), p, "", locales.MainAllGroups())
-						for _, g := range lib.Groups {
-							s.buildScopeChip(c.Key("sm-scope-"+g.ID), p, g.ID, g.Name)
+			escBtn := ui.ButtonBase(c.Key("sm-esc")).Label(locales.ActionCloseSearch()).Tooltip(locales.SearchModalCloseTip()).
+				Height(20).PaddingX(7).Radius(5).AlignItems(ui.Center).
+				Background(p.Field).TextColor(p.Muted).Shrink(0)
+			if escBtn.Hovered() {
+				escBtn.Background(p.RowSel).TextColor(p.Text)
+			}
+			escBtn.Children(func() { ui.Text(c, "Esc").FontSize(11.5).SingleLine() })
+			if escBtn.Clicked() {
+				s.closeSearch(c)
+			}
+		})
+	})
+	ui.Box(c).Height(1).FillWidth().Background(p.Line).Shrink(0)
+	if !s.searchOpen {
+		return
+	}
+
+	start, end := searchIn.TextSelection()
+	hasSel := start != end
+	svc := c.Services()
+	searchIn.OnTextKey(func(k ui.TextKey) bool {
+		if s.moveOpen {
+			return false
+		}
+		b := selectedSearchBookmark(hits, isURL, s.searchIdx)
+		if b == nil {
+			return false
+		}
+		switch {
+		case k.Key == ui.KeyC && k.Mods == ui.Cmd && !hasSel:
+			if b.URL != "" {
+				svc.WriteClipboard(b.URL)
+				a.Say(locales.ToastCopiedURL())
+				return true
+			}
+		case k.Key == ui.KeyC && k.Mods == ui.Cmd|ui.Shift:
+			if b.Title != "" {
+				svc.WriteClipboard(b.Title)
+				a.Say(locales.ToastCopiedTitle())
+				return true
+			}
+		}
+		return false
+	})
+
+	if searchIn.Changed() {
+		s.tplBookmarkID = ""
+		s.searchIdx = 0
+		s.searchList.ScrollTo(0, ui.Start)
+	}
+	if searchIn.Shortcut(0, ui.KeyEscape) {
+		if s.tplBookmarkID != "" {
+			s.tplBookmarkID = ""
+			s.tplQuery = ""
+		} else {
+			s.closeSearch(c)
+			return
+		}
+	}
+	if searchIn.Shortcut(0, ui.KeyDown) && total > 0 {
+		s.searchIdx = min(s.searchIdx+1, total-1)
+		s.searchScrollMoved = true
+	}
+	if searchIn.Shortcut(0, ui.KeyUp) && total > 0 {
+		s.searchIdx = max(s.searchIdx-1, 0)
+		s.searchScrollMoved = true
+	}
+	if searchIn.Submitted() && total > 0 {
+		s.activateSearchIndex(c, hits, isURL, s.searchIdx)
+		if !s.searchOpen {
+			return
+		}
+	}
+
+	if !s.moveOpen && !s.tplInputHandle.Focused(c) {
+		if b := selectedSearchBookmark(hits, isURL, s.searchIdx); b != nil {
+			if !s.searchHandle.Focused(c) {
+				if c.Shortcut(ui.Cmd, ui.KeyC) && !c.ShortcutRepeated() {
+					s.copyBookmarkURL(c, b.ID)
+				}
+				if c.Shortcut(ui.Cmd|ui.Shift, ui.KeyC) && !c.ShortcutRepeated() {
+					s.copyBookmarkTitle(c, b.ID)
+				}
+			}
+			if c.Shortcut(ui.Cmd, ui.KeyE) && !c.ShortcutRepeated() {
+				if a.Win.ShowEditor != nil {
+					a.Win.ShowEditor(app.EditorRequest{ID: b.ID})
+				}
+			}
+			if c.Shortcut(ui.Cmd|ui.Shift, ui.KeyM) && !c.ShortcutRepeated() {
+				s.openMoveModal([]string{b.ID})
+			}
+		}
+	}
+
+	// Scope chips strip.
+	if len(lib.Groups) > 0 {
+		widget.AutoScrollbarSlim(c, ui.ScrollHorizontal(c.Key("sm-scopes"))).
+			ScrollbarInsets(0, 24, 0, 24).FillWidth().Height(40).Shrink(0).Children(func() {
+			ui.Row(c).AlignItems(ui.Center).Gap(6).Padding(10, 24, 4, 24).Children(func() {
+				s.buildScopeChip(c.Key("sm-scope-all"), p, "", locales.MainAllGroups())
+				for _, g := range lib.Groups {
+					s.buildScopeChip(c.Key("sm-scope-"+g.ID), p, g.ID, g.Name)
+				}
+			})
+		})
+	}
+
+	// Results fill the content area.
+	body := widget.AutoScrollbar(c, ui.Scroll(c.Key("sm-scroll"))).Grow(1).MinHeight(0).FillWidth()
+	body.Children(func() {
+		ui.Column(c).FillWidth().Padding(6, 14, 24, 14).Gap(2).Children(func() {
+			if isURL {
+				s.buildPasteURLCard(c, p, lib, q, s.searchIdx == 0)
+			}
+
+			if len(hits) > 0 {
+				status := locales.SearchFooterMatches(len(hits))
+				if q == "" {
+					status = locales.SearchRecentUpdates()
+				}
+				ui.Text(c, status).FontSize(12).TextColor(p.Muted).Padding(4, 10, 6, 10)
+			}
+
+			if !isURL && len(hits) == 0 {
+				ui.Column(c).FillWidth().Padding(48, 16).Center().Gap(12).Children(func() {
+					msg := locales.MainNoBookmarks()
+					if q != "" {
+						msg = locales.SearchNotFoundFor(q)
+					}
+					ui.Text(c, msg).FontSize(13.5).TextColor(p.Muted).SingleLine().Selectable()
+					ui.Row(c).Wrap().Center().Gap(8).Children(func() {
+						if s.searchScope != "" {
+							allBtn := widget.Secondary(c, p, locales.MainSearchAllGroups()).
+								Label(locales.MainSearchAllGroups()).Tooltip(locales.MainSearchAllGroupsTip())
+							if allBtn.Clicked() {
+								s.searchScope = ""
+								s.searchIdx = 0
+								s.searchHandle.Focus(c)
+							}
+						}
+						if q != "" && a.Win.ShowEditor != nil {
+							newBtn := widget.Secondary(c, p, locales.MenuNewBookmark()).Label(locales.MenuNewBookmark())
+							if newBtn.Clicked() {
+								s.closeSearch(c)
+								a.Win.ShowEditor(app.EditorRequest{Title: q, GroupID: a.Group, SubID: a.Sub})
+							}
 						}
 					})
 				})
+				return
 			}
 
-			// Results area.
-			body := widget.AutoScrollbar(c, ui.Scroll(c.Key("sm-scroll"))).MaxHeight(340).FillWidth()
-			body.Children(func() {
-				ui.Column(c).FillWidth().Padding(6, 10, 10, 10).Gap(2).Children(func() {
-					if isURL {
-						s.buildPasteURLCard(c, p, lib, q, s.searchIdx == 0)
-					}
-
-					if q == "" && len(hits) > 0 {
-						ui.Text(c, locales.SearchRecentUpdates()).FontSize(11.5).TextColor(p.Muted).Padding(2, 10, 4, 10)
-					}
-
-					if !isURL && len(hits) == 0 {
-						ui.Column(c).FillWidth().Padding(28, 16).Center().Gap(12).Children(func() {
-							msg := locales.MainNoBookmarks()
-							if q != "" {
-								msg = locales.SearchNotFoundFor(q)
-							}
-							ui.Text(c, msg).FontSize(13.5).TextColor(p.Muted).SingleLine().Selectable()
-							ui.Row(c).Wrap().Center().Gap(8).Children(func() {
-								if s.searchScope != "" {
-									allBtn := widget.Secondary(c, p, locales.MainSearchAllGroups()).
-										Label(locales.MainSearchAllGroups()).Tooltip(locales.MainSearchAllGroupsTip())
-									if allBtn.Clicked() {
-										s.searchScope = ""
-										s.searchIdx = 0
-										s.searchHandle.Focus(c)
-									}
-								}
-								if q != "" && a.Win.ShowEditor != nil {
-									newBtn := widget.Secondary(c, p, locales.MenuNewBookmark()).Label(locales.MenuNewBookmark())
-									if newBtn.Clicked() {
-										s.closeSearch(c)
-										a.Win.ShowEditor(app.EditorRequest{Title: q, GroupID: a.Group, SubID: a.Sub})
-									}
-								}
-							})
-						})
-						return
-					}
-
-					for i, hit := range hits {
-						idx := i + offset
-						s.buildModalSearchRow(c, p, hit, idx, s.searchScrollMoved && idx == s.searchIdx)
-						if s.tplBookmarkID == hit.B.ID {
-							s.buildTemplatePrompt(c, p, hit.B)
-						}
-					}
-					s.searchScrollMoved = false
-				})
-			})
-
-			// Footer status bar.
-			ui.Box(c).Height(1).FillWidth().Background(p.Line).Shrink(0)
-			ui.Row(c.Key("sm-foot")).Height(34).Padding(0, 14).Background(p.Bg).
-				AlignItems(ui.Center).Justify(ui.SpaceBetween).Shrink(0).Children(func() {
-				status := locales.SearchFooterIdle()
-				switch {
-				case isURL:
-					status = locales.SearchFooterURL()
-				case q != "":
-					status = locales.SearchFooterMatches(len(hits))
-				case len(hits) > 0:
-					status = locales.SearchFooterRecent(len(hits))
+			for i, hit := range hits {
+				idx := i + offset
+				s.buildModalSearchRow(c, p, hit, idx, s.searchScrollMoved && idx == s.searchIdx)
+				if s.tplBookmarkID == hit.B.ID {
+					s.buildTemplatePrompt(c, p, hit.B)
 				}
-				ui.Text(c, status).FontSize(11.5).TextColor(p.Muted).SingleLine()
-				ui.Text(c, locales.SearchFooterHint()).FontSize(11.5).TextColor(p.Muted).SingleLine()
-			})
+			}
+			s.searchScrollMoved = false
 		})
 	})
-
-	if wasOpen && !s.searchOpen {
-		s.clearSearch()
-		s.contentHandle.Focus(c)
-	}
 }
 
 func selectedSearchBookmark(hits []app.Hit, isURL bool, idx int) *model.Bookmark {

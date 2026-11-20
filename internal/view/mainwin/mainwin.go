@@ -237,8 +237,12 @@ func (s *mainState) view(c *ui.Context) {
 
 		right := ui.Column(c).Grow(1).MinWidth(0).FillHeight().Background(p.Bg)
 		right.Children(func() {
-			s.buildHeader(c, p)
-			s.buildBody(c, p)
+			if s.searchOpen {
+				s.buildSearchInline(c, p)
+			} else {
+				s.buildHeader(c, p)
+				s.buildBody(c, p)
+			}
 			widget.Toast(c, a, p, 24)
 		})
 	})
@@ -255,7 +259,6 @@ func (s *mainState) view(c *ui.Context) {
 		s.handleExternalDrop(drop)
 	}
 
-	s.buildSearchModal(c, p)
 	s.buildMoveModal(c, p)
 }
 
