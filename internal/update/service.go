@@ -92,6 +92,8 @@ type Service struct {
 	downloadCancel  context.CancelFunc
 	installRunning  bool
 	autoStarted     bool
+	quitStage       *QuitStage
+	quitPreparing   bool
 }
 
 func NewService(cfg Config) *Service {
@@ -119,6 +121,63 @@ func (s *Service) isChinese() bool {
 func (s *Service) notify() {
 	if s.cfg.OnChange != nil {
 		s.cfg.OnChange()
+	}
+	s.maybePrepareQuitStage()
+}
+
+// maybePrepareQuitStage stages a ready macOS update in the background so a normal quit can
+// swap it in silently; the next manual launch then runs the new version.
+func (s *Service) maybePrepareQuitStage() {
+	if runtime.GOOS != "darwin" || os.Getenv(mockUpdateEnv) == "1" {
+		return
+	}
+	s.mu.Lock()
+	if s.quitPreparing || s.installRunning || s.status != StatusReady || s.readyRecord == nil || !s.readyRecord.InPlace ||
+		s.cfg.DataDir == "" || (s.quitStage != nil && s.quitStage.Version == s.readyRecord.Version) {
+		s.mu.Unlock()
+		return
+	}
+	rec := *s.readyRecord
+	stale := s.quitStage
+	s.quitStage = nil
+	s.quitPreparing = true
+	dataDir := s.cfg.DataDir
+	s.mu.Unlock()
+
+	go func() {
+		DiscardQuitStage(stale)
+		st, err := PrepareQuitInstall(dataDir, &rec)
+		if err != nil {
+			logWarn("quit_install.prepare_failed", "version", rec.Version, "err", err)
+		}
+		s.mu.Lock()
+		s.quitPreparing = false
+		keep := st != nil && !s.installRunning && s.status == StatusReady && s.readyRecord != nil && s.readyRecord.Version == st.Version
+		if keep {
+			s.quitStage = st
+		}
+		s.mu.Unlock()
+		if !keep {
+			DiscardQuitStage(st)
+		}
+	}()
+}
+
+// ApplyOnQuit hands a background-staged update to the swap helper during a normal quit. The
+// helper replaces the bundle after this process exits and does not relaunch the app.
+func (s *Service) ApplyOnQuit() {
+	s.mu.Lock()
+	st := s.quitStage
+	if s.installRunning || st == nil || s.status != StatusReady || s.readyRecord == nil || s.readyRecord.Version != st.Version {
+		s.mu.Unlock()
+		return
+	}
+	s.quitStage = nil
+	s.installRunning = true
+	dataDir := s.cfg.DataDir
+	s.mu.Unlock()
+	if err := StartQuitInstall(dataDir, st); err != nil {
+		DiscardQuitStage(st)
 	}
 }
 
@@ -525,10 +584,13 @@ func (s *Service) InstallNow() {
 	s.installRunning = true
 	s.status = StatusInstalling
 	s.errorMsg = ""
+	staged := s.quitStage
+	s.quitStage = nil
 	s.mu.Unlock()
 	s.notify()
 
 	go func() {
+		DiscardQuitStage(staged)
 		if os.Getenv(mockUpdateEnv) == "1" {
 			time.Sleep(600 * time.Millisecond)
 			s.mu.Lock()

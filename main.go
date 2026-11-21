@@ -218,6 +218,9 @@ func main() {
 			settings.FlushWait(e != nil && e.SessionEnding)
 			a.FlushSettings()
 			_ = a.Store.Flush()
+			if e == nil || !e.SessionEnding {
+				a.Updater.ApplyOnQuit()
+			}
 			a.Close()
 		})
 

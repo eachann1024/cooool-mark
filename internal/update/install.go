@@ -461,10 +461,12 @@ func AcknowledgeStartupAndClean(dataDir, runningVersion string) {
 
 	if runtime.GOOS == "darwin" {
 		if bundle, err := installedMacBundle(); err == nil && !livesInUpdateStage(bundle) {
+			keepStage := ""
 			if raw, readErr := os.ReadFile(stageRecordPath(dataDir)); readErr == nil {
 				var st installStageRecord
 				if json.Unmarshal(raw, &st) == nil && filepath.Dir(st.Path) == filepath.Dir(bundle) &&
 					stageDirPattern.MatchString(filepath.Base(st.Path)) {
+					keepStage = st.Path
 					stageInfo, stageErr := os.Lstat(st.Path)
 					if stageErr == nil && stageInfo.IsDir() && CompareVersion(runningVersion, st.Version) == 0 {
 						if err := os.WriteFile(filepath.Join(st.Path, "started"), []byte(fmt.Sprintf("%d", os.Getpid())), 0o600); err == nil {
@@ -474,6 +476,7 @@ func AcknowledgeStartupAndClean(dataDir, runningVersion string) {
 					}
 				}
 			}
+			pruneOrphanStages(bundle, keepStage)
 		}
 	}
 
@@ -660,11 +663,17 @@ target="$1"
 stage="$2"
 parent_pid="$3"
 target_ver="$4"
+relaunch="${5:-1}"
 ts() { date "+%Y-%m-%dT%H:%M:%S%z"; }
 log() { printf "%s [install.sh] %s\n" "$(ts)" "$*"; }
 LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 
-log "begin target=$target stage=$stage parent_pid=$parent_pid target_ver=$target_ver"
+log "begin target=$target stage=$stage parent_pid=$parent_pid target_ver=$target_ver relaunch=$relaunch"
+open_target() {
+  if [ "$relaunch" = "1" ]; then
+    /usr/bin/open "$target" || true
+  fi
+}
 count=0
 while kill -0 "$parent_pid" 2>/dev/null; do
   count=$((count + 1))
@@ -692,7 +701,7 @@ rollback() {
     fi
   fi
   "$LSREGISTER" -f "$target" >/dev/null 2>&1 || true
-  /usr/bin/open "$target" || true
+  open_target
   remove_stage
   log "rollback complete"
 }
@@ -705,7 +714,7 @@ trap abort HUP INT TERM
 
 if ! mv "$target" "$stage/previous.bundle"; then
   log "ERROR mv current bundle to previous.bundle failed"
-  /usr/bin/open "$target" || true
+  open_target
   remove_stage
   exit 1
 fi
@@ -715,6 +724,12 @@ if ! mv "$stage/next.bundle" "$target"; then
   exit 1
 fi
 "$LSREGISTER" -f "$target" >/dev/null 2>&1 || true
+if [ "$relaunch" != "1" ]; then
+  trap - HUP INT TERM
+  remove_stage
+  log "bundle swapped into place on quit; update to v$target_ver will run on next launch"
+  exit 0
+fi
 log "bundle swapped into place; launching updated app"
 if ! /usr/bin/open "$target"; then
   log "ERROR open updated target failed"
@@ -853,58 +868,11 @@ func InstallReady(dataDir string, rec *VerifiedRecord, isChinese bool, flushBefo
 
 	switch runtime.GOOS {
 	case "darwin":
-		bundle, err := installedMacBundle()
+		bundle, stage, err := stageMacUpdate(rec, tr)
 		if err != nil {
-			logError("install.not_app_bundle", "err", err)
-			return errors.New(tr("仅打包后的 "+macAppName+".app 支持原位重启更新", "Updates can only be installed from a packaged "+macAppName+".app"))
-		}
-		if strings.Contains(bundle, "/AppTranslocation/") || strings.HasPrefix(bundle, "/Volumes/") {
-			logError("install.readonly_location", "bundle", bundle)
-			return errors.New(tr("请先将 "+macAppName+" 移入「应用程序」文件夹后再执行更新", "Move "+macAppName+".app to /Applications before installing updates"))
-		}
-		parent := filepath.Dir(bundle)
-		probe, err := os.CreateTemp(parent, ".cooool-mark-writecheck-*")
-		if err != nil {
-			logError("install.permission_denied", "parent", parent, "err", err)
-			return fmt.Errorf(tr("应用所在目录无写入权限：%s", "No write permission in %s"), parent)
-		}
-		probeName := probe.Name()
-		_ = probe.Close()
-		_ = os.Remove(probeName)
-
-		unpackedDir, err := os.MkdirTemp(filepath.Dir(rec.ArchivePath), "unpacked-")
-		if err != nil {
-			return err
-		}
-		defer os.RemoveAll(unpackedDir)
-		appPath, err := prepareMacAppFromDMG(rec.ArchivePath, unpackedDir, rec.Version)
-		if err != nil {
-			return err
-		}
-
-		stage, err := os.MkdirTemp(parent, stageDirPrefix)
-		if err != nil {
-			logError("install.stage_mkdir_failed", "err", err)
-			return err
-		}
-		markMacNeverIndex(stage)
-		nextApp := filepath.Join(stage, "next.bundle")
-		if out, err := exec.Command("/usr/bin/ditto", appPath, nextApp).CombinedOutput(); err != nil {
-			_ = os.RemoveAll(stage)
-			logError("install.stage_ditto_failed", "err", strings.TrimSpace(string(out)))
-			return fmt.Errorf("stage update failed: %s", strings.TrimSpace(string(out)))
-		}
-		if err := validateMacBundle(nextApp, rec.Version); err != nil {
-			_ = os.RemoveAll(stage)
-			logError("install.stage_validate_failed", "err", err)
 			return err
 		}
 		scriptPath := filepath.Join(stage, "install.sh")
-		if err := os.WriteFile(scriptPath, []byte(macSwapInstallerScript), 0o700); err != nil {
-			_ = os.RemoveAll(stage)
-			logError("install.write_script_failed", "err", err)
-			return err
-		}
 		if err := flush(); err != nil {
 			_ = os.RemoveAll(stage)
 			return err
@@ -915,7 +883,7 @@ func InstallReady(dataDir string, rec *VerifiedRecord, isChinese bool, flushBefo
 			return err
 		}
 
-		cmd := exec.Command("/bin/sh", scriptPath, bundle, stage, fmt.Sprintf("%d", os.Getpid()), rec.Version)
+		cmd := exec.Command("/bin/sh", scriptPath, bundle, stage, fmt.Sprintf("%d", os.Getpid()), rec.Version, "1")
 		closeLog, _ := spawn(cmd)
 		defer closeLog()
 		if err := startInstallerOnQuit(cmd, quitApp); err != nil {
@@ -971,6 +939,148 @@ func InstallReady(dataDir string, rec *VerifiedRecord, isChinese bool, flushBefo
 		return quitApp(func() error { return nil })
 	}
 	return errors.New("unsupported platform for automatic install")
+}
+
+// stageMacUpdate unpacks the verified DMG into a hidden stage directory next to the installed
+// bundle and writes the swap helper; it returns the installed bundle and the stage path.
+func stageMacUpdate(rec *VerifiedRecord, tr func(zh, en string) string) (string, string, error) {
+	bundle, err := installedMacBundle()
+	if err != nil {
+		logError("install.not_app_bundle", "err", err)
+		return "", "", errors.New(tr("仅打包后的 "+macAppName+".app 支持原位重启更新", "Updates can only be installed from a packaged "+macAppName+".app"))
+	}
+	if strings.Contains(bundle, "/AppTranslocation/") || strings.HasPrefix(bundle, "/Volumes/") {
+		logError("install.readonly_location", "bundle", bundle)
+		return "", "", errors.New(tr("请先将 "+macAppName+" 移入「应用程序」文件夹后再执行更新", "Move "+macAppName+".app to /Applications before installing updates"))
+	}
+	parent := filepath.Dir(bundle)
+	probe, err := os.CreateTemp(parent, ".cooool-mark-writecheck-*")
+	if err != nil {
+		logError("install.permission_denied", "parent", parent, "err", err)
+		return "", "", fmt.Errorf(tr("应用所在目录无写入权限：%s", "No write permission in %s"), parent)
+	}
+	probeName := probe.Name()
+	_ = probe.Close()
+	_ = os.Remove(probeName)
+
+	unpackedDir, err := os.MkdirTemp(filepath.Dir(rec.ArchivePath), "unpacked-")
+	if err != nil {
+		return "", "", err
+	}
+	defer os.RemoveAll(unpackedDir)
+	appPath, err := prepareMacAppFromDMG(rec.ArchivePath, unpackedDir, rec.Version)
+	if err != nil {
+		return "", "", err
+	}
+
+	stage, err := os.MkdirTemp(parent, stageDirPrefix)
+	if err != nil {
+		logError("install.stage_mkdir_failed", "err", err)
+		return "", "", err
+	}
+	markMacNeverIndex(stage)
+	nextApp := filepath.Join(stage, "next.bundle")
+	if out, err := exec.Command("/usr/bin/ditto", appPath, nextApp).CombinedOutput(); err != nil {
+		_ = os.RemoveAll(stage)
+		logError("install.stage_ditto_failed", "err", strings.TrimSpace(string(out)))
+		return "", "", fmt.Errorf("stage update failed: %s", strings.TrimSpace(string(out)))
+	}
+	if err := validateMacBundle(nextApp, rec.Version); err != nil {
+		_ = os.RemoveAll(stage)
+		logError("install.stage_validate_failed", "err", err)
+		return "", "", err
+	}
+	if err := os.WriteFile(filepath.Join(stage, "install.sh"), []byte(macSwapInstallerScript), 0o700); err != nil {
+		_ = os.RemoveAll(stage)
+		logError("install.write_script_failed", "err", err)
+		return "", "", err
+	}
+	return bundle, stage, nil
+}
+
+// QuitStage is a fully verified macOS update staged in the background, ready to be swapped in
+// silently after a normal quit without relaunching the app.
+type QuitStage struct {
+	Version string
+	Bundle  string
+	Path    string
+}
+
+// PrepareQuitInstall verifies the ready package and stages it so a later normal quit only has
+// to spawn the swap helper.
+func PrepareQuitInstall(dataDir string, rec *VerifiedRecord) (*QuitStage, error) {
+	if runtime.GOOS != "darwin" || rec == nil {
+		return nil, errors.New("quit install is only supported on macOS")
+	}
+	if err := validateReadyFromOfficialSource(dataDir, CurrentVersion(), rec); err != nil {
+		return nil, err
+	}
+	bundle, stage, err := stageMacUpdate(rec, func(_, en string) string { return en })
+	if err != nil {
+		return nil, err
+	}
+	logInfo("quit_install.prepared", "version", rec.Version, "stage", stage)
+	return &QuitStage{Version: rec.Version, Bundle: bundle, Path: stage}, nil
+}
+
+// StartQuitInstall spawns the detached swap helper in no-relaunch mode; it must be called while
+// the app is quitting so the helper can replace the bundle once this process exits.
+func StartQuitInstall(dataDir string, st *QuitStage) error {
+	if st == nil {
+		return errors.New("no quit stage")
+	}
+	if _, err := os.Stat(filepath.Join(st.Path, "next.bundle")); err != nil {
+		return err
+	}
+	installLogPath := InstallLogFilePath(dataDir)
+	_ = os.MkdirAll(filepath.Dir(installLogPath), 0o755)
+	cmd := exec.Command("/bin/sh", filepath.Join(st.Path, "install.sh"), st.Bundle, st.Path, fmt.Sprintf("%d", os.Getpid()), st.Version, "0")
+	configureDetachedProcess(cmd)
+	if logFile, _ := os.OpenFile(installLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); logFile != nil {
+		cmd.Stdout = logFile
+		cmd.Stderr = logFile
+		defer logFile.Close()
+	}
+	if err := cmd.Start(); err != nil {
+		logError("quit_install.spawn_failed", "err", err)
+		return err
+	}
+	logInfo("quit_install.helper_spawned", "version", st.Version, "helper_pid", cmd.Process.Pid)
+	_ = cmd.Process.Release()
+	return nil
+}
+
+// DiscardQuitStage removes a background stage that is no longer going to be used.
+func DiscardQuitStage(st *QuitStage) {
+	if st == nil || !stageDirPattern.MatchString(filepath.Base(st.Path)) {
+		return
+	}
+	_ = os.RemoveAll(st.Path)
+}
+
+// pruneOrphanStages removes stale stage directories beside the installed bundle that no pending
+// install refers to, e.g. a background quit stage left behind by a crash or a session end.
+func pruneOrphanStages(bundle, keep string) {
+	parent := filepath.Dir(bundle)
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		return
+	}
+	for _, ent := range entries {
+		if !ent.IsDir() || !stageDirPattern.MatchString(ent.Name()) {
+			continue
+		}
+		path := filepath.Join(parent, ent.Name())
+		if path == keep {
+			continue
+		}
+		info, err := ent.Info()
+		if err != nil || time.Since(info.ModTime()) < 10*time.Minute {
+			continue
+		}
+		_ = os.RemoveAll(path)
+		logInfo("startup.pruned_orphan_stage", "stage", path)
+	}
 }
 
 func startInstallerOnQuit(cmd *exec.Cmd, quitApp func(func() error) error) error {
