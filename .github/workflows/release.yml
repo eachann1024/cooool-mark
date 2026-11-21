@@ -37,9 +37,9 @@ permissions:
   contents: read
 
 concurrency:
-  # Serialize releases on main so consecutive pushes never compute the same next version.
-  group: cooool-mark-packages-${{ github.ref }}
-  cancel-in-progress: false
+  # Cancel stale builds immediately when a newer commit or manual release starts.
+  group: cooool-mark-release
+  cancel-in-progress: true
 
 env:
   SOURCE_SHA: ${{ github.sha }}
