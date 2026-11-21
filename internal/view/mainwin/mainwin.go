@@ -403,10 +403,21 @@ func (s *mainState) handleGlobalShortcuts(c *ui.Context) {
 		return
 	}
 
+	grid := a.View == "grid"
 	if c.Shortcut(0, ui.KeyDown) {
-		s.moveCursor(ids, 1)
+		if !grid || !s.moveGridRow(ids, 1) {
+			s.moveCursor(ids, 1)
+		}
 	}
 	if c.Shortcut(0, ui.KeyUp) {
+		if !grid || !s.moveGridRow(ids, -1) {
+			s.moveCursor(ids, -1)
+		}
+	}
+	if grid && c.Shortcut(0, ui.KeyRight) {
+		s.moveCursor(ids, 1)
+	}
+	if grid && c.Shortcut(0, ui.KeyLeft) {
 		s.moveCursor(ids, -1)
 	}
 
@@ -490,6 +501,37 @@ func (s *mainState) moveCursor(ids []string, delta int) {
 	if b := a.Store.Lib().Bookmark(target); b != nil && b.SubID != "" {
 		a.SetSub(b.SubID)
 	}
+}
+
+// moveGridRow moves the cursor to the same column of the previous or next
+// card row, crossing sub-group sections. It reports false when the grid
+// layout is unknown so the caller can fall back to linear movement.
+func (s *mainState) moveGridRow(ids []string, delta int) bool {
+	bc := &s.browseCache
+	if bc.view != "grid" || bc.groupID != s.app.Group || s.cursorID == "" || !slices.Contains(ids, s.cursorID) {
+		return false
+	}
+	r, ok := bc.bmRow[s.cursorID]
+	if !ok || r < 0 || r >= len(bc.rows) {
+		return false
+	}
+	col := slices.IndexFunc(bc.rows[r].items, func(b *model.Bookmark) bool { return b.ID == s.cursorID })
+	if col < 0 {
+		return false
+	}
+	for i := r + delta; i >= 0 && i < len(bc.rows); i += delta {
+		row := bc.rows[i]
+		if row.kind != browseRowGridRow || len(row.items) == 0 {
+			continue
+		}
+		target := row.items[min(col, len(row.items)-1)].ID
+		if idx := slices.Index(ids, target); idx >= 0 {
+			cur := slices.Index(ids, s.cursorID)
+			s.moveCursor(ids, idx-cur)
+		}
+		return true
+	}
+	return true // already on the first/last row: stay put
 }
 
 func (s *mainState) drawExternalDropOverlay(c *ui.Context, p *theme.Palette) {
