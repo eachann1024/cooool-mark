@@ -21,6 +21,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveLocalBuildVersion } from "./local-version.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const appName = "Cooool Mark";
@@ -59,7 +60,7 @@ function readAppVersion() {
     try {
       const data = JSON.parse(readFileSync(join(root, file), "utf8"));
       if (typeof data.version === "string" && /^\d+\.\d+\.\d+/.test(data.version)) {
-        return data.version;
+        return resolveLocalBuildVersion(root, data.version);
       }
     } catch {}
   }
