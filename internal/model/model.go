@@ -253,6 +253,8 @@ type Settings struct {
 
 	AutoBackup bool `json:"autoBackup"`
 
+	UpdateSource string `json:"updateSource,omitempty"` // auto | mirror | github
+
 	Storage       string `json:"storage"` // local | icloud | folder
 	StorageFolder string `json:"storageFolder,omitempty"`
 

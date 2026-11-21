@@ -6,6 +6,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -45,15 +46,6 @@ type Toast struct {
 	Err      bool
 	Until    time.Time
 	seq      int
-}
-
-// UpdateState tracks the latest in-app update check result.
-type UpdateState struct {
-	Checking  bool
-	Checked   bool
-	Available bool
-	Release   *update.ReleaseInfo
-	Err       string
 }
 
 // EditorRequest opens the editor: ID edits a bookmark; otherwise a new
@@ -122,7 +114,7 @@ type App struct {
 	StealthBackground bool
 
 	Toast           Toast
-	Update          UpdateState
+	Updater         *update.Service
 	ShortcutErrs    map[string]string
 	ShortcutBound   map[string]string
 	ShortcutPending map[string]bool
@@ -140,6 +132,7 @@ type App struct {
 	postMu           sync.Mutex
 	postQueue        []func()
 	toastSeq         int
+	notifiedUpdate   string
 	// PolishedAt marks bookmarks the AI just filled, for a 1.5 s highlight.
 	PolishedAt map[string]time.Time
 }
@@ -201,6 +194,22 @@ func New() (*App, error) {
 	})
 	a.View = a.Settings.DefaultView
 	a.restorePlace()
+	a.Updater = update.NewService(update.Config{
+		DataDir:           userData,
+		Version:           Version(),
+		InitialSourceMode: update.SourceMode(a.Settings.UpdateSource),
+		IsChinese:         locales.IsChinese,
+		OnSourceModeChanged: func(mode update.SourceMode) {
+			a.Post(func() {
+				a.Settings.UpdateSource = string(mode)
+				_ = a.patchSavedSettings(func(s *model.Settings) { s.UpdateSource = string(mode) })
+			})
+		},
+		FlushBeforeUpdate: a.flushBeforeUpdate,
+		QuitApp:           quitForUpdate,
+		OnChange:          a.Invalidate,
+		OnCheckResult:     a.onUpdateCheckResult,
+	})
 	return a, nil
 }
 
@@ -462,47 +471,79 @@ func (a *App) HandleNotificationClick(id string) {
 	}
 }
 
-// CheckUpdate checks the update feed in the background. When manual is true,
-// the result is also reported with a toast.
+// CheckUpdate checks for a new release in the background. When manual is
+// true, the result is also reported with a toast.
 func (a *App) CheckUpdate(manual bool) {
-	if a.Update.Checking {
-		return
-	}
-	a.Update.Checking = true
-	a.Update.Err = ""
-	a.Invalidate()
-	Background(15*time.Second, func(ctx context.Context) {
-		currentVer := Version()
-		info, newer, err := update.Check(ctx, currentVer)
-		a.Post(func() {
-			a.Update.Checking = false
-			a.Update.Checked = true
-			if err != nil {
-				a.Update.Err = err.Error()
-				if manual {
-					a.SayErr(locales.ToastUpdateFailed(err.Error()), locales.ActionRetry(), func() { a.CheckUpdate(true) })
-				}
-				return
+	a.Updater.CheckAsync(manual)
+}
+
+func (a *App) onUpdateCheckResult(manual bool, snap update.Snapshot, err error) {
+	a.Post(func() {
+		currentVer := strings.TrimPrefix(snap.CurrentVersion, "v")
+		if err != nil {
+			if manual {
+				a.SayErr(locales.ToastUpdateFailed(err.Error()), locales.ActionRetry(), func() { a.CheckUpdate(true) })
 			}
-			a.Update.Err = ""
-			a.Update.Available = newer
-			a.Update.Release = info
-			if newer && info != nil {
-				ver := strings.TrimPrefix(info.Version, "v")
-				if manual {
-					a.Say(locales.ToastUpdateFound(ver))
-				} else {
-					a.Notify("update-"+ver, locales.NotifyUpdateTitle(), locales.NotifyUpdateBody(ver), func() {
-						if a.Win.ShowSettings != nil {
-							a.Win.ShowSettings("general")
-						}
-					})
-				}
-			} else if manual {
-				a.Say(locales.ToastUpdateUpToDate(strings.TrimPrefix(currentVer, "v")))
+			return
+		}
+		if !snap.HasActionableUpdate() {
+			if manual {
+				a.Say(locales.ToastUpdateUpToDate(currentVer))
+			}
+			return
+		}
+		ver := strings.TrimPrefix(snap.LatestVersion, "v")
+		if manual {
+			a.Say(locales.ToastUpdateFound(ver))
+			return
+		}
+		if a.notifiedUpdate == ver {
+			return
+		}
+		a.notifiedUpdate = ver
+		a.Notify("update-"+ver, locales.NotifyUpdateTitle(), locales.NotifyUpdateBody(ver), func() {
+			if a.Win.ShowSettings != nil {
+				a.Win.ShowSettings("general")
 			}
 		})
 	})
+}
+
+func (a *App) flushBeforeUpdate() error {
+	result := make(chan error, 1)
+	mygo.RunOnMain(func() {
+		a.FlushSettings()
+		result <- a.Store.Flush()
+	})
+	return <-result
+}
+
+// quitForUpdate starts the installer only once MyGo has completed the
+// cancellable quit checks.
+func quitForUpdate(startInstaller func() error) error {
+	if !mygo.App.IsReady() {
+		return errors.New("application is unavailable")
+	}
+	result := make(chan error, 1)
+	queued := false
+	mygo.RunOnMain(func() {
+		var offQuit, offCancel func()
+		finish := func(err error) {
+			offQuit()
+			offCancel()
+			result <- err
+		}
+		offQuit = mygo.App.OnQuit(func() { finish(startInstaller()) })
+		offCancel = mygo.App.OnQuitCanceled(func() {
+			finish(errors.New(locales.UpdateQuitCanceled()))
+		})
+		queued = true
+		mygo.App.Quit()
+	})
+	if !queued {
+		return errors.New("application is unavailable")
+	}
+	return <-result
 }
 
 // Close releases OS power assertions and stops background AI processes on quit.

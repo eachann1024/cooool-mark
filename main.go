@@ -179,13 +179,7 @@ func main() {
 				}
 			}
 		}()
-		time.AfterFunc(8*time.Second, func() {
-			a.Post(func() {
-				if ctx.Err() == nil {
-					a.CheckUpdate(false)
-				}
-			})
-		})
+		a.Updater.StartAutomatic()
 
 		mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) {
 			if e.SessionEnding {

@@ -3,15 +3,16 @@ package settings
 import (
 	"fmt"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
-	"cooool-mark/internal/app"
 	"cooool-mark/internal/locales"
 	"cooool-mark/internal/model"
 	"cooool-mark/internal/theme"
+	"cooool-mark/internal/update"
 )
 
 func (s *state) pageGeneral(c *ui.Context, p *theme.Palette) {
@@ -486,21 +487,22 @@ func (s *state) integrationCard(c *ui.Context, p *theme.Palette) {
 
 func (s *state) aboutUpdatesCard(c *ui.Context, p *theme.Palette) {
 	a := s.a
+	snap := a.Updater.Snapshot()
+	busy := snap.Status == update.StatusChecking || snap.Status == update.StatusDownloading || snap.Status == update.StatusInstalling
 	card(c, p, func() {
 		ui.Row(c).FillWidth().Padding(11, 16).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, locales.SettingsAboutUpdates()).FontSize(13).FontWeight(500).TextColor(p.Text).SingleLine()
 		})
 
 		ui.Row(c).FillWidth().Padding(11, 16).Gap(10).AlignItems(ui.Center).Children(func() {
-			ver := strings.TrimPrefix(app.Version(), "v")
+			ver := strings.TrimPrefix(snap.CurrentVersion, "v")
 			ui.Text(c, locales.SettingsCurrentVersion(ver)).FontSize(13).TextColor(p.Text).Grow(1).MinWidth(0).Selectable()
 
 			checkLabel := locales.MenuCheckUpdates()
-			if a.Update.Checking {
+			if snap.Status == update.StatusChecking {
 				checkLabel = locales.SettingsCheckingUpdate()
 			}
-			checkBtn := btnSecondary(c, p, checkLabel).Disabled(a.Update.Checking)
-			if checkBtn.Clicked() && !a.Update.Checking {
+			if btnSecondary(c, p, checkLabel).Disabled(busy).Clicked() && !busy {
 				a.CheckUpdate(true)
 			}
 			if btnSecondary(c, p, locales.SettingsOpenAbout()).Clicked() && a.Win.ShowAbout != nil {
@@ -508,50 +510,78 @@ func (s *state) aboutUpdatesCard(c *ui.Context, p *theme.Palette) {
 			}
 		})
 
-		switch {
-		case a.Update.Checking:
+		switch snap.Status {
+		case update.StatusChecking:
 			ui.Row(c).FillWidth().Padding(11, 16).Children(func() {
 				ui.Text(c, locales.SettingsCheckingUpdate()).FontSize(12.5).TextColor(p.Muted).Selectable()
 			})
-		case a.Update.Err != "":
+		case update.StatusError:
 			ui.Row(c).FillWidth().Padding(11, 16).Children(func() {
-				ui.Text(c, locales.SettingsUpdateCheckFailed(a.Update.Err)).FontSize(12.5).TextColor(p.Danger).Wrap().Selectable()
+				ui.Text(c, locales.SettingsUpdateCheckFailed(snap.ErrorMessage)).FontSize(12.5).TextColor(p.Danger).Wrap().Selectable()
 			})
-		case a.Update.Available && a.Update.Release != nil:
-			rel := a.Update.Release
-			ui.Column(c).FillWidth().Padding(12, 16).Gap(8).Children(func() {
-				ver := strings.TrimPrefix(rel.Version, "v")
-				ui.Text(c, locales.SettingsUpdateAvailable(ver)).FontSize(13).FontWeight(500).TextColor(p.AccentText).Selectable()
-				if notes := rel.Notes(locales.IsChinese()); len(notes) > 0 {
-					lines := make([]string, 0, len(notes))
-					for _, n := range notes {
-						if trimmed := strings.TrimSpace(n); trimmed != "" {
-							lines = append(lines, "• "+trimmed)
-						}
-					}
-					if len(lines) > 0 {
-						ui.Text(c, strings.Join(lines, "\n")).FontSize(12).TextColor(p.Text2).Wrap().Selectable()
-					}
-				}
-				if rel.DownloadURL != "" || rel.HTMLURL != "" {
-					ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-						if rel.DownloadURL != "" {
-							if btnPrimary(c, p, locales.SettingsOpenDownload()).Clicked() {
-								_ = a.OpenURL(rel.DownloadURL)
-							}
-						}
-						if rel.HTMLURL != "" {
-							if btnSecondary(c, p, locales.SettingsViewRelease()).Clicked() {
-								_ = a.OpenURL(rel.HTMLURL)
-							}
-						}
-					})
-				}
-			})
-		case a.Update.Checked:
+		case update.StatusUpToDate:
 			ui.Row(c).FillWidth().Padding(11, 16).Children(func() {
 				ui.Text(c, locales.SettingsUpToDate()).FontSize(12.5).TextColor(p.Muted).Selectable()
 			})
+		case update.StatusAvailable, update.StatusDownloading, update.StatusReady, update.StatusInstalling:
+			s.updateAvailableSection(c, p, snap)
 		}
+
+		segmentedRow(c, p, locales.SettingsUpdateSource(), string(snap.SourceMode),
+			[]string{locales.SettingsUpdateSourceAuto(), locales.SettingsUpdateSourceMirror(), locales.SettingsUpdateSourceGitHub()},
+			[]string{string(update.SourceAuto), string(update.SourceMirror), string(update.SourceGitHub)},
+			func(val string) { a.Updater.SetSourceMode(update.SourceMode(val)) })
+	})
+}
+
+func (s *state) updateAvailableSection(c *ui.Context, p *theme.Palette, snap update.Snapshot) {
+	a := s.a
+	ui.Column(c).FillWidth().Padding(12, 16).Gap(8).Children(func() {
+		ver := strings.TrimPrefix(snap.LatestVersion, "v")
+		heading := locales.SettingsUpdateAvailable(ver)
+		if snap.Status == update.StatusReady {
+			heading = locales.SettingsUpdateReady(ver)
+		}
+		ui.Text(c, heading).FontSize(13).FontWeight(500).TextColor(p.AccentText).Selectable()
+		if lines := snap.Notes.ForLanguage(locales.IsChinese()).Lines(); len(lines) > 0 {
+			bullets := make([]string, len(lines))
+			for i, line := range lines {
+				bullets[i] = "• " + line
+			}
+			ui.Text(c, strings.Join(bullets, "\n")).FontSize(12).TextColor(p.Text2).Wrap().Selectable()
+		}
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			switch snap.Status {
+			case update.StatusAvailable:
+				if snap.InPlace {
+					if btnPrimary(c, p, locales.SettingsUpdateDownload()).Clicked() {
+						a.Updater.StartDownload()
+					}
+				} else if btnPrimary(c, p, locales.SettingsOpenDownload()).Clicked() {
+					_ = a.OpenURL(snap.ReleaseURL)
+				}
+				if btnSecondary(c, p, locales.SettingsViewRelease()).Clicked() {
+					_ = a.OpenURL(snap.ReleaseURL)
+				}
+			case update.StatusDownloading:
+				label := locales.SettingsUpdateDownloading(strconv.Itoa(snap.Percent))
+				if snap.Preparing {
+					label = locales.SettingsUpdatePreparing()
+				}
+				ui.Text(c, label).FontSize(12.5).TextColor(p.Muted).SingleLine()
+				if btnSecondary(c, p, locales.ActionCancel()).Clicked() {
+					a.Updater.CancelDownload()
+				}
+			case update.StatusReady:
+				if btnPrimary(c, p, locales.SettingsUpdateRestart()).Clicked() {
+					a.Updater.InstallNow()
+				}
+				if btnSecondary(c, p, locales.SettingsViewRelease()).Clicked() {
+					_ = a.OpenURL(snap.ReleaseURL)
+				}
+			case update.StatusInstalling:
+				ui.Text(c, locales.SettingsUpdateInstalling()).FontSize(12.5).TextColor(p.Muted).SingleLine()
+			}
+		})
 	})
 }

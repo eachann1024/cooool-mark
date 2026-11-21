@@ -2606,6 +2606,120 @@ func (msgs Messages) SettingsOpenAbout() string {
 	return Catalog.Format(msgs.locale, "settingsOpenAbout", nil)
 }
 
+// SettingsUpdateDownload says "Download & Install"
+// in the language the app shows.
+func SettingsUpdateDownload() string { return In(i18n.Locale()).SettingsUpdateDownload() }
+
+// SettingsUpdateDownload says "Download & Install"
+// in the language of msgs.
+func (msgs Messages) SettingsUpdateDownload() string {
+	return Catalog.Format(msgs.locale, "settingsUpdateDownload", nil)
+}
+
+// SettingsUpdateDownloading says "Downloading… {percent}%"
+// in the language the app shows.
+func SettingsUpdateDownloading(percent string) string {
+	return In(i18n.Locale()).SettingsUpdateDownloading(percent)
+}
+
+// SettingsUpdateDownloading says "Downloading… {percent}%"
+// in the language of msgs.
+func (msgs Messages) SettingsUpdateDownloading(percent string) string {
+	return Catalog.Format(msgs.locale, "settingsUpdateDownloading", map[string]any{"percent": percent})
+}
+
+// SettingsUpdatePreparing says "Verifying…"
+// in the language the app shows.
+func SettingsUpdatePreparing() string { return In(i18n.Locale()).SettingsUpdatePreparing() }
+
+// SettingsUpdatePreparing says "Verifying…"
+// in the language of msgs.
+func (msgs Messages) SettingsUpdatePreparing() string {
+	return Catalog.Format(msgs.locale, "settingsUpdatePreparing", nil)
+}
+
+// SettingsUpdateRestart says "Restart to Update"
+// in the language the app shows.
+func SettingsUpdateRestart() string { return In(i18n.Locale()).SettingsUpdateRestart() }
+
+// SettingsUpdateRestart says "Restart to Update"
+// in the language of msgs.
+func (msgs Messages) SettingsUpdateRestart() string {
+	return Catalog.Format(msgs.locale, "settingsUpdateRestart", nil)
+}
+
+// SettingsUpdateInstalling says "Installing…"
+// in the language the app shows.
+func SettingsUpdateInstalling() string { return In(i18n.Locale()).SettingsUpdateInstalling() }
+
+// SettingsUpdateInstalling says "Installing…"
+// in the language of msgs.
+func (msgs Messages) SettingsUpdateInstalling() string {
+	return Catalog.Format(msgs.locale, "settingsUpdateInstalling", nil)
+}
+
+// SettingsUpdateReady says "v{version} is ready to install"
+// in the language the app shows.
+func SettingsUpdateReady(version string) string {
+	return In(i18n.Locale()).SettingsUpdateReady(version)
+}
+
+// SettingsUpdateReady says "v{version} is ready to install"
+// in the language of msgs.
+func (msgs Messages) SettingsUpdateReady(version string) string {
+	return Catalog.Format(msgs.locale, "settingsUpdateReady", map[string]any{"version": version})
+}
+
+// SettingsUpdateSource says "Download source"
+// in the language the app shows.
+func SettingsUpdateSource() string { return In(i18n.Locale()).SettingsUpdateSource() }
+
+// SettingsUpdateSource says "Download source"
+// in the language of msgs.
+func (msgs Messages) SettingsUpdateSource() string {
+	return Catalog.Format(msgs.locale, "settingsUpdateSource", nil)
+}
+
+// SettingsUpdateSourceAuto says "Auto"
+// in the language the app shows.
+func SettingsUpdateSourceAuto() string { return In(i18n.Locale()).SettingsUpdateSourceAuto() }
+
+// SettingsUpdateSourceAuto says "Auto"
+// in the language of msgs.
+func (msgs Messages) SettingsUpdateSourceAuto() string {
+	return Catalog.Format(msgs.locale, "settingsUpdateSourceAuto", nil)
+}
+
+// SettingsUpdateSourceMirror says "Mirror"
+// in the language the app shows.
+func SettingsUpdateSourceMirror() string { return In(i18n.Locale()).SettingsUpdateSourceMirror() }
+
+// SettingsUpdateSourceMirror says "Mirror"
+// in the language of msgs.
+func (msgs Messages) SettingsUpdateSourceMirror() string {
+	return Catalog.Format(msgs.locale, "settingsUpdateSourceMirror", nil)
+}
+
+// SettingsUpdateSourceGitHub says "GitHub"
+// in the language the app shows.
+func SettingsUpdateSourceGitHub() string { return In(i18n.Locale()).SettingsUpdateSourceGitHub() }
+
+// SettingsUpdateSourceGitHub says "GitHub"
+// in the language of msgs.
+func (msgs Messages) SettingsUpdateSourceGitHub() string {
+	return Catalog.Format(msgs.locale, "settingsUpdateSourceGitHub", nil)
+}
+
+// UpdateQuitCanceled says "The app did not quit, so the update was canceled."
+// in the language the app shows.
+func UpdateQuitCanceled() string { return In(i18n.Locale()).UpdateQuitCanceled() }
+
+// UpdateQuitCanceled says "The app did not quit, so the update was canceled."
+// in the language of msgs.
+func (msgs Messages) UpdateQuitCanceled() string {
+	return Catalog.Format(msgs.locale, "updateQuitCanceled", nil)
+}
+
 // AboutTagline says "A fast, calm, local-first desktop bookmark manager."
 // in the language the app shows.
 func AboutTagline() string { return In(i18n.Locale()).AboutTagline() }
