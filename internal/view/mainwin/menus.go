@@ -55,6 +55,37 @@ func menuButtonOptions(p *theme.Palette, open *bool, bottomEnd bool) ui.PopoverM
 	return opts
 }
 
+// releaseFocus hands the keyboard focus back to the bookmark area when a
+// button keeps it after a mouse click, so arrow keys, Enter and Space keep
+// driving the bookmark cursor instead of the button (a menu button reopens
+// its menu on Up/Down). A focus reached by Tab stays put. For a menu
+// button, open is its PopoverMenuButtonOptions.Open: the focus the menu
+// gives back as it closes is released too, even after keyboard use inside
+// the menu.
+func (s *mainState) releaseFocus(c *ui.Context, b ui.Element, open *bool) {
+	if !b.Valid() {
+		return
+	}
+	pending := ui.Local(b, "releaseFocusPending", func() bool { return false })
+	if open != nil {
+		was := ui.Local(b, "releaseFocusWasOpen", func() bool { return false })
+		if *was && !*open {
+			*pending = true
+		}
+		*was = *open
+		if *open {
+			return
+		}
+	}
+	switch {
+	case b.Focused() && (*pending || !b.FocusVisible()):
+		*pending = false
+		s.focusHome(c)
+	case *pending && s.inputFocused(c):
+		*pending = false // a menu item moved the focus into a text field
+	}
+}
+
 func softAccentBg(p *theme.Palette) ui.Color {
 	if p.Dark {
 		return p.AccentBg.Mix(p.Surface, 0.35)

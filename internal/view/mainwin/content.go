@@ -604,6 +604,7 @@ func (s *mainState) buildEmptySubCard(c *ui.Context, p *theme.Palette, g *model.
 			ui.Icon(c, theme.IconPlus).FontSize(13).Shrink(0)
 			ui.Text(c, locales.MenuNewBookmark()).FontSize(12.5).SingleLine()
 		})
+		s.releaseFocus(c, addBtn, nil)
 		if addBtn.Clicked() && a.Win.ShowEditor != nil {
 			a.Win.ShowEditor(app.EditorRequest{GroupID: g.ID, SubID: sub.ID})
 		}
@@ -626,18 +627,22 @@ func rowIconAction(c *ui.Context, p *theme.Palette, icon *ui.SVG, label string, 
 func (s *mainState) buildBookmarkHoverActions(c *ui.Context, p *theme.Palette, b *model.Bookmark, menuOpen *bool, size, iconSize float32) {
 	a := s.app
 	openBtn := rowIconAction(c, p, theme.IconExternal, locales.ActionOpen(), size, iconSize, false)
+	s.releaseFocus(c, openBtn, nil)
 	if openBtn.Clicked() {
 		s.activateBookmark(c, b)
 	}
 	editBtn := rowIconAction(c, p, theme.IconEdit, locales.ActionEdit(), size, iconSize, false)
+	s.releaseFocus(c, editBtn, nil)
 	if editBtn.Clicked() && a.Win.ShowEditor != nil {
 		a.Win.ShowEditor(app.EditorRequest{ID: b.ID})
 	}
 	moveBtn := rowIconAction(c, p, theme.IconMove, locales.ActionMoveTo(), size, iconSize, false)
+	s.releaseFocus(c, moveBtn, nil)
 	if moveBtn.Clicked() {
 		s.openMoveModal([]string{b.ID})
 	}
 	delBtn := rowIconAction(c, p, theme.IconTrash, locales.ActionDelete(), size, iconSize, true)
+	s.releaseFocus(c, delBtn, nil)
 	if delBtn.Clicked() {
 		a.Delete(b.ID)
 	}
@@ -645,6 +650,7 @@ func (s *mainState) buildBookmarkHoverActions(c *ui.Context, p *theme.Palette, b
 	moreBtn.PopoverMenuButton(func(m *ui.Menu) {
 		s.buildBookmarkMenu(c, m, b)
 	}, menuButtonOptions(p, menuOpen, true))
+	s.releaseFocus(c, moreBtn, menuOpen)
 }
 
 func (s *mainState) buildBookmarkListRow(c *ui.Context, p *theme.Palette, g *model.Group, sub model.Sub, b *model.Bookmark, tileSize, minH, padY float32) {
@@ -953,12 +959,12 @@ func (s *mainState) buildTemplatePrompt(c *ui.Context, p *theme.Palette, b *mode
 			if in.Submitted() && a.Open(b, s.tplQuery) {
 				s.tplBookmarkID = ""
 				s.tplQuery = ""
-				s.contentHandle.Focus(c)
+				s.focusHome(c)
 			}
 			if in.Shortcut(0, ui.KeyEscape) {
 				s.tplBookmarkID = ""
 				s.tplQuery = ""
-				s.contentHandle.Focus(c)
+				s.focusHome(c)
 			}
 		})
 		// Live preview of URL with {query} substituted.

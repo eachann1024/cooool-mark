@@ -19,7 +19,7 @@ func (s *mainState) buildHeader(c *ui.Context, p *theme.Palette) {
 	bar := c.TitleBar()
 	h := widget.BarH(bar)
 	padR := max(float32(12), bar.Right+8)
-	showSubBar := g != nil && (len(g.Subs) > 1 || s.addingSub)
+	showSubBar := g != nil
 
 	header := ui.Row(c).Height(h).Shrink(0).AlignItems(ui.Center).Gap(8).
 		Padding(0, padR, 0, 16).DragWindow()
@@ -54,12 +54,17 @@ func (s *mainState) buildHeader(c *ui.Context, p *theme.Palette) {
 				if s.addingSub {
 					s.buildNewSubInput(c, p, g.ID)
 				}
-			})
+			}).PopoverMenu(func(m *ui.Menu) {
+				if m.Item(locales.ActionNewSub()).Icon(theme.MenuIcon(theme.IconFolderPlus)).Chosen() {
+					s.startAddSub(c)
+				}
+			}, menuOptions(p))
 		} else {
 			ui.Box(c).Grow(1).MinWidth(0)
 		}
 
 		newBtn := widget.IconButton(c.Key("new-bookmark-btn"), p, theme.IconPlus, locales.MenuNewBookmark()).Shrink(0)
+		s.releaseFocus(c, newBtn, nil)
 		if newBtn.Clicked() && a.Win.ShowEditor != nil {
 			a.Win.ShowEditor(app.EditorRequest{GroupID: a.Group, SubID: a.Sub})
 		}
@@ -93,7 +98,8 @@ func (s *mainState) buildHeader(c *ui.Context, p *theme.Palette) {
 					a.Win.ShowSettings("")
 				}
 			}
-		}, menuButtonOptions(p, nil, true))
+		}, menuButtonOptions(p, &s.headerMoreOpen, true))
+		s.releaseFocus(c, moreBtn, &s.headerMoreOpen)
 	})
 
 	if showSubBar {
@@ -155,6 +161,7 @@ func (s *mainState) buildSubPill(c *ui.Context, p *theme.Palette, lib *model.Lib
 		}
 		pill.Shadow(0, 4, 12, -4, sortLiftShadow(p))
 	}
+	s.releaseFocus(c, pill, nil)
 	if pill.Clicked() && !quiet {
 		s.clearSearch()
 		s.scrollToSub = sub.ID
@@ -172,12 +179,6 @@ func (s *mainState) buildSubPill(c *ui.Context, p *theme.Palette, lib *model.Lib
 			}
 		}
 		m.Separator()
-		if m.Item(locales.ActionMoveLeft()).Icon(theme.MenuIcon(theme.IconBack)).Disabled(idx == 0).Chosen() {
-			reorderSubByDelta(a, g, idx, -1)
-		}
-		if m.Item(locales.ActionMoveRight()).Icon(theme.MenuIcon(theme.IconChevron)).Disabled(idx >= len(g.Subs)-1).Chosen() {
-			reorderSubByDelta(a, g, idx, 1)
-		}
 		if len(lib.Groups) > 1 {
 			m.Submenu(locales.ActionMoveToOtherGroup(), func(sm *ui.Menu) {
 				for _, targetG := range lib.Groups {
@@ -241,17 +242,4 @@ func (s *mainState) startAddSub(c *ui.Context) {
 	s.newSubDraft = ""
 	s.newSubFocused = false
 	s.newSubHandle.Focus(c)
-}
-
-func reorderSubByDelta(a *app.App, g *model.Group, idx, delta int) {
-	next := idx + delta
-	if next < 0 || next >= len(g.Subs) {
-		return
-	}
-	ids := make([]string, len(g.Subs))
-	for i, sub := range g.Subs {
-		ids[i] = sub.ID
-	}
-	ids[idx], ids[next] = ids[next], ids[idx]
-	a.ReorderSubs(g.ID, ids)
 }

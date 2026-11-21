@@ -88,7 +88,12 @@ type mainState struct {
 	}
 
 	// Handles.
-	searchHandle     ui.Handle
+	searchHandle   ui.Handle
+	headerMoreOpen bool
+	// refocusHome asks the next build to put the focus back home (the
+	// search field while searching), e.g. after the window is reactivated.
+	refocusHome      bool
+	moveWasOpen      bool
 	contentHandle    ui.Handle
 	renameHandle     ui.Handle
 	newSubHandle     ui.Handle
@@ -165,6 +170,14 @@ func Show(a *app.App) {
 		a.FlushSettings()
 	})
 	win.OnClosed(func() { win = nil })
+	w := win
+	win.OnFocus(func() {
+		if state == nil || w.IsDestroyed() {
+			return
+		}
+		state.refocusHome = true
+		w.Invalidate()
+	})
 	if state.searchOpen && !state.moveOpen {
 		state.searchHandle.SelectAll()
 	} else {
@@ -266,6 +279,28 @@ func (s *mainState) view(c *ui.Context) {
 	}
 
 	s.buildMoveModal(c, p)
+
+	if s.moveWasOpen && !s.moveOpen {
+		s.refocusHome = true
+	}
+	s.moveWasOpen = s.moveOpen
+	if s.refocusHome {
+		s.refocusHome = false
+		if !s.moveOpen && (s.searchOpen && !s.tplInputHandle.Focused(c) || !s.inputFocused(c)) {
+			s.focusHome(c)
+		}
+	}
+}
+
+// focusHome puts the keyboard focus where the main view expects it: the
+// search field while searching, so Escape always ends the search, and the
+// bookmark area otherwise, where typing starts a search.
+func (s *mainState) focusHome(c *ui.Context) {
+	if s.searchOpen {
+		s.searchHandle.Focus(c)
+	} else {
+		s.contentHandle.Focus(c)
+	}
 }
 
 func (s *mainState) openSearch(c *ui.Context, initial string, selectAll bool) {
@@ -339,6 +374,7 @@ func (s *mainState) handleGlobalShortcuts(c *ui.Context) {
 			if s.tplBookmarkID != "" {
 				s.tplBookmarkID = ""
 				s.tplQuery = ""
+				s.searchHandle.Focus(c)
 			} else {
 				s.closeSearch(c)
 			}

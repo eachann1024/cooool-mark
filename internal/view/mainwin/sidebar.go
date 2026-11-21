@@ -6,7 +6,6 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
-	"cooool-mark/internal/app"
 	"cooool-mark/internal/locales"
 	"cooool-mark/internal/model"
 	"cooool-mark/internal/theme"
@@ -80,6 +79,7 @@ func (s *mainState) buildSidebar(c *ui.Context, p *theme.Palette) {
 					ui.Icon(c, theme.IconPlus).FontSize(14).Shrink(0)
 					ui.Text(c, locales.ActionNewGroup()).FontSize(12.5).SingleLine()
 				})
+				s.releaseFocus(c, btn, nil)
 				if btn.Clicked() {
 					s.startAddGroup(c)
 				}
@@ -115,6 +115,7 @@ func (s *mainState) buildSidebarEmpty(c *ui.Context, p *theme.Palette, title, bt
 			ui.Icon(c, theme.IconPlus).FontSize(13).Shrink(0)
 			ui.Text(c, btnLabel).FontSize(12.5).FontWeight(500).SingleLine()
 		})
+		s.releaseFocus(c, btn, nil)
 		if btn.Clicked() && onClick != nil {
 			onClick()
 		}
@@ -175,13 +176,6 @@ func (s *mainState) buildSidebarGroupItem(c *ui.Context, p *theme.Palette, lib *
 			s.startAddSub(c)
 		}
 		m.Separator()
-		if m.Item(locales.ActionMoveUp()).Icon(theme.MenuIcon(theme.IconChevronUp)).Disabled(idx == 0).Chosen() {
-			reorderGroupByDelta(a, lib, idx, -1)
-		}
-		if m.Item(locales.ActionMoveDown()).Icon(theme.MenuIcon(theme.IconChevronDown)).Disabled(idx >= len(lib.Groups)-1).Chosen() {
-			reorderGroupByDelta(a, lib, idx, 1)
-		}
-		m.Separator()
 		if m.Item(locales.ActionDeleteGroup()).Icon(theme.MenuIcon(theme.IconTrash)).IconColor(p.Danger).Danger().Chosen() {
 			a.DeleteGroup(g.ID)
 		}
@@ -219,6 +213,7 @@ func (s *mainState) buildSidebarGroupItem(c *ui.Context, p *theme.Palette, lib *
 			}
 			moreBtn.Children(func() { ui.Icon(c, theme.IconMore).FontSize(12) })
 			moreBtn.PopoverMenuButton(buildGroupMenu, menuButtonOptions(p, menuOpen, true))
+			s.releaseFocus(c, moreBtn, menuOpen)
 		}
 	})
 
@@ -226,6 +221,7 @@ func (s *mainState) buildSidebarGroupItem(c *ui.Context, p *theme.Palette, lib *
 	if s.groupSort.Active(g.ID) {
 		row.Background(p.SideSel).Shadow(0, 6, 16, -6, sortLiftShadow(p))
 	}
+	s.releaseFocus(c, mainArea, nil)
 	if mainArea.Clicked() && !quiet {
 		s.closeSearch(c)
 		s.cursorID = ""
@@ -276,19 +272,6 @@ func (s *mainState) startAddGroup(c *ui.Context) {
 	s.newGroupDraft = ""
 	s.newGroupFocused = false
 	s.newGroupHandle.Focus(c)
-}
-
-func reorderGroupByDelta(a *app.App, lib *model.Library, idx, delta int) {
-	next := idx + delta
-	if next < 0 || next >= len(lib.Groups) {
-		return
-	}
-	ids := make([]string, len(lib.Groups))
-	for i, g := range lib.Groups {
-		ids[i] = g.ID
-	}
-	ids[idx], ids[next] = ids[next], ids[idx]
-	a.ReorderGroups(ids)
 }
 
 func (s *mainState) moveBookmarksToGroup(ids []string, groupID string) {

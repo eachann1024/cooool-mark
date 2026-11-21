@@ -22,6 +22,7 @@ type trayMode struct {
 	menu           *mygo.Menu
 	groupID        string
 	menuOpen       bool
+	refocus        bool
 	query          string
 	flyoutSearch   ui.Handle
 	detachedSearch ui.Handle
@@ -45,6 +46,18 @@ func (t *trayMode) searchHandle(detached bool) *ui.Handle {
 		return &t.detachedSearch
 	}
 	return &t.flyoutSearch
+}
+
+// refocusOnActivate asks the panel's next build to focus its search field
+// whenever w becomes the active window again.
+func (t *trayMode) refocusOnActivate(w *mygo.Window) {
+	w.OnFocus(func() {
+		if w.IsDestroyed() {
+			return
+		}
+		t.refocus = true
+		w.Invalidate()
+	})
 }
 
 func (t *trayMode) tmplHandle(detached bool) *ui.Handle {
@@ -255,6 +268,7 @@ func (t *trayMode) showAttached() {
 	t.flyout = w
 	t.app.AddWindow(w)
 	t.flyoutSearch.SelectAll()
+	t.refocusOnActivate(w)
 	w.OnClosed(func() {
 		if t.flyout == w {
 			t.flyout = nil
@@ -311,6 +325,7 @@ func (t *trayMode) tearOff() {
 	w.Show()
 	w.Focus()
 	t.detachedSearch.SelectAll()
+	t.refocusOnActivate(w)
 	w.OnClosed(func() {
 		if t.detached == w {
 			t.detached = nil
@@ -354,6 +369,14 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 
 	searchH := t.searchHandle(detached)
 	tmplH := t.tmplHandle(detached)
+
+	// Coming back to the panel from elsewhere puts the caret back in search.
+	if t.refocus {
+		t.refocus = false
+		if !t.menuOpen && !tmplH.Focused(c) {
+			searchH.Focus(c)
+		}
+	}
 
 	if !t.menuOpen && c.Shortcut(ui.Cmd, ui.KeyF) && !c.ShortcutRepeated() {
 		searchH.SelectAll(c)

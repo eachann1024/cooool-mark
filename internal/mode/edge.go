@@ -36,27 +36,27 @@ type edgeRow struct {
 }
 
 type edgeMode struct {
-	app         *app.App
-	win         *mygo.Window
-	state       edgeState
-	side        string // "left" or "right"
+	app             *app.App
+	win             *mygo.Window
+	state           edgeState
+	side            string // "left" or "right"
 	groupID         string
 	menuOpen        bool
 	autoHideOnLeave bool
 	query           string
-	searchInput ui.Handle
-	hoverSince  time.Time
-	leaveSince  time.Time
-	dragLeftAt  time.Time
-	openedAt    time.Time
-	needSlide   bool
-	tmplID      string
-	tmplQuery   string
-	tmplInput   ui.Handle
-	disp        mygo.Display
-	unsubDisp   func()
-	list        ui.ListState
-	cache       struct {
+	searchInput     ui.Handle
+	hoverSince      time.Time
+	leaveSince      time.Time
+	dragLeftAt      time.Time
+	openedAt        time.Time
+	needSlide       bool
+	tmplID          string
+	tmplQuery       string
+	tmplInput       ui.Handle
+	disp            mygo.Display
+	unsubDisp       func()
+	list            ui.ListState
+	cache           struct {
 		library  *model.Library
 		revision int64
 		groupID  string
