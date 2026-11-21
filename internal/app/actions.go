@@ -619,7 +619,7 @@ func (a *App) DeleteGroup(id string) {
 	}
 	removed := a.purgeWhere(func(b *model.Bookmark) bool { return b.GroupID == id })
 	a.Store.Update(func(l *model.Library) {
-		out := l.Groups[:0]
+		out := make([]model.Group, 0, len(l.Groups))
 		for _, x := range l.Groups {
 			if x.ID != id {
 				out = append(out, x)
@@ -651,7 +651,7 @@ func (a *App) DeleteSub(groupID, subID string) {
 	removed := a.purgeWhere(func(b *model.Bookmark) bool { return b.GroupID == groupID && b.SubID == subID })
 	a.Store.Update(func(l *model.Library) {
 		if g := l.Group(groupID); g != nil {
-			out := g.Subs[:0]
+			out := make([]model.Sub, 0, len(g.Subs))
 			for _, x := range g.Subs {
 				if x.ID != subID {
 					out = append(out, x)
@@ -801,7 +801,7 @@ func (a *App) purgeWhere(match func(*model.Bookmark) bool) []model.Bookmark {
 }
 
 func dropTomb(l *model.Library, id string) {
-	out := l.Tombstones[:0]
+	out := make([]model.Tombstone, 0, len(l.Tombstones))
 	for _, t := range l.Tombstones {
 		if t.ID != id {
 			out = append(out, t)

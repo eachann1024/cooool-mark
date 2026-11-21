@@ -46,15 +46,16 @@ func (s *mainState) buildSidebar(c *ui.Context, p *theme.Palette) {
 				*lastSelected = a.Group
 			}
 			counts := countBookmarksByGroup(lib)
-			ids := make([]string, len(lib.Groups))
-			index := make(map[string]int, len(lib.Groups))
-			for i, g := range lib.Groups {
+			groups := append([]model.Group(nil), lib.Groups...)
+			ids := make([]string, len(groups))
+			index := make(map[string]int, len(groups))
+			for i, g := range groups {
 				ids[i], index[g.ID] = g.ID, i
 			}
 			col.Children(func() {
 				for _, id := range s.groupSort.Order(ids) {
 					i := index[id]
-					g := lib.Groups[i]
+					g := groups[i]
 					s.buildSidebarGroupItem(c, p, lib, i, g, counts[g.ID], revealGroup == g.ID)
 				}
 				if s.addingGroup {

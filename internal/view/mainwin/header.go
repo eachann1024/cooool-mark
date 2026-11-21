@@ -33,15 +33,16 @@ func (s *mainState) buildHeader(c *ui.Context, p *theme.Palette) {
 				pills.Children(func() {
 					row := ui.Row(c.Key("main-tabs-row")).AlignItems(ui.Center).Gap(4)
 					s.subSort.Axis = ui.Horizontal
-					ids := make([]string, len(g.Subs))
-					index := make(map[string]int, len(g.Subs))
-					for i, sub := range g.Subs {
+					subs := append([]model.Sub(nil), g.Subs...)
+					ids := make([]string, len(subs))
+					index := make(map[string]int, len(subs))
+					for i, sub := range subs {
 						ids[i], index[sub.ID] = sub.ID, i
 					}
 					row.Children(func() {
 						for _, id := range s.subSort.Order(ids) {
 							i := index[id]
-							sub := g.Subs[i]
+							sub := subs[i]
 							selected := sub.ID == a.Sub && strings.TrimSpace(s.query) == ""
 							s.buildSubPill(c, p, lib, g, i, sub, selected)
 						}
