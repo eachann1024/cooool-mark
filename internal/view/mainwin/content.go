@@ -667,17 +667,18 @@ func (s *mainState) buildBookmarkListRow(c *ui.Context, p *theme.Palette, g *mod
 		row := ui.Row(c).MinHeight(minH).Padding(padY, 8, padY, 10).Radius(8).Gap(10).
 			AlignItems(ui.Center).Role(ui.RoleOption).Label(b.Title).AccessSelected(selected)
 		menuOpen := ui.Local(row, "rowMenuOpen", func() bool { return false })
+		menuShown := s.bindBookmarkMenu(c, p, row, b)
 
 		hovered := row.Hovered()
 		switch {
-		case selected:
+		case selected || menuShown:
 			row.Background(p.RowSel)
 		case polished:
 			row.Background(softAccentBg(p))
 		case hovered:
 			row.Background(p.Hover)
 		}
-		if selected && !s.inputFocused(c) {
+		if (selected && !s.inputFocused(c)) || menuShown {
 			row.Border(1.5, p.Accent)
 		} else {
 			row.Border(1.5, ui.Transparent)
@@ -729,7 +730,7 @@ func (s *mainState) buildBookmarkListRow(c *ui.Context, p *theme.Palette, g *mod
 			}
 		})
 
-		s.bindBookmarkRowEvents(c, p, mainArea, row, b)
+		s.bindBookmarkRowEvents(c, mainArea, b)
 
 		if s.tplBookmarkID == b.ID {
 			s.buildTemplatePrompt(c, p, b)
@@ -771,6 +772,9 @@ func (s *mainState) buildBookmarkGridCard(c *ui.Context, p *theme.Palette, g *mo
 	if dom := shortDomain(b.URL); dom != "" {
 		card.Tooltip(b.Title + " · " + dom)
 	}
+	// The menu builds in every frame it shows: bind it before styling so the
+	// card is ringed exactly while its menu is up, and not after it closes.
+	menuShown := s.bindBookmarkMenu(c, p, card, b)
 
 	_, dragOver := ui.DragOver[dragPayload](card)
 	if drop, ok := ui.Drop[dragPayload](card); ok {
@@ -781,7 +785,7 @@ func (s *mainState) buildBookmarkGridCard(c *ui.Context, p *theme.Palette, g *mo
 	switch {
 	case dragOver:
 		card.Background(softAccentBg(p)).Border(2, p.Accent).BorderStyle(ui.BorderDashed)
-	case selected:
+	case selected || menuShown:
 		card.Background(softAccentBg(p)).Border(1, p.Accent)
 	case polished:
 		card.Background(softAccentBg(p)).Border(1, p.Line)
@@ -886,13 +890,21 @@ func (s *mainState) bindGridCardEvents(c *ui.Context, p *theme.Palette, card ui.
 			s.activateBookmark(c, b)
 		}
 	}
-	card.PopoverMenu(func(m *ui.Menu) {
-		s.cursorID = b.ID
-		s.buildBookmarkMenu(c, m, b)
-	}, menuOptions(p))
 }
 
-func (s *mainState) bindBookmarkRowEvents(c *ui.Context, p *theme.Palette, clickEl, menuEl ui.Element, b *model.Bookmark) {
+// bindBookmarkMenu gives el the bookmark's right-click menu and reports
+// whether it shows. A right click doesn't move the selection, so no ring is
+// left behind once the menu closes.
+func (s *mainState) bindBookmarkMenu(c *ui.Context, p *theme.Palette, el ui.Element, b *model.Bookmark) bool {
+	shown := false
+	el.PopoverMenu(func(m *ui.Menu) {
+		shown = true
+		s.buildBookmarkMenu(c, m, b)
+	}, menuOptions(p))
+	return shown
+}
+
+func (s *mainState) bindBookmarkRowEvents(c *ui.Context, clickEl ui.Element, b *model.Bookmark) {
 	a := s.app
 	if clickEl.Clicked() {
 		s.cursorID = b.ID
@@ -905,11 +917,6 @@ func (s *mainState) bindBookmarkRowEvents(c *ui.Context, p *theme.Palette, click
 	if clickEl.DoubleClicked() {
 		s.activateBookmark(c, b)
 	}
-
-	menuEl.PopoverMenu(func(m *ui.Menu) {
-		s.cursorID = b.ID
-		s.buildBookmarkMenu(c, m, b)
-	}, menuOptions(p))
 }
 
 func (s *mainState) buildTile(c *ui.Context, b *model.Bookmark, size float32) {
@@ -987,32 +994,6 @@ func (s *mainState) searchHits() []app.Hit {
 		cache.hits = s.app.Search.Search(lib, query, s.searchScope)
 	}
 	return cache.hits
-}
-
-func (s *mainState) buildScopeChip(c *ui.Context, p *theme.Palette, groupID, name string) {
-	on := s.searchScope == groupID
-	b := ui.ButtonBase(c).Label(name).Tooltip(name).Height(25).MaxWidth(168).Shrink(0).
-		PaddingX(11).Radius(999).AlignItems(ui.Center)
-	switch {
-	case on:
-		b.Background(p.AccentBg).TextColor(p.AccentText)
-	case b.Hovered():
-		b.Background(p.RowSel).TextColor(p.Text)
-	default:
-		b.Background(p.Field).TextColor(p.Text2)
-	}
-	b.Children(func() {
-		t := ui.Text(c, name).FontSize(12).SingleLine()
-		if on {
-			t.FontWeight(500)
-		}
-	})
-	if b.Clicked() {
-		s.searchScope = groupID
-		s.searchIdx = 0
-		s.searchList.ScrollTo(0, ui.Start)
-		s.searchHandle.Focus(c)
-	}
 }
 
 func (s *mainState) buildPasteURLCard(c *ui.Context, p *theme.Palette, lib *model.Library, raw string, highlighted bool) {

@@ -289,7 +289,24 @@ func LoadIcon(path string) ui.ImageSource {
 func Tile(c *ui.Context, icon model.Icon, iconPath string, size float32) ui.Element {
 	radius := size * 0.27
 	if src := LoadIcon(iconPath); src != nil {
-		return ui.Image(c, src).Size(size, size).Radius(radius)
+		// A white glyph on transparency vanishes on the light card and a
+		// black one on the dark card: give those a contrasting plate.
+		dark := c.Theme().Dark
+		var plate ui.Color
+		switch tone := LoadIconTone(iconPath); {
+		case tone == ToneLight && !dark:
+			plate = ui.Hex("#2b2a27")
+		case tone == ToneDark && dark:
+			plate = ui.Hex("#eae8e1")
+		default:
+			return ui.Image(c, src).Size(size, size).Radius(radius)
+		}
+		inner := size * 0.72
+		box := ui.Row(c).Size(size, size).Radius(radius).Background(plate).Center()
+		box.Children(func() {
+			ui.Image(c, src).Size(inner, inner)
+		})
+		return box
 	}
 	color := icon.Color
 	if color == "" {

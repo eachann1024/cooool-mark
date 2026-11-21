@@ -57,7 +57,6 @@ func (s *mainState) buildSearchInline(c *ui.Context, p *theme.Palette) {
 			searchIn = ui.TextInputBase(c.Key("sm-q"), &s.query).Bind(&s.searchHandle).
 				Placeholder(locales.SearchModalPlaceholder()).Label(locales.MainSearchPlaceholder()).
 				FontSize(13.5).Grow(1).MinWidth(0).TextColor(p.Text).PlaceholderColor(p.Muted)
-
 			if s.query != "" {
 				clr := ui.ButtonBase(c.Key("sm-clear")).Label(locales.ActionClearSearch()).Tooltip(locales.ActionClearSearch()).
 					Size(20, 20).Radius(5).Center().TextColor(p.Muted).Shrink(0)
@@ -167,19 +166,6 @@ func (s *mainState) buildSearchInline(c *ui.Context, p *theme.Palette) {
 				s.openMoveModal([]string{b.ID})
 			}
 		}
-	}
-
-	// Scope chips strip.
-	if len(lib.Groups) > 0 {
-		widget.AutoScrollbarSlim(c, ui.ScrollHorizontal(c.Key("sm-scopes"))).
-			ScrollbarInsets(0, 24, 0, 24).FillWidth().Height(40).Shrink(0).Children(func() {
-			ui.Row(c).AlignItems(ui.Center).Gap(6).Padding(10, 24, 4, 24).Children(func() {
-				s.buildScopeChip(c.Key("sm-scope-all"), p, "", locales.MainAllGroups())
-				for _, g := range lib.Groups {
-					s.buildScopeChip(c.Key("sm-scope-"+g.ID), p, g.ID, g.Name)
-				}
-			})
-		})
 	}
 
 	// Results fill the content area.
