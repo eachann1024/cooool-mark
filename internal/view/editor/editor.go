@@ -136,6 +136,7 @@ type state struct {
 	note        string
 	titleEdited bool
 	noteEdited  bool
+	noteDirty   bool
 	icon        model.Icon
 	groupID   string
 	subID     string
@@ -166,6 +167,8 @@ type state struct {
 	fetchErr       string
 	justPasted     bool
 	lastFetchedURL string
+	fetchedTitle   string
+	fetchedDesc    string
 	fetchedExcerpt string
 
 	aiSeq       uint64
@@ -304,6 +307,9 @@ func (s *state) load(req app.EditorRequest) {
 	s.lastFetchedURL = ""
 	s.aiSuggest = nil
 	s.aiDismissed = false
+	s.noteDirty = false
+	s.fetchedTitle = ""
+	s.fetchedDesc = ""
 	s.fetchedExcerpt = ""
 
 	lib := s.a.Store.Lib()
@@ -418,6 +424,8 @@ func (s *state) scheduleDebouncedFetch() {
 	s.aiErr = ""
 	s.aiDismissed = false
 	s.fetchErr = ""
+	s.fetchedTitle = ""
+	s.fetchedDesc = ""
 	s.fetchedExcerpt = ""
 	if s.id == "" {
 		s.icon.Image = ""
@@ -504,6 +512,8 @@ func (s *state) startFetch(rawURL string, forceMeta, runAI, iconOnly bool) {
 				if meta.Description != "" && (forceMeta || strings.TrimSpace(s.note) == "") {
 					s.note = meta.Description
 				}
+				s.fetchedTitle = strings.TrimSpace(meta.Title)
+				s.fetchedDesc = strings.TrimSpace(meta.Description)
 				s.fetchedExcerpt = strings.TrimSpace(meta.Excerpt)
 			}
 			if len(meta.Icon) > 0 {
@@ -551,18 +561,34 @@ func (s *state) startAI(force bool) {
 		}
 		return
 	}
-	desc := strings.TrimSpace(s.note)
+	desc := strings.TrimSpace(s.fetchedDesc)
 	if app.IsJunkAINote(desc) {
 		desc = ""
 	}
+	if desc == "" && (!s.polished || s.noteDirty) {
+		if n := strings.TrimSpace(s.note); n != "" && !app.IsJunkAINote(n) {
+			desc = n
+		}
+	}
 	title := strings.TrimSpace(s.title)
-	if s.a.Settings.AIEngine == model.AILocal &&
-		!app.HasGroundedNoteContext(u, title, desc, s.fetchedExcerpt) &&
+	excerpt := strings.TrimSpace(s.fetchedExcerpt)
+	isLocal := s.a.Settings.AIEngine == model.AILocal
+	needFreshFetch := force && s.a.Fetch != nil && s.lastFetchedURL != u &&
+		!strings.Contains(u, "{query}") && !app.IsLocalOrIPURL(u)
+
+	if !needFreshFetch && isLocal &&
+		!app.HasGroundedNoteContext(u, title, desc, excerpt) &&
 		!app.TitleNeedsCleanup(title, u) {
 		if force {
 			s.cancelAI()
 			s.aiSuggest = nil
-			s.aiErr = locales.ToastPolishInsufficient()
+			if strings.TrimSpace(s.note) != "" && ((s.polished && !s.noteDirty) || app.IsJunkAINote(s.note)) {
+				s.note = ""
+				s.polished = false
+				s.aiErr = locales.ToastPolishCleared()
+			} else {
+				s.aiErr = locales.ToastPolishInsufficient()
+			}
 			s.invalidate()
 		}
 		return
@@ -577,24 +603,78 @@ func (s *state) startAI(force bool) {
 		s.aiDismissed = false
 	}
 
-	in := app.PolishInput{
-		URL:         u,
-		Title:       title,
-		Description: desc,
-		Excerpt:     s.fetchedExcerpt,
-		Choices:     s.a.Choices(),
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	choices := s.a.Choices()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	s.aiCancel = cancel
 
 	go func() {
 		defer cancel()
+		var fetchedMeta *app.PageMeta
+		if needFreshFetch {
+			fctx, fcancel := context.WithTimeout(ctx, 20*time.Second)
+			meta, ferr := s.a.Fetch.Fetch(fctx, u)
+			fcancel()
+			if ferr == nil {
+				fetchedMeta = &meta
+				if ft := strings.TrimSpace(meta.Title); ft != "" && (title == "" || len([]rune(ft)) > len([]rune(title))) {
+					title = ft
+				}
+				if fd := strings.TrimSpace(meta.Description); fd != "" && !app.IsJunkAINote(fd) {
+					desc = fd
+				}
+				if fe := strings.TrimSpace(meta.Excerpt); fe != "" {
+					excerpt = fe
+				}
+			}
+		}
+
+		if isLocal &&
+			!app.HasGroundedNoteContext(u, title, desc, excerpt) &&
+			!app.TitleNeedsCleanup(title, u) {
+			s.a.Post(func() {
+				if s.closed || seq != s.aiSeq || strings.TrimSpace(s.url) != u {
+					return
+				}
+				s.aiLoading = false
+				if fetchedMeta != nil {
+					s.lastFetchedURL = u
+					s.fetchedTitle = strings.TrimSpace(fetchedMeta.Title)
+					s.fetchedDesc = strings.TrimSpace(fetchedMeta.Description)
+					s.fetchedExcerpt = strings.TrimSpace(fetchedMeta.Excerpt)
+				}
+				if force {
+					if strings.TrimSpace(s.note) != "" && ((s.polished && !s.noteDirty) || app.IsJunkAINote(s.note)) {
+						s.note = ""
+						s.polished = false
+						s.aiErr = locales.ToastPolishCleared()
+					} else {
+						s.aiErr = locales.ToastPolishInsufficient()
+					}
+				}
+				s.invalidate()
+			})
+			return
+		}
+
+		in := app.PolishInput{
+			URL:         u,
+			Title:       title,
+			Description: desc,
+			Excerpt:     excerpt,
+			Choices:     choices,
+		}
 		p, err := s.a.AI.Polish(ctx, in)
 		s.a.Post(func() {
 			if s.closed || seq != s.aiSeq || strings.TrimSpace(s.url) != u {
 				return
 			}
 			s.aiLoading = false
+			if fetchedMeta != nil {
+				s.lastFetchedURL = u
+				s.fetchedTitle = strings.TrimSpace(fetchedMeta.Title)
+				s.fetchedDesc = strings.TrimSpace(fetchedMeta.Description)
+				s.fetchedExcerpt = strings.TrimSpace(fetchedMeta.Excerpt)
+			}
 			if err != nil {
 				if !errors.Is(err, context.Canceled) {
 					if errors.Is(err, context.DeadlineExceeded) {
@@ -610,6 +690,11 @@ func (s *state) startAI(force bool) {
 			p.Note = strings.TrimSpace(p.Note)
 			if p.Title == "" && p.Note == "" && p.GroupID == "" {
 				s.aiSuggest = nil
+				if force && strings.TrimSpace(s.note) != "" && ((s.polished && !s.noteDirty) || app.IsJunkAINote(s.note)) {
+					s.note = ""
+					s.polished = false
+					s.aiErr = locales.ToastPolishCleared()
+				}
 			} else {
 				s.aiSuggest = &p
 			}

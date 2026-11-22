@@ -354,6 +354,8 @@ func (s *state) cardSection(c *ui.Context, p *theme.Palette) {
 					FontSize(12.5).TextColor(p.Text2)
 				if noteIn.Changed() {
 					s.noteEdited = strings.TrimSpace(s.note) != ""
+					s.noteDirty = true
+					s.polished = false
 				}
 			})
 		})

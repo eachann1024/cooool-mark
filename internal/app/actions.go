@@ -464,7 +464,7 @@ func (a *App) Polish(id string, force bool) {
 	if b == nil || b.InTrash() || (b.Polished && !force) {
 		return
 	}
-	if force && a.Fetch != nil && !isLocalOrIPURL(b.URL) && !b.IsTemplate() {
+	if force && a.Fetch != nil && !IsLocalOrIPURL(b.URL) && !b.IsTemplate() {
 		dir := a.Store.Dir()
 		targetURL := b.URL
 		expectedUpdated := b.UpdatedAt
@@ -553,20 +553,23 @@ func (a *App) polishBookmark(id string, opts polishOptions) {
 
 	if isLocalEngine && !grounded && !needsTitle {
 		if opts.force {
-			if IsJunkAINote(b.Note) {
+			if strings.TrimSpace(b.Note) != "" && (b.Polished || IsJunkAINote(b.Note)) {
 				a.Store.Update(func(l *model.Library) {
 					if bm := l.Bookmark(id); bm != nil {
 						bm.Note = ""
+						bm.Polished = false
 						bm.UpdatedAt = time.Now()
 					}
 				})
+				a.Say(locales.ToastPolishCleared())
+				return
 			}
 			a.Say(locales.ToastPolishInsufficient())
 		}
 		return
 	}
 	if !opts.force {
-		if isLocalOrIPURL(b.URL) && !grounded && !needsTitle {
+		if IsLocalOrIPURL(b.URL) && !grounded && !needsTitle {
 			return
 		}
 		if !opts.fetchedOK && !grounded && !needsTitle {
@@ -602,6 +605,7 @@ func (a *App) polishBookmark(id string, opts polishOptions) {
 			p.Title = strings.TrimSpace(p.Title)
 			p.Note = strings.TrimSpace(p.Note)
 			updatedAny := false
+			clearedNote := false
 			a.Store.Update(func(l *model.Library) {
 				bm := l.Bookmark(id)
 				if bm == nil {
@@ -618,13 +622,18 @@ func (a *App) polishBookmark(id string, opts polishOptions) {
 						bm.Note = p.Note
 						updatedAny = true
 					}
-				} else if opts.force && p.Note == "" && IsJunkAINote(bm.Note) {
+				} else if opts.force && p.Note == "" && strings.TrimSpace(bm.Note) != "" && (bm.Polished || IsJunkAINote(bm.Note)) {
 					bm.Note = ""
 					updatedAny = true
+					clearedNote = true
 				}
-				bm.Polished = true
+				bm.Polished = !clearedNote || p.Note != ""
 				bm.UpdatedAt = time.Now()
 			})
+			if opts.force && clearedNote && p.Note == "" && !grounded {
+				a.Say(locales.ToastPolishCleared())
+				return
+			}
 			if opts.force && !updatedAny && !grounded {
 				a.Say(locales.ToastPolishInsufficient())
 				return
@@ -673,12 +682,13 @@ func HasGroundedNoteContext(rawURL, title, desc, excerpt string) bool {
 	return countCJK(t) >= 18 || len(strings.Fields(t)) >= 7
 }
 
-// TitleNeedsCleanup reports whether title looks noisy, missing, or contains
-// site suffixes that AI title cleanup can usefully simplify.
+// TitleNeedsCleanup reports whether title looks noisy or contains site
+// suffixes that AI title cleanup can usefully simplify. Empty or bare-host
+// fallback titles return false so AI is not called without webpage content.
 func TitleNeedsCleanup(title, rawURL string) bool {
 	t := strings.TrimSpace(title)
 	if t == "" || isReplaceableTitle(t, rawURL, "") {
-		return true
+		return false
 	}
 	if len([]rune(t)) > 24 {
 		return true
@@ -755,7 +765,9 @@ func isReplaceableTitle(title, rawURL, fallbackTitle string) bool {
 	return host != "" && strings.EqualFold(t, host)
 }
 
-func isLocalOrIPURL(raw string) bool {
+// IsLocalOrIPURL reports whether raw points to localhost, a .local host, or a
+// bare IP address.
+func IsLocalOrIPURL(raw string) bool {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return false
