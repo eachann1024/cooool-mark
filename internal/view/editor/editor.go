@@ -130,11 +130,13 @@ type state struct {
 	closed bool
 
 	// Bookmark fields
-	id        string
-	url       string
-	title     string
-	note      string
-	icon      model.Icon
+	id          string
+	url         string
+	title       string
+	note        string
+	titleEdited bool
+	noteEdited  bool
+	icon        model.Icon
 	groupID   string
 	subID     string
 	createdAt time.Time
@@ -315,6 +317,8 @@ func (s *state) load(req app.EditorRequest) {
 			s.createdAt = b.CreatedAt
 			s.order = b.Order
 			s.polished = b.Polished
+			s.titleEdited = true
+			s.noteEdited = true
 			if s.icon.Letter == "" || s.icon.Color == "" {
 				def := theme.DefaultIcon(s.title, s.url)
 				if s.icon.Letter == "" {
@@ -335,6 +339,8 @@ func (s *state) load(req app.EditorRequest) {
 	s.url = strings.TrimSpace(req.URL)
 	s.title = strings.TrimSpace(req.Title)
 	s.note = ""
+	s.titleEdited = s.title != ""
+	s.noteEdited = false
 	s.createdAt = time.Time{}
 	s.order = 0
 	s.polished = false
@@ -412,6 +418,12 @@ func (s *state) scheduleDebouncedFetch() {
 	s.fetchErr = ""
 	if s.id == "" {
 		s.icon.Image = ""
+		if !s.titleEdited {
+			s.title = ""
+		}
+		if !s.noteEdited {
+			s.note = ""
+		}
 	}
 	if !looksLikeURL(u) {
 		s.justPasted = false
@@ -544,10 +556,14 @@ func (s *state) startAI(force bool) {
 		s.aiDismissed = false
 	}
 
+	desc := strings.TrimSpace(s.note)
+	if app.IsJunkAINote(desc) {
+		desc = ""
+	}
 	in := app.PolishInput{
 		URL:         u,
 		Title:       strings.TrimSpace(s.title),
-		Description: strings.TrimSpace(s.note),
+		Description: desc,
 		Choices:     s.a.Choices(),
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
@@ -669,9 +685,12 @@ func (s *state) doSave() bool {
 		s.commitNewSub()
 	}
 
-	title := strings.TrimSpace(s.title)
+	isNew := s.id == ""
+	rawTitle := strings.TrimSpace(s.title)
+	fallbackTitle := fallbackTitleFromURL(u)
+	title := rawTitle
 	if title == "" {
-		title = fallbackTitleFromURL(u)
+		title = fallbackTitle
 	}
 
 	s.ensureValidPlace()
@@ -692,6 +711,29 @@ func (s *state) doSave() bool {
 		Order:     s.order,
 		CreatedAt: s.createdAt,
 		Polished:  s.polished,
+	}
+	if isNew {
+		fetchedOK := !s.fetching && s.fetchErr == "" && s.lastFetchedURL != "" &&
+			(s.lastFetchedURL == u || strings.TrimSpace(s.url) == s.lastFetchedURL)
+		needFetch := s.a.Fetch != nil && !fetchedOK
+		allowTitle := !s.titleEdited
+		allowNote := !s.noteEdited
+		// If the editor already produced a visible AI suggestion that the user
+		// chose not to apply, respect that choice instead of overwriting it in
+		// the background.
+		allowPolish := !s.polished && !s.aiDismissed && s.aiSuggest == nil && (allowTitle || allowNote)
+		if s.a.SaveNewBookmark(bm, app.EnrichOptions{
+			Fetch:         needFetch,
+			AllowTitle:    allowTitle,
+			AllowNote:     allowNote,
+			AllowPolish:   allowPolish,
+			FallbackTitle: fallbackTitle,
+		}) == "" {
+			s.saveErr = locales.EditorErrDeleted()
+			s.invalidate()
+			return false
+		}
+		return true
 	}
 	if s.a.SaveBookmark(bm) == "" {
 		s.saveErr = locales.EditorErrDeleted()

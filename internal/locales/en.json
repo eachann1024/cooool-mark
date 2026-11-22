@@ -53,7 +53,6 @@
   "actionCopy": "Copy",
   "actionCopyURL": "Copy URL",
   "actionCopyTitle": "Copy Title",
-  "actionCopyMarkdown": "Copy as Markdown",
   "actionAIPolish": "AI Polish",
   "actionAIRePolish": "AI Re-polish",
   "actionRefreshIcon": "Refresh Icon",
@@ -131,6 +130,7 @@
   "mainTemplateLabel": "Template query",
   "mainTemplateOpenHint": "↵ Open",
   "mainPolishedBadge": "Polished",
+  "mainEnrichingBadge": "Fetching…",
   "mainDropDefaultTarget": "Bookmarks",
   "searchModalPlaceholder": "Search title, URL, or paste a URL to save…",
   "searchModalCloseTip": "Return to bookmarks (Esc)",
@@ -238,12 +238,7 @@
   "settingsOpenAtLoginErr": "Unable to update launch at login",
   "settingsLaunchInBackground": "Launch in Background",
   "settingsHideDockIcon": "Always Hide Dock Icon",
-  "settingsGlobalSearch": "Global Quick Search",
   "settingsNotifications": "System Notifications",
-  "settingsDefaultView": "Default View",
-  "settingsViewList": "List",
-  "settingsViewGrid": "Grid",
-  "settingsShowNotes": "Show Notes",
   "settingsSummonModes": "Summon Modes",
   "settingsModeTray": "Menu Bar",
   "settingsModeNotch": "Notch",
@@ -265,9 +260,7 @@
   "settingsShortcutRejected": "Shortcut was rejected by the desktop",
   "settingsShortcutPending": "Waiting for desktop confirmation…",
   "settingsShortcutFailed": "Unavailable: {err}",
-  "settingsIntegrationTitle": "URL Scheme & Integrations",
-  "settingsURLSchemeCopyTip": "Copy example URL",
-  "settingsAboutUpdates": "Updates & About",
+  "settingsAboutUpdates": "Updates",
   "settingsCurrentVersion": "Version {version}",
   "settingsCheckingUpdate": "Checking…",
   "settingsUpToDate": "You’re up to date",
@@ -275,7 +268,6 @@
   "settingsUpdateCheckFailed": "Check failed: {err}",
   "settingsOpenDownload": "Download Installer",
   "settingsViewRelease": "Release Notes",
-  "settingsOpenAbout": "About",
   "settingsUpdateDownload": "Download & Install",
   "settingsUpdateDownloading": "Downloading… {percent}%",
   "settingsUpdatePreparing": "Verifying…",
@@ -504,7 +496,6 @@
   },
   "toastCopiedURL": "URL copied",
   "toastCopiedTitle": "Title copied",
-  "toastCopiedMarkdown": "Markdown link copied",
   "toastCopyFailed": "Copy failed: {err}",
   "toastFileMissing": "File not found: {name}",
   "toastNoIconFetched": "No site icon found",
@@ -535,51 +526,6 @@
   "cardSizeCompact": "Compact",
   "cardSizeStandard": "Standard",
   "cardSizeDetail": "Detailed",
-  "settingsCompactCard": "Compact Card",
-  "settingsCompactPresetTitle": "Title Only",
-  "settingsCompactPresetTwo": "2-Line Note",
-  "settingsCompactPresetAiry": "Airy",
-  "settingsCompactReset": "Reset",
-  "settingsCompactPreview": "Live Preview",
-  "settingsCompactPreviewTitleOnly": "Title only · W {w} · H {h}px",
-  "@settingsCompactPreviewTitleOnly": {
-    "placeholders": {
-      "w": {
-        "type": "int"
-      },
-      "h": {
-        "type": "int"
-      }
-    }
-  },
-  "settingsCompactPreviewNotes": "W {w} · H {h}px · {lines} lines",
-  "@settingsCompactPreviewNotes": {
-    "placeholders": {
-      "w": {
-        "type": "int"
-      },
-      "h": {
-        "type": "int"
-      },
-      "lines": {
-        "type": "int"
-      }
-    }
-  },
-  "settingsCompactNoteLines": "Note Lines",
-  "settingsCompactNoteLinesZero": "0 lines · Title only",
-  "settingsCompactNoteLinesVal": "{count, plural, one {# line} other {# lines}}",
-  "@settingsCompactNoteLinesVal": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "settingsCompactWidth": "Card Width",
-  "settingsCompactGap": "Card Gap",
-  "settingsCompactPad": "Padding",
-  "settingsCompactRadius": "Corner Radius",
   "actionCopyURLs": "Copy {count} Bookmark URLs",
   "@actionCopyURLs": {
     "placeholders": {
@@ -590,14 +536,6 @@
   },
   "actionCopyTitles": "Copy {count} Titles",
   "@actionCopyTitles": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "actionCopyMarkdowns": "Copy {count} as Markdown",
-  "@actionCopyMarkdowns": {
     "placeholders": {
       "count": {
         "type": "int"
@@ -644,8 +582,9 @@
       }
     }
   },
-  "toastCopiedMarkdowns": "Copied {count} Markdown links",
-  "@toastCopiedMarkdowns": {
+  "actionCopyMarkdown": "Copy as Markdown",
+  "toastCopiedMarkdownCount": "Copied {count} bookmarks as Markdown",
+  "@toastCopiedMarkdownCount": {
     "placeholders": {
       "count": {
         "type": "int"

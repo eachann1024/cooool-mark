@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"net"
 	"net/url"
 	"slices"
 	"strings"
@@ -16,12 +17,62 @@ import (
 
 // ---- bookmarks ----
 
+// EnrichOptions controls background webpage recognition and AI auto-polish
+// after a bookmark is saved.
+type EnrichOptions struct {
+	Fetch         bool
+	AllowTitle    bool
+	AllowNote     bool
+	AllowPolish   bool
+	FallbackTitle string
+}
+
+// IsEnriching reports whether bookmark id currently has a background fetch or
+// AI polish job running.
+func (a *App) IsEnriching(id string) bool {
+	return a.Enriching[id] > 0
+}
+
+func (a *App) startEnriching(id string) {
+	if a.Enriching == nil {
+		a.Enriching = map[string]int{}
+	}
+	a.Enriching[id]++
+	a.Invalidate()
+}
+
+func (a *App) stopEnriching(id string) {
+	if a.Enriching == nil {
+		return
+	}
+	if n := a.Enriching[id]; n <= 1 {
+		delete(a.Enriching, id)
+	} else {
+		a.Enriching[id] = n - 1
+	}
+	a.Invalidate()
+}
+
 // SaveBookmark adds b (ID "") or replaces the bookmark with its ID. It
 // returns the id. New bookmarks go to the end of their sub-group. With AI
 // auto-polish on and the bookmark not yet polished, a background pass
 // fills empty fields afterwards (never blocking the save).
 func (a *App) SaveBookmark(b model.Bookmark) string {
 	return a.saveBookmark(b, true, true)
+}
+
+// SaveNewBookmark saves a new bookmark immediately and optionally runs
+// background webpage recognition (title, description, icon) and AI auto-polish
+// without blocking the caller.
+func (a *App) SaveNewBookmark(b model.Bookmark, opts EnrichOptions) string {
+	id := a.saveBookmark(b, true, false)
+	if id == "" {
+		return ""
+	}
+	if opts.Fetch || opts.AllowPolish {
+		a.EnrichBookmark(id, opts)
+	}
+	return id
 }
 
 func (a *App) saveBookmark(b model.Bookmark, toast, autoPolish bool) string {
@@ -136,13 +187,12 @@ func (a *App) QuickAddToPlace(rawURL, title, groupID, subID string, silent bool)
 		fallbackTitle = hostFallbackTitle(cleanURL)
 	}
 
-	deferPolish := a.Fetch != nil
 	id := a.saveBookmark(model.Bookmark{
 		Title:   fallbackTitle,
 		URL:     cleanURL,
 		GroupID: groupID,
 		SubID:   subID,
-	}, true, !deferPolish)
+	}, true, false)
 	if id == "" {
 		return ""
 	}
@@ -157,20 +207,54 @@ func (a *App) QuickAddToPlace(rawURL, title, groupID, subID string, silent bool)
 		})
 	}
 
-	if !deferPolish {
-		return id
+	a.EnrichBookmark(id, EnrichOptions{
+		Fetch:         a.Fetch != nil,
+		AllowTitle:    !hasExplicitTitle,
+		AllowNote:     true,
+		AllowPolish:   true,
+		FallbackTitle: fallbackTitle,
+	})
+	return id
+}
+
+// EnrichBookmark fetches page metadata/icon (when requested) and then runs
+// background AI auto-polish for bookmark id without blocking the UI.
+func (a *App) EnrichBookmark(id string, opts EnrichOptions) {
+	b := a.Store.Lib().Bookmark(id)
+	if b == nil || b.InTrash() {
+		return
 	}
+	if !opts.Fetch || a.Fetch == nil {
+		if opts.AllowPolish {
+			a.polishBookmark(id, polishOptions{
+				force:         false,
+				allowTitle:    opts.AllowTitle,
+				allowNote:     opts.AllowNote,
+				fallbackTitle: opts.FallbackTitle,
+				fetchedOK:     true,
+			})
+		}
+		return
+	}
+
 	dir := a.Store.Dir()
-	Background(12*time.Second, func(ctx context.Context) {
-		meta, err := a.Fetch.Fetch(ctx, cleanURL)
+	targetURL := b.URL
+	expectedUpdated := b.UpdatedAt
+	a.startEnriching(id)
+
+	Background(20*time.Second, func(ctx context.Context) {
+		meta, err := a.Fetch.Fetch(ctx, targetURL)
 		a.Post(func() {
-			b := a.Store.Lib().Bookmark(id)
-			if a.Store.Dir() != dir || b == nil || b.URL != cleanURL {
+			defer a.stopEnriching(id)
+			cur := a.Store.Lib().Bookmark(id)
+			if a.Store.Dir() != dir || cur == nil || cur.InTrash() || cur.URL != targetURL || !cur.UpdatedAt.Equal(expectedUpdated) {
 				return
 			}
+			fetchedDesc := ""
 			if err == nil {
+				fetchedDesc = strings.TrimSpace(meta.Description)
 				var iconRel string
-				if len(meta.Icon) > 0 && b.Icon.Image == "" {
+				if len(meta.Icon) > 0 && cur.Icon.Image == "" {
 					ext := meta.IconExt
 					if ext == "" {
 						ext = ".png"
@@ -180,26 +264,40 @@ func (a *App) QuickAddToPlace(rawURL, title, groupID, subID string, silent bool)
 					}
 				}
 				a.Store.Update(func(l *model.Library) {
-					b := l.Bookmark(id)
-					if b == nil {
+					bm := l.Bookmark(id)
+					if bm == nil {
 						return
 					}
-					if meta.Title != "" && (!hasExplicitTitle && (b.Title == "" || b.Title == fallbackTitle || b.Title == b.URL)) {
-						b.Title = meta.Title
+					changed := false
+					if meta.Title != "" && opts.AllowTitle && isReplaceableTitle(bm.Title, bm.URL, opts.FallbackTitle) {
+						bm.Title = meta.Title
+						changed = true
 					}
-					if meta.Description != "" && b.Note == "" {
-						b.Note = meta.Description
+					if fetchedDesc != "" && opts.AllowNote && strings.TrimSpace(bm.Note) == "" {
+						bm.Note = fetchedDesc
+						changed = true
 					}
-					if iconRel != "" && b.Icon.Image == "" {
-						b.Icon.Image = iconRel
+					if iconRel != "" && bm.Icon.Image == "" {
+						bm.Icon.Image = iconRel
+						changed = true
 					}
-					b.UpdatedAt = time.Now()
+					if changed {
+						bm.UpdatedAt = time.Now()
+					}
 				})
 			}
-			a.Polish(id, false)
+			if opts.AllowPolish {
+				a.polishBookmark(id, polishOptions{
+					force:         false,
+					allowTitle:    opts.AllowTitle,
+					allowNote:     opts.AllowNote,
+					fallbackTitle: opts.FallbackTitle,
+					fetchedDesc:   fetchedDesc,
+					fetchedOK:     err == nil,
+				})
+			}
 		})
 	})
-	return id
 }
 
 func (a *App) resolveTargetPlace(groupName, subName string) (string, string) {
@@ -335,51 +433,99 @@ func nextOrder(l *model.Library, g, s string) float64 {
 	return max + 1
 }
 
-// Polish asks the AI to fill a saved bookmark's empty title/note.
-// A manual request can replace fields and change its sub-group. Results
-// land quietly; the row flashes "已润色" through PolishedAt.
+type polishOptions struct {
+	force         bool
+	allowTitle    bool
+	allowNote     bool
+	fallbackTitle string
+	fetchedDesc   string
+	fetchedOK     bool
+}
+
+// Polish asks the AI to refine a saved bookmark's title and note without
+// moving it out of its user-chosen group. Results land quietly; the row
+// flashes "已润色" through PolishedAt.
 func (a *App) Polish(id string, force bool) {
-	if a.AI == nil || (!force && !a.Settings.AIAutoPolish) || !a.AI.Status().Ready {
+	a.polishBookmark(id, polishOptions{
+		force:      force,
+		allowTitle: force,
+		allowNote:  force,
+		fetchedOK:  true,
+	})
+}
+
+func (a *App) polishBookmark(id string, opts polishOptions) {
+	if a.AI == nil || (!opts.force && !a.Settings.AIAutoPolish) || !a.AI.Status().Ready {
 		return
 	}
 	b := a.Store.Lib().Bookmark(id)
-	if b == nil || (b.Polished && !force) {
+	if b == nil || b.InTrash() || (b.Polished && !opts.force) {
 		return
 	}
+
+	desc := strings.TrimSpace(b.Note)
+	if IsJunkAINote(desc) {
+		desc = ""
+	}
+	if desc == "" && opts.fetchedDesc != "" {
+		desc = opts.fetchedDesc
+	}
+
+	title := strings.TrimSpace(b.Title)
+	hasMeaningfulTitle := title != "" && !isReplaceableTitle(title, b.URL, opts.fallbackTitle)
+
+	// Avoid hallucinating descriptions for bare IPs/local addresses or failed
+	// fetches that returned no title and no description during auto-polish.
+	if !opts.force {
+		if isLocalOrIPURL(b.URL) && !hasMeaningfulTitle && desc == "" {
+			return
+		}
+		if !opts.fetchedOK && !hasMeaningfulTitle && desc == "" {
+			return
+		}
+	}
+
 	dir, updated := a.Store.Dir(), b.UpdatedAt
-	in := PolishInput{URL: b.URL, Title: b.Title, Description: b.Note, Choices: a.Choices()}
+	// Do not pass group choices here: saved bookmarks already live in the
+	// user's chosen group, and omitting choices keeps small local models
+	// focused on clean title & note generation.
+	in := PolishInput{
+		URL:         b.URL,
+		Title:       title,
+		Description: desc,
+	}
+	a.startEnriching(id)
 	Background(60*time.Second, func(ctx context.Context) {
 		p, err := a.AI.Polish(ctx, in)
 		a.Post(func() {
+			defer a.stopEnriching(id)
 			current := a.Store.Lib().Bookmark(id)
 			if current == nil || current.InTrash() || a.Store.Dir() != dir || !current.UpdatedAt.Equal(updated) {
 				return
 			}
 			if err != nil {
-				if force {
+				if opts.force {
 					a.SayErr(locales.ToastPolishFailed(), locales.ActionRetry(), func() { a.Polish(id, true) })
 				}
 				return
 			}
+			p.Title = strings.TrimSpace(p.Title)
+			p.Note = strings.TrimSpace(p.Note)
 			a.Store.Update(func(l *model.Library) {
-				b := l.Bookmark(id)
-				if b == nil {
+				bm := l.Bookmark(id)
+				if bm == nil {
 					return
 				}
-				if p.Title != "" && (force || b.Title == "" || b.Title == b.URL) {
-					b.Title = p.Title
+				if p.Title != "" && (opts.force || opts.allowTitle || isReplaceableTitle(bm.Title, bm.URL, opts.fallbackTitle)) {
+					bm.Title = p.Title
 				}
-				if p.Note != "" && (force || b.Note == "") {
-					b.Note = p.Note
+				if p.Note != "" && (opts.force || opts.allowNote || strings.TrimSpace(bm.Note) == "" || IsJunkAINote(bm.Note)) {
+					bm.Note = p.Note
+				} else if opts.force && p.Note == "" && IsJunkAINote(bm.Note) {
+					bm.Note = ""
 				}
-				if force && p.GroupID != "" && l.Sub(p.GroupID, p.SubID) != nil {
-					if b.GroupID != p.GroupID || b.SubID != p.SubID {
-						b.Order = nextOrder(l, p.GroupID, p.SubID)
-						b.GroupID, b.SubID = p.GroupID, p.SubID
-					}
-				}
-				b.Polished = true
-				b.UpdatedAt = time.Now()
+				bm.Polished = true
+				bm.UpdatedAt = time.Now()
 			})
 			completed := time.Now()
 			a.PolishedAt[id] = completed
@@ -392,6 +538,78 @@ func (a *App) Polish(id string, force bool) {
 			})
 		})
 	})
+}
+
+func isReplaceableTitle(title, rawURL, fallbackTitle string) bool {
+	t := strings.TrimSpace(title)
+	if t == "" || t == rawURL {
+		return true
+	}
+	if fallbackTitle != "" && strings.EqualFold(t, strings.TrimSpace(fallbackTitle)) {
+		return true
+	}
+	host := hostFallbackTitle(rawURL)
+	return host != "" && strings.EqualFold(t, host)
+}
+
+func isLocalOrIPURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(strings.TrimSpace(u.Hostname()))
+	if host == "" || host == "localhost" || strings.HasSuffix(host, ".local") {
+		return true
+	}
+	return net.ParseIP(host) != nil
+}
+
+// IsJunkAINote reports whether note looks like meta-commentary about grouping
+// or an empty placeholder rather than an actual webpage summary.
+func IsJunkAINote(note string) bool {
+	s := strings.TrimSpace(note)
+	if s == "" {
+		return false
+	}
+	low := strings.ToLower(s)
+	junkSubstrings := []string{
+		"无需特殊分组",
+		"无需分组",
+		"不需要特殊分组",
+		"不需要分组",
+		"无匹配分组",
+		"没有匹配的分组",
+		"没有合适分组",
+		"未找到匹配分组",
+		"无需归类",
+		"属于通用功能",
+		"可选分组",
+		"分组路径",
+		"留空",
+		"空字符串",
+		"暂无简介",
+		"暂无备注",
+		"无备注",
+		"无简介",
+		"一句话中文备注",
+		"no special group",
+		"no matching group",
+		"no suitable group",
+		"no group needed",
+		"empty string",
+		"one-sentence note",
+		"general function",
+	}
+	for _, sub := range junkSubstrings {
+		if strings.Contains(low, sub) {
+			return true
+		}
+	}
+	switch low {
+	case "无", "暂无", "未知", "n/a", "none", "null", "unknown", "-":
+		return true
+	}
+	return false
 }
 
 // Move moves bookmarks to a sub-group (single membership: they leave

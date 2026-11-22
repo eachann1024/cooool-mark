@@ -76,7 +76,7 @@ func (m *llamaManager) polish(ctx context.Context, s model.Settings, modelPath s
 
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d/v1", inst.port)
 	extra := map[string]any{
-		"response_format": map[string]any{"type": "json_object"},
+		"response_format": polishJSONSchema(len(in.Choices) > 0),
 		"chat_template_kwargs": map[string]any{
 			"enable_thinking": false,
 		},
@@ -145,7 +145,7 @@ func (m *llamaManager) acquire(ctx context.Context, s model.Settings, modelPath 
 			"-m", modelPath,
 			"--host", "127.0.0.1",
 			"--port", strconv.Itoa(port),
-			"-c", "2048",
+			"-c", "4096",
 		)
 		cmd.Dir = filepath.Dir(binPath)
 		hideWindow(cmd)

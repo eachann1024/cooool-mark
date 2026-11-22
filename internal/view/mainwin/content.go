@@ -661,6 +661,7 @@ func (s *mainState) buildBookmarkListRow(c *ui.Context, p *theme.Palette, g *mod
 	keyC := c.Key("bm-" + b.ID)
 	selected := s.isBookmarkSelected(b.ID)
 	_, polished := a.PolishedAt[b.ID]
+	enriching := a.IsEnriching(b.ID)
 
 	wrap := ui.Column(keyC).FillWidth()
 	_, dragOver := ui.DragOver[dragPayload](wrap)
@@ -711,7 +712,9 @@ func (s *mainState) buildBookmarkListRow(c *ui.Context, p *theme.Palette, g *mod
 						if b.IsTemplate() {
 							ui.Icon(c, theme.IconBraces).FontSize(13).TextColor(p.Primary).Shrink(0)
 						}
-						if polished {
+						if enriching {
+							enrichingBadge(c, p)
+						} else if polished {
 							polishedBadge(c, p)
 						}
 					})
@@ -776,6 +779,7 @@ func (s *mainState) buildBookmarkGridCard(c *ui.Context, p *theme.Palette, g *mo
 	keyC := c.Key("grid-bm-" + b.ID)
 	selected := s.isBookmarkSelected(b.ID)
 	_, polished := a.PolishedAt[b.ID]
+	enriching := a.IsEnriching(b.ID)
 
 	card := ui.Row(keyC).MinWidth(0).Height(spec.h).Padding(spec.padY, spec.padX).Radius(spec.radius).
 		Role(ui.RoleOption).Label(b.Title).AccessSelected(selected).Cursor(ui.CursorPointer)
@@ -835,7 +839,9 @@ func (s *mainState) buildBookmarkGridCard(c *ui.Context, p *theme.Palette, g *mo
 			if b.IsTemplate() {
 				ui.Icon(c, theme.IconBraces).FontSize(12).TextColor(p.Primary).Shrink(0).Margin(2, 0, 0, 0)
 			}
-			if polished {
+			if enriching {
+				enrichingBadge(c, p)
+			} else if polished {
 				polishedBadge(c, p)
 			}
 		})
@@ -1105,6 +1111,12 @@ func (s *mainState) buildPasteURLCard(c *ui.Context, p *theme.Palette, lib *mode
 func polishedBadge(c *ui.Context, p *theme.Palette) {
 	ui.Row(c).Height(18).PaddingX(6).Radius(5).Background(p.Surface).AlignItems(ui.Center).Shrink(0).Children(func() {
 		ui.Text(c, locales.MainPolishedBadge()).FontSize(11).TextColor(p.AccentText).SingleLine()
+	})
+}
+
+func enrichingBadge(c *ui.Context, p *theme.Palette) {
+	ui.Row(c).Height(18).PaddingX(6).Radius(5).Background(p.Field).AlignItems(ui.Center).Shrink(0).Children(func() {
+		ui.Text(c, locales.MainEnrichingBadge()).FontSize(11).TextColor(p.Muted).SingleLine()
 	})
 }
 

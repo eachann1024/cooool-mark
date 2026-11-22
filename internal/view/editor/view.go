@@ -316,12 +316,15 @@ func (s *state) cardSection(c *ui.Context, p *theme.Palette) {
 
 			ui.Column(c).Grow(1).MinWidth(0).Gap(6).Children(func() {
 				ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
-					ui.TextInputBase(c.Key(fmt.Sprintf("title-in-%d", s.sessionSeq)), &s.title).
+					titleIn := ui.TextInputBase(c.Key(fmt.Sprintf("title-in-%d", s.sessionSeq)), &s.title).
 						Bind(&s.titleHandle).
 						Grow(1).MinWidth(0).Height(30).
 						Placeholder(locales.EditorTitlePlaceholder()).
 						Label(locales.EditorTitleLabel()).
 						FontSize(15).FontWeight(600).TextColor(p.Text)
+					if titleIn.Changed() {
+						s.titleEdited = strings.TrimSpace(s.title) != ""
+					}
 					if s.aiReady() {
 						aiLabel, aiName, aiTip := locales.EditorPolishShort(), locales.ActionAIPolish(), locales.EditorPolishTip()
 						if s.aiLoading {
@@ -344,11 +347,14 @@ func (s *state) cardSection(c *ui.Context, p *theme.Palette) {
 					}
 				})
 
-				ui.TextAreaBase(c.Key(fmt.Sprintf("note-in-%d", s.sessionSeq)), &s.note).
+				noteIn := ui.TextAreaBase(c.Key(fmt.Sprintf("note-in-%d", s.sessionSeq)), &s.note).
 					FillWidth().Height(52).
 					Placeholder(locales.EditorNotePlaceholder()).
 					Label(locales.EditorNoteLabel()).
 					FontSize(12.5).TextColor(p.Text2)
+				if noteIn.Changed() {
+					s.noteEdited = strings.TrimSpace(s.note) != ""
+				}
 			})
 		})
 

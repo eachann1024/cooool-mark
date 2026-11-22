@@ -278,10 +278,6 @@ func bindBookmarkPopoverMenu(
 			*menuOpen = false
 			copyModeText(c, a, b.Title, locales.ToastCopiedTitle())
 		}
-		if m.Item(locales.ActionCopyMarkdown()).Icon(theme.MenuIcon(theme.IconCode)).Disabled(b.URL == "").Chosen() {
-			*menuOpen = false
-			copyModeText(c, a, "["+b.Title+"]("+b.URL+")", locales.ToastCopiedMarkdown())
-		}
 		m.Separator()
 		if m.Item(locales.ActionEdit()).Icon(theme.MenuIcon(theme.IconEdit)).Chosen() {
 			*menuOpen = false

@@ -175,6 +175,9 @@ func (s *mainState) buildSidebarGroupItem(c *ui.Context, p *theme.Palette, lib *
 			a.Go(g.ID, "")
 			s.startAddSub(c)
 		}
+		if m.Item(locales.ActionCopyMarkdown()).Icon(theme.MenuIcon(theme.IconCopy)).Disabled(count == 0).Chosen() {
+			s.copyGroupMarkdown(c, g.ID)
+		}
 		m.Separator()
 		if m.Item(locales.ActionDeleteGroup()).Icon(theme.MenuIcon(theme.IconTrash)).IconColor(p.Danger).Danger().Chosen() {
 			a.DeleteGroup(g.ID)

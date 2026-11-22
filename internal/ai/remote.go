@@ -56,8 +56,8 @@ func polishOpenAICompat(
 			{Role: "system", Content: inst},
 			{Role: "user", Content: prompt},
 		},
-		"temperature": 0.2,
-		"max_tokens":  350,
+		"temperature": 0.15,
+		"max_tokens":  256,
 	}
 	for k, v := range extraFields {
 		payload[k] = v
@@ -112,5 +112,5 @@ func polishOpenAICompat(
 	if len(parsed.Choices) == 0 {
 		return app.Polish{}, errors.New(locales.AiErrEmptyResult())
 	}
-	return parsePolishJSON(parsed.Choices[0].Message.Content, in.Choices)
+	return parsePolishJSON(parsed.Choices[0].Message.Content, in)
 }

@@ -135,6 +135,8 @@ type App struct {
 	notifiedUpdate   string
 	// PolishedAt marks bookmarks the AI just filled, for a 1.5 s highlight.
 	PolishedAt map[string]time.Time
+	// Enriching counts active background fetch / AI polish tasks per bookmark.
+	Enriching map[string]int
 }
 
 // PeekSettings reads settings.json before mygo.App.Run() starts.
@@ -159,6 +161,7 @@ func New() (*App, error) {
 	a := &App{
 		settingsPath:    filepath.Join(userData, "settings.json"),
 		PolishedAt:      map[string]time.Time{},
+		Enriching:       map[string]int{},
 		ShortcutErrs:    map[string]string{},
 		ShortcutBound:   map[string]string{},
 		ShortcutPending: map[string]bool{},

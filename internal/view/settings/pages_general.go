@@ -2,7 +2,6 @@ package settings
 
 import (
 	"fmt"
-	"math"
 	"runtime"
 	"strconv"
 	"strings"
@@ -49,37 +48,11 @@ func (s *state) pageGeneral(c *ui.Context, p *theme.Palette) {
 			a.Settings.NotificationsOff = !notifOn
 			a.SaveSettings()
 		})
-		segmentedRow(c, p, locales.SettingsDefaultView(), a.Settings.DefaultView,
-			[]string{locales.SettingsViewList(), locales.SettingsViewGrid()},
-			[]string{"list", "grid"},
-			func(v string) {
-				a.Settings.DefaultView = v
-				a.View = v
-				a.SaveSettings()
-			},
-		)
-		switchRow(c, p, locales.SettingsShowNotes(), &a.Settings.ShowNote, a.SaveSettings)
 	})
-
-	s.compactCardSection(c, p)
 
 	card(c, p, func() {
 		ui.Row(c).FillWidth().Padding(11, 16).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, locales.SettingsSummonModes()).FontSize(13).FontWeight(500).TextColor(p.Text).SingleLine()
-		})
-
-		globalOn := a.Settings.GlobalSearchOn()
-		switchRow(c, p, locales.SettingsGlobalSearch(), &globalOn, func() {
-			a.Settings.GlobalSearchOff = !globalOn
-			if !globalOn {
-				if s.recordingSlot == "search" {
-					s.setRecording("")
-				}
-				if a.Win.CancelPendingShortcut != nil {
-					a.Win.CancelPendingShortcut("search")
-				}
-			}
-			a.SaveSettings()
 		})
 
 		tray := a.Settings.ModeOn(model.ModeTray)
@@ -119,250 +92,7 @@ func (s *state) pageGeneral(c *ui.Context, p *theme.Palette) {
 	})
 
 	s.shortcutsCard(c, p)
-	s.integrationCard(c, p)
 	s.aboutUpdatesCard(c, p)
-}
-
-func (s *state) compactCardSection(c *ui.Context, p *theme.Palette) {
-	a := s.a
-	cc := a.Settings.CompactCard()
-	apply := func(next model.CompactCardLayout) {
-		next = next.Clamp()
-		a.Settings.SetCompactCard(next)
-		s.syncCompactSliders()
-		a.Invalidate()
-		s.scheduleSave()
-	}
-
-	presets := []struct {
-		id     string
-		label  string
-		layout model.CompactCardLayout
-	}{
-		{"title", locales.SettingsCompactPresetTitle(), model.CompactPresetTitle},
-		{"two", locales.SettingsCompactPresetTwo(), model.CompactPresetTwo},
-		{"airy", locales.SettingsCompactPresetAiry(), model.CompactPresetAiry},
-	}
-
-	ui.Column(c).FillWidth().Radius(12).Background(p.Surface).Border(1, p.Line).Children(func() {
-		settingRow(c, p, locales.SettingsCompactCard(), func() {
-			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Row(c).Padding(2).Gap(2).Radius(8).Background(p.Field).AlignItems(ui.Center).Children(func() {
-					for _, pr := range presets {
-						active := cc == pr.layout
-						btn := ui.ButtonBase(c.Key("cc-preset-"+pr.id)).Height(24).PaddingX(10).Radius(6).
-							AlignItems(ui.Center).Cursor(ui.CursorPointer).Label(pr.label)
-						if active {
-							bg := p.Surface
-							if p.Dark {
-								bg = p.SideSel
-							}
-							btn.Background(bg).TextColor(p.AccentText).Shadow(0, 1, 2, 0, ui.RGBA(0, 0, 0, 0.12))
-						} else {
-							btn.TextColor(p.Muted)
-							if btn.Hovered() {
-								btn.TextColor(p.Text)
-							}
-						}
-						btn.Children(func() {
-							t := ui.Text(c, pr.label).FontSize(12).SingleLine()
-							if active {
-								t.FontWeight(500)
-							}
-						})
-						if btn.Clicked() {
-							apply(pr.layout)
-						}
-					}
-				})
-
-				if cc != model.DefaultCompactCardLayout() {
-					rst := ui.ButtonBase(c.Key("cc-reset")).Height(24).PaddingX(8).Radius(6).
-						AlignItems(ui.Center).Border(1, p.Line).TextColor(p.Muted).Cursor(ui.CursorPointer).
-						Label(locales.SettingsCompactReset())
-					if rst.Hovered() {
-						rst.Background(p.Hover).TextColor(p.Text)
-					}
-					rst.Children(func() {
-						ui.Text(c, locales.SettingsCompactReset()).FontSize(11.5).SingleLine()
-					})
-					if rst.Clicked() {
-						apply(model.DefaultCompactCardLayout())
-					}
-				}
-			})
-		})
-
-		ui.Column(c).FillWidth().Padding(0, 16, 16, 16).Children(func() {
-			ui.Column(c).FillWidth().Padding(14).Radius(10).Background(p.Bg).Border(1, p.Line).Gap(12).Children(func() {
-				meta := locales.SettingsCompactPreviewNotes(cc.Width, int(cc.Height()), cc.NoteLines)
-				if cc.NoteLines == 0 {
-					meta = locales.SettingsCompactPreviewTitleOnly(cc.Width, int(cc.Height()))
-				}
-				ui.Row(c).FillWidth().Justify(ui.SpaceBetween).AlignItems(ui.Center).Gap(8).Children(func() {
-					ui.Text(c, locales.SettingsCompactPreview()).FontSize(12).FontWeight(500).TextColor(p.Text).SingleLine()
-					ui.Text(c, meta).FontSize(11.5).TextColor(p.Muted).SingleLine()
-				})
-
-				s.compactPreviewGrid(c, p, cc)
-
-				ui.Box(c).FillWidth().Height(1).Background(p.Line)
-
-				linesLabel := locales.SettingsCompactNoteLinesVal(cc.NoteLines)
-				if cc.NoteLines == 0 {
-					linesLabel = locales.SettingsCompactNoteLinesZero()
-				}
-				changed := false
-				if s.compactSlider(c, p, "lines", locales.SettingsCompactNoteLines(), linesLabel, &s.compactLines, 0, 4, 1) {
-					changed = true
-				}
-				ui.Grid(c).Columns(2).Gap(14).FillWidth().Children(func() {
-					if s.compactSlider(c, p, "width", locales.SettingsCompactWidth(), fmt.Sprintf("%d px", cc.Width), &s.compactWidth, 140, 240, 4) {
-						changed = true
-					}
-					if s.compactSlider(c, p, "gap", locales.SettingsCompactGap(), fmt.Sprintf("%d px", cc.Gap), &s.compactGap, 4, 16, 2) {
-						changed = true
-					}
-					if s.compactSlider(c, p, "pad", locales.SettingsCompactPad(), fmt.Sprintf("%d px", cc.Pad), &s.compactPad, 6, 16, 1) {
-						changed = true
-					}
-					if s.compactSlider(c, p, "radius", locales.SettingsCompactRadius(), fmt.Sprintf("%d px", cc.Radius), &s.compactRadius, 4, 16, 1) {
-						changed = true
-					}
-				})
-				if changed {
-					next := model.CompactCardLayout{
-						NoteLines: int(math.Round(s.compactLines)),
-						Width:     int(math.Round(s.compactWidth/4)) * 4,
-						Gap:       int(math.Round(s.compactGap/2)) * 2,
-						Pad:       int(math.Round(s.compactPad)),
-						Radius:    int(math.Round(s.compactRadius)),
-					}.Clamp()
-					if next != cc {
-						a.Settings.SetCompactCard(next)
-						a.Invalidate()
-						s.scheduleSave()
-					}
-				}
-			})
-		})
-	})
-}
-
-func (s *state) compactPreviewGrid(c *ui.Context, p *theme.Palette, cc model.CompactCardLayout) {
-	type sample struct {
-		badge, color, title, note string
-	}
-	var items []sample
-	if locales.IsChinese() {
-		items = []sample{
-			{"IP", "#3d3c38", "IP 查询 – 评分/地理位置", "查纯净度、ASN 归属、家宽风险评分与流媒体原生解锁情况，排查代理节点和出口线路前先跑一遍。"},
-			{"C", "#1f1e1d", "Claude AIP 检测", "验证当前出口 IP 是否支持原生访问。"},
-			{"M", "#4a6fd8", "Mark 控制台", ""},
-		}
-	} else {
-		items = []sample{
-			{"IP", "#3d3c38", "IP Score & Geo Lookup", "Check purity, ASN ownership, residential risk score and streaming unlock before testing exit nodes."},
-			{"C", "#1f1e1d", "Claude Access Check", "Verify whether the current exit IP has native access."},
-			{"M", "#4a6fd8", "Mark Console", ""},
-		}
-	}
-
-	const previewW = float32(548)
-	gap := float32(cc.Gap)
-	cols := max(1, min(3, int((previewW+gap)/(float32(cc.Width)+gap))))
-	cardW := (previewW - float32(cols-1)*gap) / float32(cols)
-	cardH := cc.Height()
-	padX := float32(cc.Pad)
-	padY := cc.PadY()
-	if cc.NoteLines <= 0 {
-		padY = 0
-	}
-	lineH := cc.NoteLineHeight()
-	noteBoxH := cc.NoteBoxHeight()
-
-	ui.Grid(c).Columns(cols).Gap(gap).FillWidth().Children(func() {
-		for i, it := range items {
-			cardEl := ui.Row(c.Key(fmt.Sprintf("cc-prev-%d", i))).MinWidth(0).Height(cardH).
-				Padding(padY, padX).Radius(float32(cc.Radius)).Background(p.Surface).Border(1, p.Line)
-			if cc.NoteLines > 0 {
-				cardEl.AlignItems(ui.Start)
-			} else {
-				cardEl.AlignItems(ui.Center)
-			}
-			cardEl.Children(func() {
-				tile := func() {
-					ui.Row(c).Size(22, 22).Radius(6).Background(ui.Hex(it.color)).Center().Shrink(0).Children(func() {
-						ui.Text(c, it.badge).FontSize(10).FontWeight(700).TextColor(ui.Hex("#ffffff")).SingleLine()
-					})
-				}
-				if cc.NoteLines <= 0 {
-					ui.Row(c).Grow(1).MinWidth(0).Gap(8).AlignItems(ui.Center).Children(func() {
-						tile()
-						ui.Text(c, it.title).FontSize(12.5).FontWeight(500).TextColor(p.Text).SingleLine().Shrink(1).MinWidth(0)
-					})
-					return
-				}
-				ui.Column(c).Grow(1).MinWidth(0).FillHeight().Gap(6).Children(func() {
-					ui.Row(c).FillWidth().MinWidth(0).Gap(8).AlignItems(ui.Center).Children(func() {
-						tile()
-						ui.Text(c, it.title).FontSize(12.5).FontWeight(500).TextColor(p.Text).SingleLine().Shrink(1).MinWidth(0)
-					})
-					ui.Box(c).FillWidth().Height(noteBoxH).Clip().Children(func() {
-						if it.note != "" {
-							ui.Text(c, it.note).FontSize(11.5).LineHeight(lineH / 11.5).TextColor(p.Muted).MaxLines(cc.NoteLines)
-							if cc.NoteOverflows(it.note, cardW) {
-								ui.Box(c).Absolute().Right(0).Bottom(0).Width(44).Height(lineH).PassThrough().
-									LinearGradient(ui.LinearGradient{
-										Angle: 90,
-										Stops: []ui.GradientStop{
-											{Color: p.Surface.Alpha(0), At: 0},
-											{Color: p.Surface.Alpha(0.88), At: 0.68},
-											{Color: p.Surface, At: 1},
-										},
-									})
-							}
-						}
-					})
-				})
-			})
-		}
-	})
-}
-
-func (s *state) compactSlider(c *ui.Context, p *theme.Palette, key, label, valText string, val *float64, lo, hi, step float64) bool {
-	changed := false
-	ui.Column(c.Key("cc-sl-wrap-"+key)).FillWidth().Gap(4).Children(func() {
-		ui.Row(c).FillWidth().Justify(ui.SpaceBetween).AlignItems(ui.Center).Gap(8).Children(func() {
-			ui.Text(c, label).FontSize(12).TextColor(p.Text).SingleLine()
-			ui.Text(c, valText).FontSize(11.5).FontWeight(500).TextColor(p.AccentText).SingleLine()
-		})
-		sl := ui.SliderBase(c.Key("cc-sl-"+key), val, lo, hi).FillWidth().Height(20).PaddingX(7).
-			Step(step).Label(label).Cursor(ui.CursorPointer)
-		sl.Draw(func(pt *ui.Painter, r ui.Rect) {
-			t := float32((*val - lo) / (hi - lo))
-			if t < 0 {
-				t = 0
-			} else if t > 1 {
-				t = 1
-			}
-			trackX := r.X + 7
-			trackW := max(float32(0), r.W-14)
-			trackY := r.Y + (r.H-4)/2
-			pt.Fill(ui.Rect{X: trackX, Y: trackY, W: trackW, H: 4}, p.Line, 2)
-			if fillW := trackW * t; fillW > 0 {
-				pt.Fill(ui.Rect{X: trackX, Y: trackY, W: fillW, H: 4}, p.Accent, 2)
-			}
-			cx := trackX + trackW*t
-			cy := r.Y + r.H/2
-			pt.Fill(ui.Rect{X: cx - 7, Y: cy - 7, W: 14, H: 14}, ui.Hex("#ffffff"), 7)
-			pt.Fill(ui.Rect{X: cx - 5, Y: cy - 5, W: 10, H: 10}, p.Accent, 5)
-		})
-		if sl.Changed() {
-			changed = true
-		}
-	})
-	return changed
 }
 
 func localeSelection(tag string) string {
@@ -701,34 +431,6 @@ func formatShortcutDisplay(acc string) string {
 	return mods.String() + key
 }
 
-func (s *state) integrationCard(c *ui.Context, p *theme.Palette) {
-	a := s.a
-	examples := []string{
-		"coooolmark://open",
-		"coooolmark://search?q=go",
-		"coooolmark://add?url=https://example.com&title=Example",
-	}
-	card(c, p, func() {
-		ui.Row(c).FillWidth().Padding(11, 16).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, locales.SettingsIntegrationTitle()).FontSize(13).FontWeight(500).TextColor(p.Text).SingleLine()
-		})
-		for _, ex := range examples {
-			ui.Row(c.Key("scheme-"+ex)).FillWidth().Padding(10, 16).Gap(12).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, ex).FontSize(12.5).TextColor(p.Text).Grow(1).MinWidth(0).Wrap().Selectable()
-				if btnSecondaryCompact(c, p, locales.ActionCopy()).Tooltip(locales.SettingsURLSchemeCopyTip()).Clicked() {
-					c.WriteClipboardThen(ex, func(err error) {
-						if err != nil {
-							a.SayErr(locales.ToastCopyFailed(err.Error()), "", nil)
-							return
-						}
-						a.Say(locales.ToastCopiedURL())
-					})
-				}
-			})
-		}
-	})
-}
-
 func (s *state) aboutUpdatesCard(c *ui.Context, p *theme.Palette) {
 	a := s.a
 	snap := a.Updater.Snapshot()
@@ -748,9 +450,6 @@ func (s *state) aboutUpdatesCard(c *ui.Context, p *theme.Palette) {
 			}
 			if btnSecondary(c, p, checkLabel).Disabled(busy).Clicked() && !busy {
 				a.CheckUpdate(true)
-			}
-			if btnSecondary(c, p, locales.SettingsOpenAbout()).Clicked() && a.Win.ShowAbout != nil {
-				a.Win.ShowAbout()
 			}
 		})
 

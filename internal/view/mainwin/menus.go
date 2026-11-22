@@ -106,9 +106,6 @@ func (s *mainState) buildBookmarkMenu(c *ui.Context, m *ui.Menu, b *model.Bookma
 			if m.Item(locales.ActionCopyTitles(n)).Icon(icon(theme.IconCopy)).Shortcut(ui.Cmd|ui.Shift, ui.KeyC).Chosen() {
 				s.copyBookmarkTitles(c, ids)
 			}
-			if m.Item(locales.ActionCopyMarkdowns(n)).Icon(icon(theme.IconMarkdown)).Chosen() {
-				s.copyBookmarkMarkdowns(c, ids)
-			}
 
 			m.Separator()
 
@@ -117,11 +114,6 @@ func (s *mainState) buildBookmarkMenu(c *ui.Context, m *ui.Menu, b *model.Bookma
 			}
 			if m.Item(locales.ActionMoveCount(n)).Icon(icon(theme.IconMove)).Shortcut(ui.Cmd|ui.Shift, ui.KeyM).Chosen() {
 				s.openMoveModal(ids)
-			}
-
-			if a.View == "grid" {
-				m.Separator()
-				s.buildCardSizeMenu(m)
 			}
 
 			m.Separator()
@@ -148,9 +140,6 @@ func (s *mainState) buildBookmarkMenu(c *ui.Context, m *ui.Menu, b *model.Bookma
 	if m.Item(locales.ActionCopyTitle()).Icon(icon(theme.IconCopy)).Shortcut(ui.Cmd|ui.Shift, ui.KeyC).Chosen() {
 		s.copyBookmarkTitle(c, b.ID)
 	}
-	if m.Item(locales.ActionCopyMarkdown()).Icon(icon(theme.IconMarkdown)).Chosen() {
-		s.copyText(c, "["+b.Title+"]("+b.URL+")", locales.ToastCopiedMarkdown())
-	}
 
 	m.Separator()
 
@@ -168,11 +157,6 @@ func (s *mainState) buildBookmarkMenu(c *ui.Context, m *ui.Menu, b *model.Bookma
 	}
 	if m.Item(locales.ActionRefreshIcon()).Icon(icon(theme.IconRefresh)).Disabled(a.Fetch == nil).Chosen() {
 		s.refreshBookmarkIcon(b.ID)
-	}
-
-	if a.View == "grid" {
-		m.Separator()
-		s.buildCardSizeMenu(m)
 	}
 
 	m.Separator()
@@ -456,22 +440,69 @@ func (s *mainState) copyBookmarkTitles(c *ui.Context, ids []string) {
 	s.copyText(c, strings.Join(titles, "\n"), locales.ToastCopiedTitles(len(titles)))
 }
 
-func (s *mainState) copyBookmarkMarkdowns(c *ui.Context, ids []string) {
+func formatBookmarkMarkdown(b *model.Bookmark) string {
+	url := strings.TrimSpace(b.URL)
+	title := strings.TrimSpace(b.Title)
+	if title == "" {
+		title = url
+	}
+	line := "- [" + title + "](" + url + ")"
+	if note := strings.Join(strings.Fields(b.Note), " "); note != "" {
+		line += " — " + note
+	}
+	return line
+}
+
+func (s *mainState) copyGroupMarkdown(c *ui.Context, groupID string) {
 	lib := s.app.Store.Lib()
-	lines := make([]string, 0, len(ids))
-	for _, id := range ids {
-		if b := lib.Bookmark(id); b != nil && b.URL != "" {
-			lines = append(lines, "["+b.Title+"]("+b.URL+")")
+	g := lib.Group(groupID)
+	if g == nil {
+		return
+	}
+	var sb strings.Builder
+	sb.WriteString("# ")
+	sb.WriteString(g.Name)
+	total := 0
+	for _, sub := range g.Subs {
+		bms := lib.In(g.ID, sub.ID)
+		if len(bms) == 0 {
+			continue
+		}
+		sb.WriteString("\n\n## ")
+		sb.WriteString(sub.Name)
+		for _, b := range bms {
+			sb.WriteByte('\n')
+			sb.WriteString(formatBookmarkMarkdown(b))
+			total++
 		}
 	}
-	if len(lines) == 0 {
+	if total == 0 {
 		return
 	}
-	if len(lines) == 1 {
-		s.copyText(c, lines[0], locales.ToastCopiedMarkdown())
+	s.copyText(c, sb.String(), locales.ToastCopiedMarkdownCount(total))
+}
+
+func (s *mainState) copySubMarkdown(c *ui.Context, groupID, subID string) {
+	lib := s.app.Store.Lib()
+	g := lib.Group(groupID)
+	sub := lib.Sub(groupID, subID)
+	if g == nil || sub == nil {
 		return
 	}
-	s.copyText(c, strings.Join(lines, "\n"), locales.ToastCopiedMarkdowns(len(lines)))
+	bms := lib.In(g.ID, sub.ID)
+	if len(bms) == 0 {
+		return
+	}
+	var sb strings.Builder
+	sb.WriteString("## ")
+	sb.WriteString(g.Name)
+	sb.WriteString(" / ")
+	sb.WriteString(sub.Name)
+	for _, b := range bms {
+		sb.WriteByte('\n')
+		sb.WriteString(formatBookmarkMarkdown(b))
+	}
+	s.copyText(c, sb.String(), locales.ToastCopiedMarkdownCount(len(bms)))
 }
 
 func (s *mainState) openBookmarks(c *ui.Context, ids []string) {

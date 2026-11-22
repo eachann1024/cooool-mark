@@ -564,16 +564,6 @@ func (msgs Messages) ActionCopyTitle() string {
 	return Catalog.Format(msgs.locale, "actionCopyTitle", nil)
 }
 
-// ActionCopyMarkdown says "Copy as Markdown"
-// in the language the app shows.
-func ActionCopyMarkdown() string { return In(i18n.Locale()).ActionCopyMarkdown() }
-
-// ActionCopyMarkdown says "Copy as Markdown"
-// in the language of msgs.
-func (msgs Messages) ActionCopyMarkdown() string {
-	return Catalog.Format(msgs.locale, "actionCopyMarkdown", nil)
-}
-
 // ActionAIPolish says "AI Polish"
 // in the language the app shows.
 func ActionAIPolish() string { return In(i18n.Locale()).ActionAIPolish() }
@@ -1206,6 +1196,16 @@ func MainPolishedBadge() string { return In(i18n.Locale()).MainPolishedBadge() }
 // in the language of msgs.
 func (msgs Messages) MainPolishedBadge() string {
 	return Catalog.Format(msgs.locale, "mainPolishedBadge", nil)
+}
+
+// MainEnrichingBadge says "Fetching…"
+// in the language the app shows.
+func MainEnrichingBadge() string { return In(i18n.Locale()).MainEnrichingBadge() }
+
+// MainEnrichingBadge says "Fetching…"
+// in the language of msgs.
+func (msgs Messages) MainEnrichingBadge() string {
+	return Catalog.Format(msgs.locale, "mainEnrichingBadge", nil)
 }
 
 // MainDropDefaultTarget says "Bookmarks"
@@ -2140,16 +2140,6 @@ func (msgs Messages) SettingsHideDockIcon() string {
 	return Catalog.Format(msgs.locale, "settingsHideDockIcon", nil)
 }
 
-// SettingsGlobalSearch says "Global Quick Search"
-// in the language the app shows.
-func SettingsGlobalSearch() string { return In(i18n.Locale()).SettingsGlobalSearch() }
-
-// SettingsGlobalSearch says "Global Quick Search"
-// in the language of msgs.
-func (msgs Messages) SettingsGlobalSearch() string {
-	return Catalog.Format(msgs.locale, "settingsGlobalSearch", nil)
-}
-
 // SettingsNotifications says "System Notifications"
 // in the language the app shows.
 func SettingsNotifications() string { return In(i18n.Locale()).SettingsNotifications() }
@@ -2158,46 +2148,6 @@ func SettingsNotifications() string { return In(i18n.Locale()).SettingsNotificat
 // in the language of msgs.
 func (msgs Messages) SettingsNotifications() string {
 	return Catalog.Format(msgs.locale, "settingsNotifications", nil)
-}
-
-// SettingsDefaultView says "Default View"
-// in the language the app shows.
-func SettingsDefaultView() string { return In(i18n.Locale()).SettingsDefaultView() }
-
-// SettingsDefaultView says "Default View"
-// in the language of msgs.
-func (msgs Messages) SettingsDefaultView() string {
-	return Catalog.Format(msgs.locale, "settingsDefaultView", nil)
-}
-
-// SettingsViewList says "List"
-// in the language the app shows.
-func SettingsViewList() string { return In(i18n.Locale()).SettingsViewList() }
-
-// SettingsViewList says "List"
-// in the language of msgs.
-func (msgs Messages) SettingsViewList() string {
-	return Catalog.Format(msgs.locale, "settingsViewList", nil)
-}
-
-// SettingsViewGrid says "Grid"
-// in the language the app shows.
-func SettingsViewGrid() string { return In(i18n.Locale()).SettingsViewGrid() }
-
-// SettingsViewGrid says "Grid"
-// in the language of msgs.
-func (msgs Messages) SettingsViewGrid() string {
-	return Catalog.Format(msgs.locale, "settingsViewGrid", nil)
-}
-
-// SettingsShowNotes says "Show Notes"
-// in the language the app shows.
-func SettingsShowNotes() string { return In(i18n.Locale()).SettingsShowNotes() }
-
-// SettingsShowNotes says "Show Notes"
-// in the language of msgs.
-func (msgs Messages) SettingsShowNotes() string {
-	return Catalog.Format(msgs.locale, "settingsShowNotes", nil)
 }
 
 // SettingsSummonModes says "Summon Modes"
@@ -2410,31 +2360,11 @@ func (msgs Messages) SettingsShortcutFailed(err string) string {
 	return Catalog.Format(msgs.locale, "settingsShortcutFailed", map[string]any{"err": err})
 }
 
-// SettingsIntegrationTitle says "URL Scheme & Integrations"
-// in the language the app shows.
-func SettingsIntegrationTitle() string { return In(i18n.Locale()).SettingsIntegrationTitle() }
-
-// SettingsIntegrationTitle says "URL Scheme & Integrations"
-// in the language of msgs.
-func (msgs Messages) SettingsIntegrationTitle() string {
-	return Catalog.Format(msgs.locale, "settingsIntegrationTitle", nil)
-}
-
-// SettingsURLSchemeCopyTip says "Copy example URL"
-// in the language the app shows.
-func SettingsURLSchemeCopyTip() string { return In(i18n.Locale()).SettingsURLSchemeCopyTip() }
-
-// SettingsURLSchemeCopyTip says "Copy example URL"
-// in the language of msgs.
-func (msgs Messages) SettingsURLSchemeCopyTip() string {
-	return Catalog.Format(msgs.locale, "settingsURLSchemeCopyTip", nil)
-}
-
-// SettingsAboutUpdates says "Updates & About"
+// SettingsAboutUpdates says "Updates"
 // in the language the app shows.
 func SettingsAboutUpdates() string { return In(i18n.Locale()).SettingsAboutUpdates() }
 
-// SettingsAboutUpdates says "Updates & About"
+// SettingsAboutUpdates says "Updates"
 // in the language of msgs.
 func (msgs Messages) SettingsAboutUpdates() string {
 	return Catalog.Format(msgs.locale, "settingsAboutUpdates", nil)
@@ -2514,16 +2444,6 @@ func SettingsViewRelease() string { return In(i18n.Locale()).SettingsViewRelease
 // in the language of msgs.
 func (msgs Messages) SettingsViewRelease() string {
 	return Catalog.Format(msgs.locale, "settingsViewRelease", nil)
-}
-
-// SettingsOpenAbout says "About"
-// in the language the app shows.
-func SettingsOpenAbout() string { return In(i18n.Locale()).SettingsOpenAbout() }
-
-// SettingsOpenAbout says "About"
-// in the language of msgs.
-func (msgs Messages) SettingsOpenAbout() string {
-	return Catalog.Format(msgs.locale, "settingsOpenAbout", nil)
 }
 
 // SettingsUpdateDownload says "Download & Install"
@@ -4046,16 +3966,6 @@ func (msgs Messages) ToastCopiedTitle() string {
 	return Catalog.Format(msgs.locale, "toastCopiedTitle", nil)
 }
 
-// ToastCopiedMarkdown says "Markdown link copied"
-// in the language the app shows.
-func ToastCopiedMarkdown() string { return In(i18n.Locale()).ToastCopiedMarkdown() }
-
-// ToastCopiedMarkdown says "Markdown link copied"
-// in the language of msgs.
-func (msgs Messages) ToastCopiedMarkdown() string {
-	return Catalog.Format(msgs.locale, "toastCopiedMarkdown", nil)
-}
-
 // ToastCopyFailed says "Copy failed: {err}"
 // in the language the app shows.
 func ToastCopyFailed(err string) string { return In(i18n.Locale()).ToastCopyFailed(err) }
@@ -4290,162 +4200,6 @@ func (msgs Messages) CardSizeDetail() string {
 	return Catalog.Format(msgs.locale, "cardSizeDetail", nil)
 }
 
-// SettingsCompactCard says "Compact Card"
-// in the language the app shows.
-func SettingsCompactCard() string { return In(i18n.Locale()).SettingsCompactCard() }
-
-// SettingsCompactCard says "Compact Card"
-// in the language of msgs.
-func (msgs Messages) SettingsCompactCard() string {
-	return Catalog.Format(msgs.locale, "settingsCompactCard", nil)
-}
-
-// SettingsCompactPresetTitle says "Title Only"
-// in the language the app shows.
-func SettingsCompactPresetTitle() string { return In(i18n.Locale()).SettingsCompactPresetTitle() }
-
-// SettingsCompactPresetTitle says "Title Only"
-// in the language of msgs.
-func (msgs Messages) SettingsCompactPresetTitle() string {
-	return Catalog.Format(msgs.locale, "settingsCompactPresetTitle", nil)
-}
-
-// SettingsCompactPresetTwo says "2-Line Note"
-// in the language the app shows.
-func SettingsCompactPresetTwo() string { return In(i18n.Locale()).SettingsCompactPresetTwo() }
-
-// SettingsCompactPresetTwo says "2-Line Note"
-// in the language of msgs.
-func (msgs Messages) SettingsCompactPresetTwo() string {
-	return Catalog.Format(msgs.locale, "settingsCompactPresetTwo", nil)
-}
-
-// SettingsCompactPresetAiry says "Airy"
-// in the language the app shows.
-func SettingsCompactPresetAiry() string { return In(i18n.Locale()).SettingsCompactPresetAiry() }
-
-// SettingsCompactPresetAiry says "Airy"
-// in the language of msgs.
-func (msgs Messages) SettingsCompactPresetAiry() string {
-	return Catalog.Format(msgs.locale, "settingsCompactPresetAiry", nil)
-}
-
-// SettingsCompactReset says "Reset"
-// in the language the app shows.
-func SettingsCompactReset() string { return In(i18n.Locale()).SettingsCompactReset() }
-
-// SettingsCompactReset says "Reset"
-// in the language of msgs.
-func (msgs Messages) SettingsCompactReset() string {
-	return Catalog.Format(msgs.locale, "settingsCompactReset", nil)
-}
-
-// SettingsCompactPreview says "Live Preview"
-// in the language the app shows.
-func SettingsCompactPreview() string { return In(i18n.Locale()).SettingsCompactPreview() }
-
-// SettingsCompactPreview says "Live Preview"
-// in the language of msgs.
-func (msgs Messages) SettingsCompactPreview() string {
-	return Catalog.Format(msgs.locale, "settingsCompactPreview", nil)
-}
-
-// SettingsCompactPreviewTitleOnly says "Title only · W {w} · H {h}px"
-// in the language the app shows.
-func SettingsCompactPreviewTitleOnly(w int, h int) string {
-	return In(i18n.Locale()).SettingsCompactPreviewTitleOnly(w, h)
-}
-
-// SettingsCompactPreviewTitleOnly says "Title only · W {w} · H {h}px"
-// in the language of msgs.
-func (msgs Messages) SettingsCompactPreviewTitleOnly(w int, h int) string {
-	return Catalog.Format(msgs.locale, "settingsCompactPreviewTitleOnly", map[string]any{"w": w, "h": h})
-}
-
-// SettingsCompactPreviewNotes says "W {w} · H {h}px · {lines} lines"
-// in the language the app shows.
-func SettingsCompactPreviewNotes(w int, h int, lines int) string {
-	return In(i18n.Locale()).SettingsCompactPreviewNotes(w, h, lines)
-}
-
-// SettingsCompactPreviewNotes says "W {w} · H {h}px · {lines} lines"
-// in the language of msgs.
-func (msgs Messages) SettingsCompactPreviewNotes(w int, h int, lines int) string {
-	return Catalog.Format(msgs.locale, "settingsCompactPreviewNotes", map[string]any{"w": w, "h": h, "lines": lines})
-}
-
-// SettingsCompactNoteLines says "Note Lines"
-// in the language the app shows.
-func SettingsCompactNoteLines() string { return In(i18n.Locale()).SettingsCompactNoteLines() }
-
-// SettingsCompactNoteLines says "Note Lines"
-// in the language of msgs.
-func (msgs Messages) SettingsCompactNoteLines() string {
-	return Catalog.Format(msgs.locale, "settingsCompactNoteLines", nil)
-}
-
-// SettingsCompactNoteLinesZero says "0 lines · Title only"
-// in the language the app shows.
-func SettingsCompactNoteLinesZero() string { return In(i18n.Locale()).SettingsCompactNoteLinesZero() }
-
-// SettingsCompactNoteLinesZero says "0 lines · Title only"
-// in the language of msgs.
-func (msgs Messages) SettingsCompactNoteLinesZero() string {
-	return Catalog.Format(msgs.locale, "settingsCompactNoteLinesZero", nil)
-}
-
-// SettingsCompactNoteLinesVal says "{count, plural, one {# line} other {# lines}}"
-// in the language the app shows.
-func SettingsCompactNoteLinesVal(count int) string {
-	return In(i18n.Locale()).SettingsCompactNoteLinesVal(count)
-}
-
-// SettingsCompactNoteLinesVal says "{count, plural, one {# line} other {# lines}}"
-// in the language of msgs.
-func (msgs Messages) SettingsCompactNoteLinesVal(count int) string {
-	return Catalog.Format(msgs.locale, "settingsCompactNoteLinesVal", map[string]any{"count": count})
-}
-
-// SettingsCompactWidth says "Card Width"
-// in the language the app shows.
-func SettingsCompactWidth() string { return In(i18n.Locale()).SettingsCompactWidth() }
-
-// SettingsCompactWidth says "Card Width"
-// in the language of msgs.
-func (msgs Messages) SettingsCompactWidth() string {
-	return Catalog.Format(msgs.locale, "settingsCompactWidth", nil)
-}
-
-// SettingsCompactGap says "Card Gap"
-// in the language the app shows.
-func SettingsCompactGap() string { return In(i18n.Locale()).SettingsCompactGap() }
-
-// SettingsCompactGap says "Card Gap"
-// in the language of msgs.
-func (msgs Messages) SettingsCompactGap() string {
-	return Catalog.Format(msgs.locale, "settingsCompactGap", nil)
-}
-
-// SettingsCompactPad says "Padding"
-// in the language the app shows.
-func SettingsCompactPad() string { return In(i18n.Locale()).SettingsCompactPad() }
-
-// SettingsCompactPad says "Padding"
-// in the language of msgs.
-func (msgs Messages) SettingsCompactPad() string {
-	return Catalog.Format(msgs.locale, "settingsCompactPad", nil)
-}
-
-// SettingsCompactRadius says "Corner Radius"
-// in the language the app shows.
-func SettingsCompactRadius() string { return In(i18n.Locale()).SettingsCompactRadius() }
-
-// SettingsCompactRadius says "Corner Radius"
-// in the language of msgs.
-func (msgs Messages) SettingsCompactRadius() string {
-	return Catalog.Format(msgs.locale, "settingsCompactRadius", nil)
-}
-
 // ActionCopyURLs says "Copy {count} Bookmark URLs"
 // in the language the app shows.
 func ActionCopyURLs(count int) string { return In(i18n.Locale()).ActionCopyURLs(count) }
@@ -4464,16 +4218,6 @@ func ActionCopyTitles(count int) string { return In(i18n.Locale()).ActionCopyTit
 // in the language of msgs.
 func (msgs Messages) ActionCopyTitles(count int) string {
 	return Catalog.Format(msgs.locale, "actionCopyTitles", map[string]any{"count": count})
-}
-
-// ActionCopyMarkdowns says "Copy {count} as Markdown"
-// in the language the app shows.
-func ActionCopyMarkdowns(count int) string { return In(i18n.Locale()).ActionCopyMarkdowns(count) }
-
-// ActionCopyMarkdowns says "Copy {count} as Markdown"
-// in the language of msgs.
-func (msgs Messages) ActionCopyMarkdowns(count int) string {
-	return Catalog.Format(msgs.locale, "actionCopyMarkdowns", map[string]any{"count": count})
 }
 
 // ActionOpenCount says "Open {count} Bookmarks"
@@ -4526,12 +4270,24 @@ func (msgs Messages) ToastCopiedTitles(count int) string {
 	return Catalog.Format(msgs.locale, "toastCopiedTitles", map[string]any{"count": count})
 }
 
-// ToastCopiedMarkdowns says "Copied {count} Markdown links"
+// ActionCopyMarkdown says "Copy as Markdown"
 // in the language the app shows.
-func ToastCopiedMarkdowns(count int) string { return In(i18n.Locale()).ToastCopiedMarkdowns(count) }
+func ActionCopyMarkdown() string { return In(i18n.Locale()).ActionCopyMarkdown() }
 
-// ToastCopiedMarkdowns says "Copied {count} Markdown links"
+// ActionCopyMarkdown says "Copy as Markdown"
 // in the language of msgs.
-func (msgs Messages) ToastCopiedMarkdowns(count int) string {
-	return Catalog.Format(msgs.locale, "toastCopiedMarkdowns", map[string]any{"count": count})
+func (msgs Messages) ActionCopyMarkdown() string {
+	return Catalog.Format(msgs.locale, "actionCopyMarkdown", nil)
+}
+
+// ToastCopiedMarkdownCount says "Copied {count} bookmarks as Markdown"
+// in the language the app shows.
+func ToastCopiedMarkdownCount(count int) string {
+	return In(i18n.Locale()).ToastCopiedMarkdownCount(count)
+}
+
+// ToastCopiedMarkdownCount says "Copied {count} bookmarks as Markdown"
+// in the language of msgs.
+func (msgs Messages) ToastCopiedMarkdownCount(count int) string {
+	return Catalog.Format(msgs.locale, "toastCopiedMarkdownCount", map[string]any{"count": count})
 }

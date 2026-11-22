@@ -178,6 +178,9 @@ func (s *mainState) buildSubPill(c *ui.Context, p *theme.Palette, lib *model.Lib
 				a.Win.ShowEditor(app.EditorRequest{GroupID: g.ID, SubID: sub.ID})
 			}
 		}
+		if m.Item(locales.ActionCopyMarkdown()).Icon(theme.MenuIcon(theme.IconCopy)).Disabled(len(lib.In(g.ID, sub.ID)) == 0).Chosen() {
+			s.copySubMarkdown(c, g.ID, sub.ID)
+		}
 		m.Separator()
 		if len(lib.Groups) > 1 {
 			m.Submenu(locales.ActionMoveToOtherGroup(), func(sm *ui.Menu) {
