@@ -420,15 +420,18 @@ func (s *mainState) buildBrowseBody(c *ui.Context, p *theme.Palette) {
 		padY         = float32(6)
 	)
 	cardSize := model.NormalizeCardSize(a.Settings.CardSize)
-	spec := gridCardSpecFor(cardSize)
+	compact := a.Settings.CompactCard()
+	spec := gridCardSpecFor(cardSize, compact)
 	gridGap, minCardW := spec.gap, spec.minW
 	cols := 1
+	actualCardW := minCardW
 	if a.View == "grid" {
 		availW := s.contentHandle.Bounds(c).W - 48
 		if availW <= 0 {
 			availW = 648
 		}
 		cols = max(1, int((availW+gridGap)/(minCardW+gridGap)))
+		actualCardW = (availW - float32(cols-1)*gridGap) / float32(cols)
 	}
 
 	rows, subRow, bmRow, preserveRow := s.ensureBrowseCache(lib, g, a.View, cols)
@@ -558,7 +561,7 @@ func (s *mainState) buildBrowseBody(c *ui.Context, p *theme.Palette) {
 				ui.Column(c).FillWidth().Padding(top, 24, bottom, 24).Gap(6).Children(func() {
 					ui.Grid(c).Columns(cols).Gap(gridGap).Children(func() {
 						for _, b := range r.items {
-							s.buildBookmarkGridCard(c, p, g, r.sub, b, cardSize, spec)
+							s.buildBookmarkGridCard(c, p, g, r.sub, b, cardSize, spec, compact, actualCardW)
 						}
 					})
 					for _, b := range r.items {
@@ -656,7 +659,7 @@ func (s *mainState) buildBookmarkHoverActions(c *ui.Context, p *theme.Palette, b
 func (s *mainState) buildBookmarkListRow(c *ui.Context, p *theme.Palette, g *model.Group, sub model.Sub, b *model.Bookmark, tileSize, minH, padY float32) {
 	a := s.app
 	keyC := c.Key("bm-" + b.ID)
-	selected := s.cursorID == b.ID
+	selected := s.isBookmarkSelected(b.ID)
 	_, polished := a.PolishedAt[b.ID]
 
 	wrap := ui.Column(keyC).FillWidth()
@@ -690,7 +693,7 @@ func (s *mainState) buildBookmarkListRow(c *ui.Context, p *theme.Palette, g *mod
 			row.Border(1.5, ui.Transparent)
 		}
 
-		payload := dragPayload{IDs: []string{b.ID}, SourceGroup: b.GroupID, SourceSub: b.SubID}
+		payload := dragPayload{IDs: s.actionBookmarkIDs(b.ID), SourceGroup: b.GroupID, SourceSub: b.SubID}
 		row.Drag(payload)
 		if row.Dragging() {
 			row.Opacity(0.45)
@@ -751,10 +754,23 @@ type gridCardSpec struct {
 	titleSize          float32
 }
 
-func gridCardSpecFor(size string) gridCardSpec {
+func gridCardSpecFor(size string, cc model.CompactCardLayout) gridCardSpec {
 	switch size {
 	case model.CardCompact:
-		return gridCardSpec{minW: 150, h: 42, gap: 6, tile: 22, padX: 10, padY: 0, radius: 9, titleSize: 13}
+		padY := cc.PadY()
+		if cc.NoteLines <= 0 {
+			padY = 0
+		}
+		return gridCardSpec{
+			minW:      float32(cc.Width),
+			h:         cc.Height(),
+			gap:       float32(cc.Gap),
+			tile:      22,
+			padX:      float32(cc.Pad),
+			padY:      padY,
+			radius:    float32(cc.Radius),
+			titleSize: 13,
+		}
 	case model.CardDetail:
 		return gridCardSpec{minW: 280, h: 128, gap: 12, tile: 40, padX: 16, padY: 14, radius: 13, titleSize: 14.5}
 	default:
@@ -762,15 +778,15 @@ func gridCardSpecFor(size string) gridCardSpec {
 	}
 }
 
-func (s *mainState) buildBookmarkGridCard(c *ui.Context, p *theme.Palette, g *model.Group, sub model.Sub, b *model.Bookmark, size string, spec gridCardSpec) {
+func (s *mainState) buildBookmarkGridCard(c *ui.Context, p *theme.Palette, g *model.Group, sub model.Sub, b *model.Bookmark, size string, spec gridCardSpec, compact model.CompactCardLayout, cardW float32) {
 	a := s.app
 	keyC := c.Key("grid-bm-" + b.ID)
-	selected := s.cursorID == b.ID
+	selected := s.isBookmarkSelected(b.ID)
 	_, polished := a.PolishedAt[b.ID]
 
 	card := ui.Row(keyC).MinWidth(0).Height(spec.h).Padding(spec.padY, spec.padX).Radius(spec.radius).
 		Role(ui.RoleOption).Label(b.Title).AccessSelected(selected).Cursor(ui.CursorPointer)
-	if size == model.CardDetail {
+	if size == model.CardDetail || (size == model.CardCompact && compact.NoteLines > 0) {
 		card.AlignItems(ui.Start)
 	} else {
 		card.AlignItems(ui.Center)
@@ -788,20 +804,25 @@ func (s *mainState) buildBookmarkGridCard(c *ui.Context, p *theme.Palette, g *mo
 	}
 
 	hovered := card.Hovered()
+	cardBg := p.Surface
 	switch {
 	case dragOver:
-		card.Background(softAccentBg(p)).Border(2, p.Accent).BorderStyle(ui.BorderDashed)
+		cardBg = softAccentBg(p)
+		card.Background(cardBg).Border(2, p.Accent).BorderStyle(ui.BorderDashed)
 	case selected || menuShown:
-		card.Background(softAccentBg(p)).Border(1, p.Accent)
+		cardBg = softAccentBg(p)
+		card.Background(cardBg).Border(1.5, p.Accent)
 	case polished:
-		card.Background(softAccentBg(p)).Border(1, p.Line)
+		cardBg = softAccentBg(p)
+		card.Background(cardBg).Border(1, p.Line)
 	case hovered:
-		card.Background(p.Hover).Border(1, p.Line.Mix(p.Text, 0.08))
+		cardBg = p.Hover
+		card.Background(cardBg).Border(1, p.Line.Mix(p.Text, 0.08))
 	default:
-		card.Background(p.Surface).Border(1, p.Line)
+		card.Background(cardBg).Border(1, p.Line)
 	}
 
-	payload := dragPayload{IDs: []string{b.ID}, SourceGroup: b.GroupID, SourceSub: b.SubID}
+	payload := dragPayload{IDs: s.actionBookmarkIDs(b.ID), SourceGroup: b.GroupID, SourceSub: b.SubID}
 	card.Drag(payload)
 	if card.Dragging() {
 		card.Opacity(0.45)
@@ -828,6 +849,34 @@ func (s *mainState) buildBookmarkGridCard(c *ui.Context, p *theme.Palette, g *mo
 	}
 
 	card.Children(func() {
+		if size == model.CardCompact && compact.NoteLines > 0 {
+			lineH := compact.NoteLineHeight()
+			noteBoxH := compact.NoteBoxHeight()
+			ui.Column(c).Grow(1).MinWidth(0).FillHeight().Gap(6).Children(func() {
+				ui.Row(c).FillWidth().MinWidth(0).Gap(8).AlignItems(ui.Center).Children(func() {
+					s.buildTile(c, b, spec.tile)
+					titleRow(1, 500)
+				})
+				ui.Box(c).FillWidth().Height(noteBoxH).Clip().Children(func() {
+					if note != "" {
+						ui.Text(c, note).FontSize(11.5).LineHeight(lineH / 11.5).TextColor(p.Muted).MaxLines(compact.NoteLines)
+						if compact.NoteOverflows(note, cardW) {
+							ui.Box(c).Absolute().Right(0).Bottom(0).Width(44).Height(lineH).PassThrough().
+								LinearGradient(ui.LinearGradient{
+									Angle: 90,
+									Stops: []ui.GradientStop{
+										{Color: cardBg.Alpha(0), At: 0},
+										{Color: cardBg.Alpha(0.88), At: 0.68},
+										{Color: cardBg, At: 1},
+									},
+								})
+						}
+					}
+				})
+			})
+			return
+		}
+
 		gap := float32(12)
 		if size == model.CardCompact {
 			gap = 9
@@ -878,11 +927,21 @@ func (s *mainState) buildBookmarkGridCard(c *ui.Context, p *theme.Palette, g *mo
 	s.bindGridCardEvents(c, p, card, b)
 }
 
-// bindGridCardEvents: a single click opens the bookmark, a right click
-// shows the bookmark menu. Selection follows the clicked card.
+// bindGridCardEvents: Cmd/Ctrl+click toggles multi-selection; a plain single
+// click opens the bookmark; a right click shows the bookmark menu.
 func (s *mainState) bindGridCardEvents(c *ui.Context, p *theme.Palette, card ui.Element, b *model.Bookmark) {
 	a := s.app
 	if card.Clicked() {
+		if card.ClickModifiers()&(ui.Cmd|ui.Ctrl) != 0 {
+			s.toggleSelect(b.ID)
+			if b.SubID != "" {
+				a.SetSub(b.SubID)
+			}
+			s.stopBrowseFollow()
+			s.contentHandle.Focus(c)
+			return
+		}
+		s.clearSelection()
 		s.cursorID = b.ID
 		if b.SubID != "" {
 			a.SetSub(b.SubID)
@@ -913,7 +972,12 @@ func (s *mainState) bindBookmarkMenu(c *ui.Context, p *theme.Palette, el ui.Elem
 func (s *mainState) bindBookmarkRowEvents(c *ui.Context, clickEl ui.Element, b *model.Bookmark) {
 	a := s.app
 	if clickEl.Clicked() {
-		s.cursorID = b.ID
+		if clickEl.ClickModifiers()&(ui.Cmd|ui.Ctrl) != 0 {
+			s.toggleSelect(b.ID)
+		} else {
+			s.clearSelection()
+			s.cursorID = b.ID
+		}
 		if b.SubID != "" {
 			a.SetSub(b.SubID)
 		}

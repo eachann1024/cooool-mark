@@ -10,6 +10,7 @@ import (
 	"cmp"
 	"crypto/rand"
 	"encoding/hex"
+	"math"
 	"slices"
 	"strings"
 	"time"
@@ -218,6 +219,91 @@ const (
 	CardDetail   = "detail"
 )
 
+// CompactCardLayout holds the tunable geometry of compact grid cards.
+type CompactCardLayout struct {
+	NoteLines int // 0..4 (0 = title only, default 2)
+	Width     int // 140..240 (default 176)
+	Gap       int // 4..16 (default 8)
+	Pad       int // 6..16 (default 10)
+	Radius    int // 4..16 (default 9)
+}
+
+// Compact card presets.
+var (
+	CompactPresetTitle = CompactCardLayout{NoteLines: 0, Width: 156, Gap: 6, Pad: 10, Radius: 9}
+	CompactPresetTwo   = CompactCardLayout{NoteLines: 2, Width: 176, Gap: 8, Pad: 10, Radius: 9}
+	CompactPresetAiry  = CompactCardLayout{NoteLines: 3, Width: 212, Gap: 12, Pad: 13, Radius: 12}
+)
+
+// DefaultCompactCardLayout returns the default two-line note compact layout.
+func DefaultCompactCardLayout() CompactCardLayout {
+	return CompactPresetTwo
+}
+
+// Clamp bounds every compact layout field to its supported range.
+func (c CompactCardLayout) Clamp() CompactCardLayout {
+	c.NoteLines = max(0, min(4, c.NoteLines))
+	c.Width = max(140, min(240, c.Width))
+	c.Gap = max(4, min(16, c.Gap))
+	c.Pad = max(6, min(16, c.Pad))
+	c.Radius = max(4, min(16, c.Radius))
+	return c
+}
+
+// NoteLineHeight returns the line height in DIPs for compact card notes.
+func (CompactCardLayout) NoteLineHeight() float32 { return 16 }
+
+// PadY returns the vertical padding in DIPs derived from Pad.
+func (c CompactCardLayout) PadY() float32 {
+	return max(float32(6), float32(math.Round(float64(c.Pad)*0.8)))
+}
+
+// NoteBoxHeight returns the reserved height in DIPs for compact card notes.
+func (c CompactCardLayout) NoteBoxHeight() float32 {
+	return float32(c.NoteLines) * c.NoteLineHeight()
+}
+
+// Height returns the total compact card height in DIPs.
+func (c CompactCardLayout) Height() float32 {
+	padY := c.PadY()
+	if c.NoteLines > 0 {
+		return padY*2 + 22 + 6 + c.NoteBoxHeight()
+	}
+	return max(float32(42), 22+padY*2)
+}
+
+// NoteOverflows estimates whether note exceeds the reserved compact lines
+// at cardWidth, used to decide whether to show the trailing right-edge fade.
+func (c CompactCardLayout) NoteOverflows(note string, cardWidth float32) bool {
+	if note == "" || c.NoteLines <= 0 {
+		return false
+	}
+	innerW := max(float32(48), cardWidth-float32(c.Pad)*2) * 0.94
+	line := 1
+	var x float32
+	for _, r := range note {
+		if r == '\n' {
+			line++
+			x = 0
+		} else {
+			w := float32(6.4)
+			if r > 255 {
+				w = 11.5
+			}
+			if x+w > innerW {
+				line++
+				x = w
+			} else {
+				x += w
+			}
+		}
+		if line > c.NoteLines {
+			return true
+		}
+	}
+	return false
+}
+
 // NormalizeCardSize maps unknown or empty values to the standard size.
 func NormalizeCardSize(v string) string {
 	switch v {
@@ -230,11 +316,16 @@ func NormalizeCardSize(v string) string {
 // Settings are per device and never synced (settings.json in the app's
 // user data dir).
 type Settings struct {
-	Appearance  string `json:"appearance"`         // auto | light | dark
-	DefaultView string `json:"defaultView"`        // list | grid
-	CardSize    string `json:"cardSize,omitempty"` // compact | standard | detail (grid view)
-	ShowNote    bool   `json:"showNote"`
-	ShowTags    bool   `json:"showTags"`
+	Appearance        string `json:"appearance"`                  // auto | light | dark
+	DefaultView       string `json:"defaultView"`                 // list | grid
+	CardSize          string `json:"cardSize,omitempty"`          // compact | standard | detail (grid view)
+	CompactNoteLines  *int   `json:"compactNoteLines,omitempty"`  // 0..4 (nil = default 2)
+	CompactCardWidth  int    `json:"compactCardWidth,omitempty"`  // 140..240 (0 = default 176)
+	CompactCardGap    int    `json:"compactCardGap,omitempty"`    // 4..16 (0 = default 8)
+	CompactCardPad    int    `json:"compactCardPad,omitempty"`    // 6..16 (0 = default 10)
+	CompactCardRadius int    `json:"compactCardRadius,omitempty"` // 4..16 (0 = default 9)
+	ShowNote          bool   `json:"showNote"`
+	ShowTags          bool   `json:"showTags"`
 
 	// OpenModes are the summon modes switched on, besides the main window.
 	OpenModes          []string `json:"openModes"`
@@ -277,6 +368,39 @@ type Settings struct {
 	NotchGroup string `json:"notchGroup,omitempty"`
 	TrayGroup  string `json:"trayGroup,omitempty"`
 	EdgeGroup  string `json:"edgeGroup,omitempty"`
+}
+
+// CompactCard returns the effective compact card layout with defaults and clamping.
+func (s *Settings) CompactCard() CompactCardLayout {
+	d := DefaultCompactCardLayout()
+	out := d
+	if s.CompactNoteLines != nil {
+		out.NoteLines = *s.CompactNoteLines
+	}
+	if s.CompactCardWidth > 0 {
+		out.Width = s.CompactCardWidth
+	}
+	if s.CompactCardGap > 0 {
+		out.Gap = s.CompactCardGap
+	}
+	if s.CompactCardPad > 0 {
+		out.Pad = s.CompactCardPad
+	}
+	if s.CompactCardRadius > 0 {
+		out.Radius = s.CompactCardRadius
+	}
+	return out.Clamp()
+}
+
+// SetCompactCard stores a clamped compact card layout on Settings.
+func (s *Settings) SetCompactCard(v CompactCardLayout) {
+	v = v.Clamp()
+	lines := v.NoteLines
+	s.CompactNoteLines = &lines
+	s.CompactCardWidth = v.Width
+	s.CompactCardGap = v.Gap
+	s.CompactCardPad = v.Pad
+	s.CompactCardRadius = v.Radius
 }
 
 // DefaultSettings are the settings of a fresh install.

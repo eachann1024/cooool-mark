@@ -542,5 +542,122 @@
   "menuCardSize": "Card Size",
   "cardSizeCompact": "Compact",
   "cardSizeStandard": "Standard",
-  "cardSizeDetail": "Detailed"
+  "cardSizeDetail": "Detailed",
+  "settingsCompactCard": "Compact Card",
+  "settingsCompactPresetTitle": "Title Only",
+  "settingsCompactPresetTwo": "2-Line Note",
+  "settingsCompactPresetAiry": "Airy",
+  "settingsCompactReset": "Reset",
+  "settingsCompactPreview": "Live Preview",
+  "settingsCompactPreviewTitleOnly": "Title only · W {w} · H {h}px",
+  "@settingsCompactPreviewTitleOnly": {
+    "placeholders": {
+      "w": {
+        "type": "int"
+      },
+      "h": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsCompactPreviewNotes": "W {w} · H {h}px · {lines} lines",
+  "@settingsCompactPreviewNotes": {
+    "placeholders": {
+      "w": {
+        "type": "int"
+      },
+      "h": {
+        "type": "int"
+      },
+      "lines": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsCompactNoteLines": "Note Lines",
+  "settingsCompactNoteLinesZero": "0 lines · Title only",
+  "settingsCompactNoteLinesVal": "{count, plural, one {# line} other {# lines}}",
+  "@settingsCompactNoteLinesVal": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsCompactWidth": "Card Width",
+  "settingsCompactGap": "Card Gap",
+  "settingsCompactPad": "Padding",
+  "settingsCompactRadius": "Corner Radius",
+  "actionCopyURLs": "Copy {count} Bookmark URLs",
+  "@actionCopyURLs": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "actionCopyTitles": "Copy {count} Titles",
+  "@actionCopyTitles": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "actionCopyMarkdowns": "Copy {count} as Markdown",
+  "@actionCopyMarkdowns": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "actionOpenCount": "Open {count} Bookmarks",
+  "@actionOpenCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "actionMoveCount": "Move {count} Bookmarks…",
+  "@actionMoveCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "actionDeleteCount": "Delete {count} Bookmarks",
+  "@actionDeleteCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "toastCopiedURLs": "Copied {count} bookmark URLs",
+  "@toastCopiedURLs": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "toastCopiedTitles": "Copied {count} titles",
+  "@toastCopiedTitles": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "toastCopiedMarkdowns": "Copied {count} Markdown links",
+  "@toastCopiedMarkdowns": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
 }

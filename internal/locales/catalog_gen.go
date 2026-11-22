@@ -4369,3 +4369,249 @@ func CardSizeDetail() string { return In(i18n.Locale()).CardSizeDetail() }
 func (msgs Messages) CardSizeDetail() string {
 	return Catalog.Format(msgs.locale, "cardSizeDetail", nil)
 }
+
+// SettingsCompactCard says "Compact Card"
+// in the language the app shows.
+func SettingsCompactCard() string { return In(i18n.Locale()).SettingsCompactCard() }
+
+// SettingsCompactCard says "Compact Card"
+// in the language of msgs.
+func (msgs Messages) SettingsCompactCard() string {
+	return Catalog.Format(msgs.locale, "settingsCompactCard", nil)
+}
+
+// SettingsCompactPresetTitle says "Title Only"
+// in the language the app shows.
+func SettingsCompactPresetTitle() string { return In(i18n.Locale()).SettingsCompactPresetTitle() }
+
+// SettingsCompactPresetTitle says "Title Only"
+// in the language of msgs.
+func (msgs Messages) SettingsCompactPresetTitle() string {
+	return Catalog.Format(msgs.locale, "settingsCompactPresetTitle", nil)
+}
+
+// SettingsCompactPresetTwo says "2-Line Note"
+// in the language the app shows.
+func SettingsCompactPresetTwo() string { return In(i18n.Locale()).SettingsCompactPresetTwo() }
+
+// SettingsCompactPresetTwo says "2-Line Note"
+// in the language of msgs.
+func (msgs Messages) SettingsCompactPresetTwo() string {
+	return Catalog.Format(msgs.locale, "settingsCompactPresetTwo", nil)
+}
+
+// SettingsCompactPresetAiry says "Airy"
+// in the language the app shows.
+func SettingsCompactPresetAiry() string { return In(i18n.Locale()).SettingsCompactPresetAiry() }
+
+// SettingsCompactPresetAiry says "Airy"
+// in the language of msgs.
+func (msgs Messages) SettingsCompactPresetAiry() string {
+	return Catalog.Format(msgs.locale, "settingsCompactPresetAiry", nil)
+}
+
+// SettingsCompactReset says "Reset"
+// in the language the app shows.
+func SettingsCompactReset() string { return In(i18n.Locale()).SettingsCompactReset() }
+
+// SettingsCompactReset says "Reset"
+// in the language of msgs.
+func (msgs Messages) SettingsCompactReset() string {
+	return Catalog.Format(msgs.locale, "settingsCompactReset", nil)
+}
+
+// SettingsCompactPreview says "Live Preview"
+// in the language the app shows.
+func SettingsCompactPreview() string { return In(i18n.Locale()).SettingsCompactPreview() }
+
+// SettingsCompactPreview says "Live Preview"
+// in the language of msgs.
+func (msgs Messages) SettingsCompactPreview() string {
+	return Catalog.Format(msgs.locale, "settingsCompactPreview", nil)
+}
+
+// SettingsCompactPreviewTitleOnly says "Title only · W {w} · H {h}px"
+// in the language the app shows.
+func SettingsCompactPreviewTitleOnly(w int, h int) string {
+	return In(i18n.Locale()).SettingsCompactPreviewTitleOnly(w, h)
+}
+
+// SettingsCompactPreviewTitleOnly says "Title only · W {w} · H {h}px"
+// in the language of msgs.
+func (msgs Messages) SettingsCompactPreviewTitleOnly(w int, h int) string {
+	return Catalog.Format(msgs.locale, "settingsCompactPreviewTitleOnly", map[string]any{"w": w, "h": h})
+}
+
+// SettingsCompactPreviewNotes says "W {w} · H {h}px · {lines} lines"
+// in the language the app shows.
+func SettingsCompactPreviewNotes(w int, h int, lines int) string {
+	return In(i18n.Locale()).SettingsCompactPreviewNotes(w, h, lines)
+}
+
+// SettingsCompactPreviewNotes says "W {w} · H {h}px · {lines} lines"
+// in the language of msgs.
+func (msgs Messages) SettingsCompactPreviewNotes(w int, h int, lines int) string {
+	return Catalog.Format(msgs.locale, "settingsCompactPreviewNotes", map[string]any{"w": w, "h": h, "lines": lines})
+}
+
+// SettingsCompactNoteLines says "Note Lines"
+// in the language the app shows.
+func SettingsCompactNoteLines() string { return In(i18n.Locale()).SettingsCompactNoteLines() }
+
+// SettingsCompactNoteLines says "Note Lines"
+// in the language of msgs.
+func (msgs Messages) SettingsCompactNoteLines() string {
+	return Catalog.Format(msgs.locale, "settingsCompactNoteLines", nil)
+}
+
+// SettingsCompactNoteLinesZero says "0 lines · Title only"
+// in the language the app shows.
+func SettingsCompactNoteLinesZero() string { return In(i18n.Locale()).SettingsCompactNoteLinesZero() }
+
+// SettingsCompactNoteLinesZero says "0 lines · Title only"
+// in the language of msgs.
+func (msgs Messages) SettingsCompactNoteLinesZero() string {
+	return Catalog.Format(msgs.locale, "settingsCompactNoteLinesZero", nil)
+}
+
+// SettingsCompactNoteLinesVal says "{count, plural, one {# line} other {# lines}}"
+// in the language the app shows.
+func SettingsCompactNoteLinesVal(count int) string {
+	return In(i18n.Locale()).SettingsCompactNoteLinesVal(count)
+}
+
+// SettingsCompactNoteLinesVal says "{count, plural, one {# line} other {# lines}}"
+// in the language of msgs.
+func (msgs Messages) SettingsCompactNoteLinesVal(count int) string {
+	return Catalog.Format(msgs.locale, "settingsCompactNoteLinesVal", map[string]any{"count": count})
+}
+
+// SettingsCompactWidth says "Card Width"
+// in the language the app shows.
+func SettingsCompactWidth() string { return In(i18n.Locale()).SettingsCompactWidth() }
+
+// SettingsCompactWidth says "Card Width"
+// in the language of msgs.
+func (msgs Messages) SettingsCompactWidth() string {
+	return Catalog.Format(msgs.locale, "settingsCompactWidth", nil)
+}
+
+// SettingsCompactGap says "Card Gap"
+// in the language the app shows.
+func SettingsCompactGap() string { return In(i18n.Locale()).SettingsCompactGap() }
+
+// SettingsCompactGap says "Card Gap"
+// in the language of msgs.
+func (msgs Messages) SettingsCompactGap() string {
+	return Catalog.Format(msgs.locale, "settingsCompactGap", nil)
+}
+
+// SettingsCompactPad says "Padding"
+// in the language the app shows.
+func SettingsCompactPad() string { return In(i18n.Locale()).SettingsCompactPad() }
+
+// SettingsCompactPad says "Padding"
+// in the language of msgs.
+func (msgs Messages) SettingsCompactPad() string {
+	return Catalog.Format(msgs.locale, "settingsCompactPad", nil)
+}
+
+// SettingsCompactRadius says "Corner Radius"
+// in the language the app shows.
+func SettingsCompactRadius() string { return In(i18n.Locale()).SettingsCompactRadius() }
+
+// SettingsCompactRadius says "Corner Radius"
+// in the language of msgs.
+func (msgs Messages) SettingsCompactRadius() string {
+	return Catalog.Format(msgs.locale, "settingsCompactRadius", nil)
+}
+
+// ActionCopyURLs says "Copy {count} Bookmark URLs"
+// in the language the app shows.
+func ActionCopyURLs(count int) string { return In(i18n.Locale()).ActionCopyURLs(count) }
+
+// ActionCopyURLs says "Copy {count} Bookmark URLs"
+// in the language of msgs.
+func (msgs Messages) ActionCopyURLs(count int) string {
+	return Catalog.Format(msgs.locale, "actionCopyURLs", map[string]any{"count": count})
+}
+
+// ActionCopyTitles says "Copy {count} Titles"
+// in the language the app shows.
+func ActionCopyTitles(count int) string { return In(i18n.Locale()).ActionCopyTitles(count) }
+
+// ActionCopyTitles says "Copy {count} Titles"
+// in the language of msgs.
+func (msgs Messages) ActionCopyTitles(count int) string {
+	return Catalog.Format(msgs.locale, "actionCopyTitles", map[string]any{"count": count})
+}
+
+// ActionCopyMarkdowns says "Copy {count} as Markdown"
+// in the language the app shows.
+func ActionCopyMarkdowns(count int) string { return In(i18n.Locale()).ActionCopyMarkdowns(count) }
+
+// ActionCopyMarkdowns says "Copy {count} as Markdown"
+// in the language of msgs.
+func (msgs Messages) ActionCopyMarkdowns(count int) string {
+	return Catalog.Format(msgs.locale, "actionCopyMarkdowns", map[string]any{"count": count})
+}
+
+// ActionOpenCount says "Open {count} Bookmarks"
+// in the language the app shows.
+func ActionOpenCount(count int) string { return In(i18n.Locale()).ActionOpenCount(count) }
+
+// ActionOpenCount says "Open {count} Bookmarks"
+// in the language of msgs.
+func (msgs Messages) ActionOpenCount(count int) string {
+	return Catalog.Format(msgs.locale, "actionOpenCount", map[string]any{"count": count})
+}
+
+// ActionMoveCount says "Move {count} Bookmarks…"
+// in the language the app shows.
+func ActionMoveCount(count int) string { return In(i18n.Locale()).ActionMoveCount(count) }
+
+// ActionMoveCount says "Move {count} Bookmarks…"
+// in the language of msgs.
+func (msgs Messages) ActionMoveCount(count int) string {
+	return Catalog.Format(msgs.locale, "actionMoveCount", map[string]any{"count": count})
+}
+
+// ActionDeleteCount says "Delete {count} Bookmarks"
+// in the language the app shows.
+func ActionDeleteCount(count int) string { return In(i18n.Locale()).ActionDeleteCount(count) }
+
+// ActionDeleteCount says "Delete {count} Bookmarks"
+// in the language of msgs.
+func (msgs Messages) ActionDeleteCount(count int) string {
+	return Catalog.Format(msgs.locale, "actionDeleteCount", map[string]any{"count": count})
+}
+
+// ToastCopiedURLs says "Copied {count} bookmark URLs"
+// in the language the app shows.
+func ToastCopiedURLs(count int) string { return In(i18n.Locale()).ToastCopiedURLs(count) }
+
+// ToastCopiedURLs says "Copied {count} bookmark URLs"
+// in the language of msgs.
+func (msgs Messages) ToastCopiedURLs(count int) string {
+	return Catalog.Format(msgs.locale, "toastCopiedURLs", map[string]any{"count": count})
+}
+
+// ToastCopiedTitles says "Copied {count} titles"
+// in the language the app shows.
+func ToastCopiedTitles(count int) string { return In(i18n.Locale()).ToastCopiedTitles(count) }
+
+// ToastCopiedTitles says "Copied {count} titles"
+// in the language of msgs.
+func (msgs Messages) ToastCopiedTitles(count int) string {
+	return Catalog.Format(msgs.locale, "toastCopiedTitles", map[string]any{"count": count})
+}
+
+// ToastCopiedMarkdowns says "Copied {count} Markdown links"
+// in the language the app shows.
+func ToastCopiedMarkdowns(count int) string { return In(i18n.Locale()).ToastCopiedMarkdowns(count) }
+
+// ToastCopiedMarkdowns says "Copied {count} Markdown links"
+// in the language of msgs.
+func (msgs Messages) ToastCopiedMarkdowns(count int) string {
+	return Catalog.Format(msgs.locale, "toastCopiedMarkdowns", map[string]any{"count": count})
+}

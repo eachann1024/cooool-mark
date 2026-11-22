@@ -51,6 +51,7 @@ type mainState struct {
 
 	// Selection & cursor state.
 	cursorID          string
+	selectedIDs       map[string]bool
 	cursorScrollMoved bool
 	searchScrollMoved bool
 
@@ -225,9 +226,16 @@ func ShowSearch(a *app.App, q string) {
 
 func ensureState(a *app.App) {
 	if state == nil {
-		state = &mainState{app: a, pendingSearchCaret: -1}
+		state = &mainState{
+			app:                a,
+			pendingSearchCaret: -1,
+			selectedIDs:        make(map[string]bool),
+		}
 	} else {
 		state.app = a
+		if state.selectedIDs == nil {
+			state.selectedIDs = make(map[string]bool)
+		}
 	}
 }
 
@@ -243,6 +251,7 @@ func (s *mainState) view(c *ui.Context) {
 	if b := lib.Bookmark(s.tplBookmarkID); b == nil || !b.IsTemplate() {
 		s.tplBookmarkID = ""
 	}
+	s.pruneSelection(lib)
 	p := theme.Apply(c, a.Settings.Appearance)
 	s.pal = p
 	c.Root().Background(p.Bg)
@@ -423,13 +432,14 @@ func (s *mainState) handleGlobalShortcuts(c *ui.Context) {
 		a.ToastAction()
 	}
 
-	// Escape clears template prompt or cursor focus.
+	// Escape clears template prompt or selection/cursor focus.
 	if c.Shortcut(0, ui.KeyEscape) {
 		switch {
 		case s.tplBookmarkID != "":
 			s.tplBookmarkID = ""
 			s.tplQuery = ""
-		case s.cursorID != "":
+		case len(s.selectedIDs) > 0 || s.cursorID != "":
+			s.clearSelection()
 			s.cursorID = ""
 		}
 	}
@@ -457,37 +467,122 @@ func (s *mainState) handleGlobalShortcuts(c *ui.Context) {
 		s.moveCursor(ids, -1)
 	}
 
-	if s.cursorID == "" || !slices.Contains(ids, s.cursorID) {
+	sel := s.selectedList()
+	if len(sel) == 0 {
 		return
 	}
 
 	if c.Shortcut(0, ui.KeyEnter) && !c.ShortcutRepeated() {
-		if b := lib.Bookmark(s.cursorID); b != nil {
+		if len(sel) > 1 {
+			s.openBookmarks(c, sel)
+		} else if b := lib.Bookmark(sel[0]); b != nil {
 			s.activateBookmark(c, b)
 		}
 	}
 
-	if c.Shortcut(ui.Cmd, ui.KeyE) && !c.ShortcutRepeated() {
+	if c.Shortcut(ui.Cmd, ui.KeyE) && !c.ShortcutRepeated() && len(sel) == 1 {
 		if a.Win.ShowEditor != nil {
-			a.Win.ShowEditor(app.EditorRequest{ID: s.cursorID})
+			a.Win.ShowEditor(app.EditorRequest{ID: sel[0]})
 		}
 	}
 
 	if c.Shortcut(ui.Cmd|ui.Shift, ui.KeyM) && !c.ShortcutRepeated() {
-		s.openMoveModal([]string{s.cursorID})
+		s.openMoveModal(sel)
 	}
 
 	if c.Shortcut(ui.Cmd, ui.KeyC) && !c.ShortcutRepeated() {
-		s.copyBookmarkURL(c, s.cursorID)
+		if len(sel) > 1 {
+			s.copyBookmarkURLs(c, sel)
+		} else {
+			s.copyBookmarkURL(c, sel[0])
+		}
 	}
 
 	if c.Shortcut(ui.Cmd|ui.Shift, ui.KeyC) && !c.ShortcutRepeated() {
-		s.copyBookmarkTitle(c, s.cursorID)
+		if len(sel) > 1 {
+			s.copyBookmarkTitles(c, sel)
+		} else {
+			s.copyBookmarkTitle(c, sel[0])
+		}
 	}
 
 	if (c.Shortcut(0, ui.KeyBackspace) || c.Shortcut(0, ui.KeyDelete)) && !c.ShortcutRepeated() {
-		a.Delete(s.cursorID)
+		s.clearSelection()
+		a.Delete(sel...)
 	}
+}
+
+func (s *mainState) isBookmarkSelected(id string) bool {
+	if id == "" {
+		return false
+	}
+	if len(s.selectedIDs) > 0 {
+		return s.selectedIDs[id]
+	}
+	return s.cursorID == id
+}
+
+func (s *mainState) clearSelection() {
+	clear(s.selectedIDs)
+}
+
+func (s *mainState) toggleSelect(id string) {
+	if id == "" {
+		return
+	}
+	if s.selectedIDs == nil {
+		s.selectedIDs = make(map[string]bool)
+	}
+	if len(s.selectedIDs) == 0 && s.cursorID != "" && s.cursorID != id {
+		s.selectedIDs[s.cursorID] = true
+	}
+	if s.selectedIDs[id] {
+		delete(s.selectedIDs, id)
+		if s.cursorID == id {
+			s.cursorID = ""
+			for other := range s.selectedIDs {
+				s.cursorID = other
+				break
+			}
+		}
+		return
+	}
+	s.selectedIDs[id] = true
+	s.cursorID = id
+}
+
+func (s *mainState) pruneSelection(lib *model.Library) {
+	for id := range s.selectedIDs {
+		if b := lib.Bookmark(id); b == nil || b.InTrash() {
+			delete(s.selectedIDs, id)
+		}
+	}
+}
+
+func (s *mainState) selectedList() []string {
+	ids := s.visibleBookmarkIDs()
+	if len(s.selectedIDs) > 0 {
+		out := make([]string, 0, len(s.selectedIDs))
+		for _, id := range ids {
+			if s.selectedIDs[id] {
+				out = append(out, id)
+			}
+		}
+		return out
+	}
+	if s.cursorID != "" && slices.Contains(ids, s.cursorID) {
+		return []string{s.cursorID}
+	}
+	return nil
+}
+
+func (s *mainState) actionBookmarkIDs(targetID string) []string {
+	if len(s.selectedIDs) > 1 && s.selectedIDs[targetID] {
+		if sel := s.selectedList(); len(sel) > 1 {
+			return sel
+		}
+	}
+	return []string{targetID}
 }
 
 func (s *mainState) switchGroup(groupID string) {
@@ -495,6 +590,7 @@ func (s *mainState) switchGroup(groupID string) {
 		return
 	}
 	s.clearSearch()
+	s.clearSelection()
 	s.cursorID = ""
 	s.subTabsScroll.X = 0
 	s.browseList.ScrollTo(0, ui.Start)
@@ -531,6 +627,7 @@ func (s *mainState) moveCursor(ids []string, delta int) {
 		idx = max(0, min(idx+delta, len(ids)-1))
 	}
 	target := ids[idx]
+	s.clearSelection()
 	s.cursorID = target
 	s.cursorScrollMoved = true
 	s.stopBrowseFollow()

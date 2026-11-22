@@ -42,6 +42,12 @@ type state struct {
 	saveTimer *time.Timer
 	keyTimer  *time.Timer
 	keySeq    int
+
+	compactLines  float64
+	compactWidth  float64
+	compactGap    float64
+	compactPad    float64
+	compactRadius float64
 }
 
 var (
@@ -114,6 +120,7 @@ func Show(a *app.App, page string) {
 		cur.page = page
 		cur.setRecording("")
 		cur.openAtLogin = mygo.App.OpenAtLogin()
+		cur.syncCompactSliders()
 		if cur.win.IsMinimized() {
 			cur.win.Restore()
 		}
@@ -128,6 +135,7 @@ func Show(a *app.App, page string) {
 		page:        page,
 		openAtLogin: mygo.App.OpenAtLogin(),
 	}
+	s.syncCompactSliders()
 	cur = s
 	s.loadAsync()
 
@@ -151,6 +159,15 @@ func Show(a *app.App, page string) {
 			cur = nil
 		}
 	})
+}
+
+func (s *state) syncCompactSliders() {
+	cc := s.a.Settings.CompactCard()
+	s.compactLines = float64(cc.NoteLines)
+	s.compactWidth = float64(cc.Width)
+	s.compactGap = float64(cc.Gap)
+	s.compactPad = float64(cc.Pad)
+	s.compactRadius = float64(cc.Radius)
 }
 
 func normalizePage(page string) string {
