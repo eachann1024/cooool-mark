@@ -50,7 +50,7 @@ func Close() {
 // HasActiveSummonMode reports whether at least one persistent summon surface
 // (tray icon, notch panel, or edge trigger) is currently alive.
 func HasActiveSummonMode() bool {
-	return curTray != nil || curNotch != nil || curEdge != nil
+	return curTray != nil || (curNotch != nil && curNotch.hasNotch) || curEdge != nil
 }
 
 // HideSummoned collapses every summoned panel (after opening a bookmark).

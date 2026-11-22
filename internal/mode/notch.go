@@ -47,8 +47,10 @@ type notchMode struct {
 	tmplID       string
 	tmplQuery    string
 	tmplInput    ui.Handle
-	disp         mygo.Display
-	unsubDisp    func()
+	disp                 mygo.Display
+	hasNotch             bool
+	closingBoundsPending bool
+	unsubDisp            func()
 	list         ui.ListState
 	cache        struct {
 		library  *model.Library
@@ -72,19 +74,63 @@ func syncNotch(a *app.App, on bool) {
 		return
 	}
 	curNotch.app = a
-	if curNotch.state == notchClosed {
-		curNotch.placeClosed(cursorDisplay())
-	}
-	if curNotch.win != nil {
+	curNotch.syncDisplay()
+	if curNotch.win != nil && curNotch.hasNotch {
 		curNotch.win.Invalidate()
 	}
 }
 
+func notchDisplay() (mygo.Display, bool) {
+	d := cursorDisplay()
+	if displayHasNotch(d) {
+		return d, true
+	}
+	for _, cand := range mygo.Screen.Displays() {
+		if displayHasNotch(cand) {
+			return cand, true
+		}
+	}
+	return mygo.Display{}, false
+}
+
+func (n *notchMode) syncDisplay() {
+	d, ok := notchDisplay()
+	if !ok {
+		n.hasNotch = false
+		n.state = notchClosed
+		n.menuOpen = false
+		n.query = ""
+		n.tmplID = ""
+		n.tmplQuery = ""
+		n.closingBoundsPending = false
+		if n.win != nil {
+			n.win.Hide()
+		}
+		return
+	}
+	wasHidden := !n.hasNotch
+	n.hasNotch = true
+	if n.state == notchClosed {
+		n.placeClosed(d)
+		if wasHidden && n.win != nil {
+			n.win.ShowInactive()
+		}
+	} else if d.ID != n.disp.ID {
+		n.disp = d
+		x, y, w, h := n.boundsFor(n.state, n.currentRows())
+		if n.win != nil {
+			n.win.SetBounds(mygo.Rectangle{X: x, Y: y, Width: w, Height: h})
+		}
+	}
+}
+
 func newNotchMode(a *app.App) *notchMode {
+	d, hasNotch := notchDisplay()
 	n := &notchMode{
-		app:     a,
-		groupID: initialModeGroup(a.Settings.NotchGroup, a.Group),
-		disp:    cursorDisplay(),
+		app:      a,
+		groupID:  initialModeGroup(a.Settings.NotchGroup, a.Group),
+		disp:     d,
+		hasNotch: hasNotch,
 	}
 	x, y, w, h := n.boundsFor(notchClosed, 1)
 	n.win = mygo.NewWindow(mygo.WindowOptions{
@@ -107,9 +153,11 @@ func newNotchMode(a *app.App) *notchMode {
 		Content:           ui.View(n.view),
 	})
 	prepareNotchWindow(n.win)
-	n.win.SetBounds(mygo.Rectangle{X: x, Y: y, Width: w, Height: h})
 	a.AddWindow(n.win)
-	n.win.ShowInactive()
+	if n.hasNotch {
+		n.placeClosed(d)
+		n.win.ShowInactive()
+	}
 	n.win.OnBlur(func() {
 		if !n.menuOpen && n.state != notchClosed && time.Since(n.openedAt) > 150*time.Millisecond {
 			n.collapse()
@@ -120,8 +168,8 @@ func newNotchMode(a *app.App) *notchMode {
 		n.collapse()
 	})
 	n.unsubDisp = mygo.Screen.OnDisplaysChanged(func() {
-		if curNotch == n && n.state == notchClosed {
-			n.placeClosed(cursorDisplay())
+		if curNotch == n {
+			n.syncDisplay()
 		}
 	})
 	return n
@@ -208,6 +256,16 @@ func (n *notchMode) setState(st notchState) {
 	if n.state == st {
 		return
 	}
+	if st != notchClosed {
+		d, ok := notchDisplay()
+		if !ok {
+			n.syncDisplay()
+			return
+		}
+		n.hasNotch = true
+		n.disp = d
+		n.closingBoundsPending = false
+	}
 	wasFocused := st == notchClosed && n.win != nil && n.win.IsFocused()
 	n.state = st
 	n.hoverSince = time.Time{}
@@ -219,7 +277,6 @@ func (n *notchMode) setState(st notchState) {
 		n.tmplQuery = ""
 		n.list.ScrollTo(0, ui.Start)
 	} else {
-		n.disp = cursorDisplay()
 		n.openedAt = time.Now()
 	}
 	if n.win == nil {
@@ -228,9 +285,11 @@ func (n *notchMode) setState(st notchState) {
 	if wasFocused {
 		n.win.Hide()
 	}
-	rows := n.currentRows()
-	x, y, w, h := n.boundsFor(st, rows)
-	n.win.SetBounds(mygo.Rectangle{X: x, Y: y, Width: w, Height: h})
+	if st != notchClosed {
+		rows := n.currentRows()
+		x, y, w, h := n.boundsFor(st, rows)
+		n.win.SetBounds(mygo.Rectangle{X: x, Y: y, Width: w, Height: h})
+	}
 	if st == notchOpen {
 		n.win.Show()
 		n.win.Focus()
@@ -242,6 +301,12 @@ func (n *notchMode) setState(st notchState) {
 }
 
 func (n *notchMode) expand() {
+	if !n.hasNotch {
+		n.syncDisplay()
+		if !n.hasNotch {
+			return
+		}
+	}
 	if n.state == notchOpen {
 		if n.win != nil {
 			n.win.Show()
@@ -413,8 +478,23 @@ func (n *notchMode) view(c *ui.Context) {
 		animH := panel.AnimateTo("h", targetH, spring)
 		animR := panel.AnimateTo("r", targetR, spring)
 
+		settled := math.Abs(float64(animW-targetW)) <= 0.5 && math.Abs(float64(animH-targetH)) <= 0.5
+		if n.state == notchClosed && n.hasNotch && settled && !n.closingBoundsPending && n.win != nil {
+			x, y, w, h := n.boundsFor(notchClosed, 1)
+			b := n.win.Bounds()
+			if b.Width != w || b.Height != h || b.X != x || b.Y != y {
+				n.closingBoundsPending = true
+				n.win.Update(func() {
+					n.closingBoundsPending = false
+					if n.win != nil && n.state == notchClosed && n.hasNotch {
+						n.placeClosed(n.disp)
+					}
+				})
+			}
+		}
+
 		panel.Size(animW, animH).Shrink(0).Background(p.Notch).Radius(0, 0, animR, animR)
-		if math.Abs(float64(animW-targetW)) > 0.5 || math.Abs(float64(animH-targetH)) > 0.5 {
+		if !settled {
 			panel.Clip()
 		}
 		if n.state != notchClosed {
