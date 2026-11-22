@@ -710,13 +710,17 @@ func (e *edgeMode) currentRows(lib *model.Library, q string) []edgeRow {
 
 func (e *edgeMode) renderRow(c *ui.Context, p *theme.Palette, b *model.Bookmark, menuOpen *bool) {
 	row := ui.ButtonBase(c.Key("eg-bm-" + b.ID)).Height(34).PaddingX(8).Gap(10).
-		Radius(8).Justify(ui.Start).AlignItems(ui.Center).Label(b.Title).Tooltip(b.Title)
+		Radius(8).Justify(ui.Start).AlignItems(ui.Center).Label(b.Title)
+	titleH := ui.Local(row, "titleH", func() ui.Handle { return ui.Handle{} })
+	if widget.TextTruncated(c, titleH, b.Title, 0, 0, 1) {
+		row.Tooltip(b.Title)
+	}
 	if row.Hovered() {
 		row.Background(p.Hover)
 	}
 	row.Children(func() {
 		theme.Tile(c, b.Icon, e.app.Store.IconPath(b.Icon), 22).Radius(6)
-		ui.Text(c, b.Title).Grow(1).TextColor(p.Text).SingleLine()
+		ui.Text(c, b.Title).Grow(1).MinWidth(0).TextColor(p.Text).SingleLine().Bind(titleH)
 	})
 	if row.Clicked() {
 		e.openItem(b)

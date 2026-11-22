@@ -717,7 +717,11 @@ func (n *notchMode) renderOpen(c *ui.Context, p *theme.Palette, lib *model.Libra
 					for _, bm := range rowItems {
 						b := bm
 						tile := ui.ButtonBase(c.Key("nt-" + b.ID)).Padding(0).Radius(12).
-							AlignItems(ui.Center).Label(b.Title).Tooltip(b.Title)
+							AlignItems(ui.Center).Label(b.Title)
+						titleH := ui.Local(tile, "titleH", func() ui.Handle { return ui.Handle{} })
+						if widget.TextTruncated(c, titleH, b.Title, 12, 0, 1) {
+							tile.Tooltip(b.Title)
+						}
 						if tile.Hovered() {
 							tile.Background(ui.RGBA(255, 255, 255, 0.08))
 						}
@@ -728,7 +732,7 @@ func (n *notchMode) renderOpen(c *ui.Context, p *theme.Palette, lib *model.Libra
 								if tile.Hovered() {
 									sq.Translate(0, -2).Scale(1.04, 1.04)
 								}
-								ui.Text(c, b.Title).FontSize(12).TextColor(ui.Hex("#e8e6df")).SingleLine()
+								ui.Text(c, b.Title).FontSize(12).TextColor(ui.Hex("#e8e6df")).SingleLine().Bind(titleH)
 							})
 						})
 						if tile.Clicked() {

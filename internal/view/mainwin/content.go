@@ -664,6 +664,9 @@ func (s *mainState) buildBookmarkListRow(c *ui.Context, p *theme.Palette, g *mod
 	enriching := a.IsEnriching(b.ID)
 
 	wrap := ui.Column(keyC).FillWidth()
+	titleH := ui.Local(wrap, "titleH", func() ui.Handle { return ui.Handle{} })
+	noteH := ui.Local(wrap, "noteH", func() ui.Handle { return ui.Handle{} })
+	domH := ui.Local(wrap, "domH", func() ui.Handle { return ui.Handle{} })
 	_, dragOver := ui.DragOver[dragPayload](wrap)
 	if drop, ok := ui.Drop[dragPayload](wrap); ok {
 		s.dropBookmarksAt(drop, g.ID, sub.ID, b.ID)
@@ -680,6 +683,16 @@ func (s *mainState) buildBookmarkListRow(c *ui.Context, p *theme.Palette, g *mod
 		menuShown := s.bindBookmarkMenu(c, p, row, b)
 
 		hovered := row.Hovered()
+		showsNote := a.Settings.ShowNote && b.Note != ""
+		dom := shortDomain(b.URL)
+		showsDom := dom != "" && (hovered || selected || *menuOpen)
+		titleCut := widget.TextTruncated(c, titleH, b.Title, 13.5, 0, 1)
+		noteCut := showsNote && widget.TextTruncated(c, noteH, b.Note, 12, 0, 1)
+		domCut := showsDom && widget.TextTruncated(c, domH, dom, 12, 0, 1)
+		if tip := foldedBookmarkTooltip(b.Title, b.Note, dom, titleCut, noteCut, domCut); tip != "" {
+			row.Tooltip(tip)
+		}
+
 		switch {
 		case selected || menuShown:
 			row.Background(p.RowSel)
@@ -708,7 +721,7 @@ func (s *mainState) buildBookmarkListRow(c *ui.Context, p *theme.Palette, g *mod
 
 				ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
 					ui.Row(c).Gap(6).AlignItems(ui.Center).MinWidth(0).Children(func() {
-						ui.Text(c, b.Title).FontSize(13.5).TextColor(p.Text).SingleLine().Shrink(1).MinWidth(0)
+						ui.Text(c, b.Title).FontSize(13.5).TextColor(p.Text).SingleLine().Shrink(1).MinWidth(0).Bind(titleH)
 						if b.IsTemplate() {
 							ui.Icon(c, theme.IconBraces).FontSize(13).TextColor(p.Primary).Shrink(0)
 						}
@@ -719,16 +732,16 @@ func (s *mainState) buildBookmarkListRow(c *ui.Context, p *theme.Palette, g *mod
 						}
 					})
 
-					if a.Settings.ShowNote && b.Note != "" {
-						ui.Text(c, b.Note).FontSize(12).TextColor(p.Muted).SingleLine()
+					if showsNote {
+						ui.Text(c, b.Note).FontSize(12).TextColor(p.Muted).SingleLine().Bind(noteH)
 					}
 				})
 			})
 
 			if hovered || selected || *menuOpen {
 				ui.Row(c).Gap(2).AlignItems(ui.Center).Shrink(0).Children(func() {
-					if dom := shortDomain(b.URL); dom != "" {
-						ui.Text(c, dom).FontSize(12).TextColor(p.Muted).MaxWidth(150).SingleLine().Margin(0, 6, 0, 0)
+					if dom != "" {
+						ui.Text(c, dom).FontSize(12).TextColor(p.Muted).MaxWidth(150).SingleLine().Margin(0, 6, 0, 0).Bind(domH)
 					}
 					s.buildBookmarkHoverActions(c, p, b, menuOpen, 24, 13.5)
 				})
@@ -788,8 +801,44 @@ func (s *mainState) buildBookmarkGridCard(c *ui.Context, p *theme.Palette, g *mo
 	} else {
 		card.AlignItems(ui.Center)
 	}
-	if dom := shortDomain(b.URL); dom != "" {
-		card.Tooltip(b.Title + " · " + dom)
+
+	titleH := ui.Local(card, "titleH", func() ui.Handle { return ui.Handle{} })
+	noteH := ui.Local(card, "noteH", func() ui.Handle { return ui.Handle{} })
+	domH := ui.Local(card, "domH", func() ui.Handle { return ui.Handle{} })
+
+	domain := shortDomain(b.URL)
+	note := strings.TrimSpace(b.Note)
+
+	titleWeight := 500
+	if size == model.CardDetail {
+		titleWeight = 600
+	}
+	var noteSize float32
+	var noteMaxLines int
+	switch size {
+	case model.CardCompact:
+		if compact.NoteLines > 0 && note != "" {
+			noteSize = 11.5
+			noteMaxLines = compact.NoteLines
+		}
+	case model.CardDetail:
+		if note != "" {
+			noteSize = 12.5
+			noteMaxLines = 3
+		}
+	default:
+		if a.Settings.ShowNote && note != "" {
+			noteSize = 12
+			noteMaxLines = 2
+		}
+	}
+	showsDomain := domain != "" && (size == model.CardDetail || (size != model.CardCompact && noteMaxLines == 0))
+
+	titleCut := widget.TextTruncated(c, titleH, b.Title, spec.titleSize, titleWeight, 1)
+	noteCut := noteMaxLines > 0 && widget.TextTruncated(c, noteH, note, noteSize, 0, noteMaxLines)
+	domainCut := showsDomain && widget.TextTruncated(c, domH, domain, 12, 0, 1)
+	if tip := foldedBookmarkTooltip(b.Title, note, domain, titleCut, noteCut, domainCut); tip != "" {
+		card.Tooltip(tip)
 	}
 	// The menu builds in every frame it shows: bind it before styling so the
 	// card is ringed exactly while its menu is up, and not after it closes.
@@ -825,12 +874,9 @@ func (s *mainState) buildBookmarkGridCard(c *ui.Context, p *theme.Palette, g *mo
 		card.Opacity(0.45)
 	}
 
-	domain := shortDomain(b.URL)
-	note := strings.TrimSpace(b.Note)
-
 	titleRow := func(maxLines int, weight int) {
 		ui.Row(c).Gap(5).AlignItems(ui.Start).FillWidth().MinWidth(0).Children(func() {
-			t := ui.Text(c, b.Title).FontSize(spec.titleSize).FontWeight(weight).TextColor(p.Text).Shrink(1).MinWidth(0)
+			t := ui.Text(c, b.Title).FontSize(spec.titleSize).FontWeight(weight).TextColor(p.Text).Shrink(1).MinWidth(0).Bind(titleH)
 			if maxLines <= 1 {
 				t.SingleLine()
 			} else {
@@ -858,7 +904,7 @@ func (s *mainState) buildBookmarkGridCard(c *ui.Context, p *theme.Palette, g *mo
 				})
 				ui.Box(c).FillWidth().Height(noteBoxH).Clip().Children(func() {
 					if note != "" {
-						ui.Text(c, note).FontSize(11.5).LineHeight(lineH / 11.5).TextColor(p.Muted).MaxLines(compact.NoteLines)
+						ui.Text(c, note).FillWidth().FontSize(11.5).LineHeight(lineH / 11.5).TextColor(p.Muted).MaxLines(compact.NoteLines).Bind(noteH)
 						if compact.NoteOverflows(note, cardW) {
 							ui.Box(c).Absolute().Right(0).Bottom(0).Width(44).Height(lineH).PassThrough().
 								LinearGradient(ui.LinearGradient{
@@ -896,13 +942,13 @@ func (s *mainState) buildBookmarkGridCard(c *ui.Context, p *theme.Palette, g *mo
 					ui.Column(c).FillWidth().MinWidth(0).Gap(4).Children(func() {
 						titleRow(1, 600)
 						if note != "" {
-							ui.Text(c, note).FontSize(12.5).TextColor(p.Text2).MaxLines(3).Ellipsis("…").LineHeight(1.4)
+							ui.Text(c, note).FontSize(12.5).TextColor(p.Text2).MaxLines(3).Ellipsis("…").LineHeight(1.4).Bind(noteH)
 						}
 					})
 					if domain != "" {
 						ui.Row(c).Gap(5).AlignItems(ui.Center).MinWidth(0).FillWidth().Children(func() {
 							ui.Icon(c, theme.IconGlobe).FontSize(11).TextColor(p.Muted).Shrink(0)
-							ui.Text(c, domain).FontSize(12).TextColor(p.Muted).SingleLine().Shrink(1).MinWidth(0)
+							ui.Text(c, domain).FontSize(12).TextColor(p.Muted).SingleLine().Shrink(1).MinWidth(0).Bind(domH)
 						})
 					}
 				})
@@ -914,9 +960,9 @@ func (s *mainState) buildBookmarkGridCard(c *ui.Context, p *theme.Palette, g *mo
 				ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
 					titleRow(1, 500)
 					if a.Settings.ShowNote && note != "" {
-						ui.Text(c, note).FontSize(12).TextColor(p.Muted).MaxLines(2).Ellipsis("…").LineHeight(1.35)
+						ui.Text(c, note).FontSize(12).TextColor(p.Muted).MaxLines(2).Ellipsis("…").LineHeight(1.35).Bind(noteH)
 					} else if domain != "" {
-						ui.Text(c, domain).FontSize(12).TextColor(p.Muted).SingleLine()
+						ui.Text(c, domain).FontSize(12).TextColor(p.Muted).SingleLine().Bind(domH)
 					}
 				})
 			}
@@ -924,6 +970,26 @@ func (s *mainState) buildBookmarkGridCard(c *ui.Context, p *theme.Palette, g *mo
 	})
 
 	s.bindGridCardEvents(c, p, card, b)
+}
+
+func foldedBookmarkTooltip(title, note, domain string, titleCut, noteCut, domainCut bool) string {
+	var head string
+	switch {
+	case titleCut && domainCut:
+		head = title + " · " + domain
+	case titleCut:
+		head = title
+	case domainCut:
+		head = domain
+	}
+	switch {
+	case head != "" && noteCut:
+		return head + "\n" + note
+	case noteCut:
+		return note
+	default:
+		return head
+	}
 }
 
 // bindGridCardEvents: Cmd/Ctrl+click toggles multi-selection; a plain single

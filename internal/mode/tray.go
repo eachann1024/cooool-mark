@@ -546,13 +546,17 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 					c := row.Context
 					b := items[row.Index]
 					btn := ui.ButtonBase(c.Key("tr-" + b.ID)).Height(36).PaddingX(8).Gap(10).
-						Radius(8).Justify(ui.Start).AlignItems(ui.Center).Label(b.Title).Tooltip(b.Title)
+						Radius(8).Justify(ui.Start).AlignItems(ui.Center).Label(b.Title)
+					titleH := ui.Local(btn, "titleH", func() ui.Handle { return ui.Handle{} })
+					if widget.TextTruncated(c, titleH, b.Title, 0, 0, 1) {
+						btn.Tooltip(b.Title)
+					}
 					if btn.Hovered() {
 						btn.Background(p.Hover)
 					}
 					btn.Children(func() {
 						theme.Tile(c, b.Icon, t.app.Store.IconPath(b.Icon), 22).Radius(6)
-						ui.Text(c, b.Title).Grow(1).TextColor(p.Text).SingleLine()
+						ui.Text(c, b.Title).Grow(1).MinWidth(0).TextColor(p.Text).SingleLine().Bind(titleH)
 					})
 					if btn.Clicked() {
 						t.openItem(b)

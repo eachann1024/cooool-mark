@@ -271,6 +271,7 @@ func (s *mainState) buildModalSearchRow(c *ui.Context, p *theme.Palette, hit app
 	on := idx == s.searchIdx
 	row := ui.Row(c.Key("smr-"+b.ID)).MinHeight(38).Padding(6, 10, 6, 12).Radius(9).Gap(11).
 		AlignItems(ui.Center).Cursor(ui.CursorPointer).Role(ui.RoleOption).Label(b.Title)
+	pathH := ui.Local(row, "pathH", func() ui.Handle { return ui.Handle{} })
 	hovered := row.Hovered()
 	if on {
 		row.Background(p.RowSel)
@@ -298,7 +299,10 @@ func (s *mainState) buildModalSearchRow(c *ui.Context, p *theme.Palette, hit app
 			})
 			ui.Text(c, shortDomain(b.URL)).FontSize(12).TextColor(p.Muted).SingleLine()
 		})
-		ui.Text(c, path).FontSize(12).TextColor(p.Muted).MaxWidth(140).SingleLine().Shrink(0).Tooltip(path)
+		pathEl := ui.Text(c, path).FontSize(12).TextColor(p.Muted).MaxWidth(140).SingleLine().Shrink(0).Bind(pathH)
+		if widget.TextTruncated(c, pathH, path, 12, 0, 1) {
+			pathEl.Tooltip(path)
+		}
 
 		if on {
 			ui.Row(c).Padding(2, 6).Radius(6).Background(p.Surface).Border(1, p.Line).Shrink(0).Children(func() {

@@ -3,6 +3,8 @@
 package widget
 
 import (
+	"strings"
+
 	"github.com/egoist/mygo/ui"
 
 	"cooool-mark/internal/app"
@@ -116,4 +118,32 @@ func Toast(c *ui.Context, a *app.App, p *theme.Palette, bottom float32) {
 			}
 		})
 	})
+}
+
+// TextTruncated reports whether a ui.Text element bound to h was clipped by
+// SingleLine (maxLines <= 1) or MaxLines(maxLines) in its last committed
+// layout. Callers must pass the same text, fontSize, weight, and maxLines used
+// when building the element.
+func TextTruncated(c *ui.Context, h *ui.Handle, text string, fontSize float32, weight, maxLines int) bool {
+	if text == "" || h == nil {
+		return false
+	}
+	b := h.Bounds(c)
+	if b.W <= 0 {
+		return false
+	}
+	span := ui.Span{Text: text, Size: fontSize, Weight: weight}
+	if maxLines <= 1 {
+		if strings.ContainsRune(text, '\n') {
+			return true
+		}
+		fullW, _ := c.MeasureText(0, span)
+		return fullW > b.W+0.5
+	}
+	_, oneLineH := c.MeasureText(0, ui.Span{Text: "Ag", Size: fontSize, Weight: weight})
+	if oneLineH <= 0 {
+		return false
+	}
+	_, fullH := c.MeasureText(max(b.W, 1), span)
+	return fullH > float32(maxLines)*oneLineH+0.5
 }

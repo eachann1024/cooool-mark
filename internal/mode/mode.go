@@ -21,6 +21,7 @@ import (
 	"cooool-mark/internal/locales"
 	"cooool-mark/internal/model"
 	"cooool-mark/internal/theme"
+	"cooool-mark/internal/widget"
 )
 
 var (
@@ -391,9 +392,13 @@ func renderTemplateBar(c *ui.Context, a *app.App, b *model.Bookmark, query *stri
 		accent = ui.Hex("#e0875f")
 	}
 	row := ui.Row(c.Key("tmpl-bar")).Height(34).Padding(0, 8, 0, 10).Gap(8).Radius(9).Background(bg).AlignItems(ui.Center)
+	titleH := ui.Local(row, "tmplTitleH", func() ui.Handle { return ui.Handle{} })
 	row.Children(func() {
-		ui.Text(c, b.Title).FontSize(12).FontWeight(500).TextColor(accent).MaxWidth(106).
-			MinWidth(0).SingleLine().Tooltip(b.Title)
+		titleEl := ui.Text(c, b.Title).FontSize(12).FontWeight(500).TextColor(accent).MaxWidth(106).
+			MinWidth(0).SingleLine().Bind(titleH)
+		if widget.TextTruncated(c, titleH, b.Title, 12, 500, 1) {
+			titleEl.Tooltip(b.Title)
+		}
 		in := ui.TextInputBase(c.Key("tmpl-in"), query).Bind(handle).Grow(1).MinWidth(80).
 			FontSize(12).Label(locales.MainTemplateLabel()).Placeholder(locales.MainTemplatePlaceholder()).TextColor(fg).PlaceholderColor(muted)
 		if in.Submitted() && a.Open(b, *query) {
