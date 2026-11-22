@@ -244,7 +244,7 @@
   "settingsOpenAtLogin": "Launch at Login",
   "settingsOpenAtLoginErr": "Unable to update launch at login",
   "settingsLaunchInBackground": "Launch in Background",
-  "settingsHideDockIcon": "Hide Dock Icon When No Window Is Open",
+  "settingsHideDockIcon": "Always Hide Dock Icon",
   "settingsGlobalSearch": "Global Quick Search",
   "settingsNotifications": "System Notifications",
   "settingsDefaultView": "Default View",

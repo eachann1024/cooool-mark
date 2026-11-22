@@ -575,10 +575,20 @@ func (a *App) HasActiveSummon() bool {
 	return a.Win.HasActiveSummon != nil && a.Win.HasActiveSummon()
 }
 
-// PrepareRegularWindow ensures the macOS Dock icon is active before showing a regular window.
+// PrepareRegularWindow ensures the macOS Dock icon is active before showing a regular window,
+// unless the user chose to always hide the Dock icon while a summon mode is active.
 func (a *App) PrepareRegularWindow() {
 	a.StealthBackground = false
-	if runtime.GOOS == "darwin" && mygo.App.ActivationPolicy() != mygo.ActivationPolicyRegular {
+	if runtime.GOOS != "darwin" {
+		return
+	}
+	if a.Settings.HideDockWhenClosed && a.HasActiveSummon() {
+		if mygo.App.ActivationPolicy() != mygo.ActivationPolicyAccessory {
+			mygo.App.Dock.Hide()
+		}
+		return
+	}
+	if mygo.App.ActivationPolicy() != mygo.ActivationPolicyRegular {
 		mygo.App.Dock.Show()
 	}
 }
@@ -589,14 +599,14 @@ func (a *App) SyncDockPolicy() {
 	if runtime.GOOS != "darwin" {
 		return
 	}
-	if a.HasRegularWindow() {
-		a.PrepareRegularWindow()
-		return
-	}
-	if a.HasActiveSummon() && (a.Settings.HideDockWhenClosed || a.StealthBackground) {
+	if a.HasActiveSummon() && (a.Settings.HideDockWhenClosed || (!a.HasRegularWindow() && a.StealthBackground)) {
 		if mygo.App.ActivationPolicy() != mygo.ActivationPolicyAccessory {
 			mygo.App.Dock.Hide()
 		}
+		return
+	}
+	if a.HasRegularWindow() {
+		a.PrepareRegularWindow()
 		return
 	}
 	if mygo.App.ActivationPolicy() != mygo.ActivationPolicyRegular {

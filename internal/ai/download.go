@@ -44,12 +44,6 @@ var localModelSpecs = []modelSpec{
 		filename:    "Qwen3.5-2B-Q4_K_M.gguf",
 		url:         "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf",
 	},
-	{
-		id:          "qwen3.5-4b",
-		displayName: "Qwen3.5-4B",
-		filename:    "Qwen3.5-4B-Q4_K_M.gguf",
-		url:         "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf",
-	},
 }
 
 func resolveModelSpec(name string) modelSpec {

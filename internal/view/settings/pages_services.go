@@ -123,7 +123,6 @@ type localModelSpec struct {
 var localModels = []localModelSpec{
 	{id: "qwen3.5-0.8b", name: "Qwen3.5-0.8B", size: "508 MB"},
 	{id: "qwen3.5-2b", name: "Qwen3.5-2B", size: "1.4 GB"},
-	{id: "qwen3.5-4b", name: "Qwen3.5-4B", size: "2.6 GB"},
 }
 
 func (s *state) localModelsSection(c *ui.Context, p *theme.Palette) {

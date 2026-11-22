@@ -2200,11 +2200,11 @@ func (msgs Messages) SettingsLaunchInBackground() string {
 	return Catalog.Format(msgs.locale, "settingsLaunchInBackground", nil)
 }
 
-// SettingsHideDockIcon says "Hide Dock Icon When No Window Is Open"
+// SettingsHideDockIcon says "Always Hide Dock Icon"
 // in the language the app shows.
 func SettingsHideDockIcon() string { return In(i18n.Locale()).SettingsHideDockIcon() }
 
-// SettingsHideDockIcon says "Hide Dock Icon When No Window Is Open"
+// SettingsHideDockIcon says "Always Hide Dock Icon"
 // in the language of msgs.
 func (msgs Messages) SettingsHideDockIcon() string {
 	return Catalog.Format(msgs.locale, "settingsHideDockIcon", nil)

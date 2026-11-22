@@ -51,7 +51,7 @@ func main() {
 	bgFlag := hasBackgroundFlag(os.Args[1:])
 	peeked := app.PeekSettings()
 	mygo.Theme.SetSource(app.AppearanceThemeSource(peeked.Appearance))
-	if runtime.GOOS == "darwin" && peeked.HasSummonMode() && (bgFlag || (peeked.LaunchInBackground && peeked.HideDockWhenClosed)) {
+	if runtime.GOOS == "darwin" && peeked.HasSummonMode() && (bgFlag || peeked.HideDockWhenClosed) {
 		mygo.App.SetActivationPolicy(mygo.ActivationPolicyAccessory)
 	}
 
@@ -74,7 +74,7 @@ func main() {
 		a.AI.OnChange(func() {
 			a.Post(func() {
 				var prog float64
-				for _, id := range []string{"qwen3.5-0.8b", "qwen3.5-2b", "qwen3.5-4b"} {
+				for _, id := range []string{"qwen3.5-0.8b", "qwen3.5-2b"} {
 					if st := a.AI.LocalModelStatus(id); st.Downloading && st.Progress > 0 && st.Progress < 1 {
 						prog = st.Progress
 						break

@@ -351,7 +351,7 @@ type Settings struct {
 
 	AIEngine     string `json:"aiEngine"`     // off | local | openai
 	AIAutoPolish bool   `json:"aiAutoPolish"` // polish new bookmarks in the background
-	LocalModel   string `json:"localModel"`   // qwen3.5-0.8b | qwen3.5-2b | qwen3.5-4b
+	LocalModel   string `json:"localModel"`   // qwen3.5-0.8b | qwen3.5-2b
 	OpenAIURL    string `json:"openaiUrl"`
 	OpenAIModel  string `json:"openaiModel"`
 	// The OpenAI key lives in mygo.Secrets under "openai-key".

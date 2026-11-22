@@ -216,7 +216,7 @@
   "settingsOpenAtLogin": "开机自动启动",
   "settingsOpenAtLoginErr": "无法设置开机启动",
   "settingsLaunchInBackground": "启动时不显示主窗口",
-  "settingsHideDockIcon": "无窗口时隐藏程序坞图标",
+  "settingsHideDockIcon": "始终隐藏程序坞图标",
   "settingsGlobalSearch": "全局快速搜索",
   "settingsNotifications": "系统通知",
   "settingsDefaultView": "默认视图",
