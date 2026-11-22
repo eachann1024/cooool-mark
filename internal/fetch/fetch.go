@@ -32,7 +32,11 @@ const (
 	maxManifestBytes = 256 << 10
 )
 
-var errRedirectBlocked = errors.New("redirect blocked")
+var (
+	errRedirectBlocked = errors.New("redirect blocked")
+	errBlockedPage     = errors.New("blocked or challenge page")
+	errLoginRequired   = errors.New("login required")
+)
 
 type fetcher struct{ a *app.App }
 
@@ -55,18 +59,23 @@ func (f *fetcher) Fetch(ctx context.Context, rawURL string) (app.PageMeta, error
 	var manifestURLs []string
 
 	finalURL, parsed, httpErr := f.fetchHTML(ctx, client, targetURL)
-	if finalURL != "" {
+	if finalURL != "" && !errors.Is(httpErr, errLoginRequired) {
 		meta.URL = finalURL
 	}
 	if httpErr == nil {
 		meta.Title = parsed.title
 		meta.Description = parsed.description
+		meta.Excerpt = parsed.excerpt
 		meta.SiteName = parsed.siteName
 		icons = append(icons, parsed.icons...)
 		manifestURLs = parsed.manifests
 	}
 
-	canUseWebView := !errors.Is(httpErr, errRedirectBlocked) && !parsed.nonHTML && (f.a == nil || f.a.UseWebView())
+	canUseWebView := !errors.Is(httpErr, errRedirectBlocked) &&
+		!errors.Is(httpErr, errLoginRequired) &&
+		!parsed.challenge &&
+		!parsed.nonHTML &&
+		(f.a == nil || f.a.UseWebView())
 	if meta.Title == "" && canUseWebView {
 		if wm, werr := fetchWithWebView(ctx, meta.URL); werr == nil {
 			if wm.FinalURL != "" {
@@ -78,6 +87,9 @@ func (f *fetcher) Fetch(ctx context.Context, rawURL string) (app.PageMeta, error
 			if meta.Description == "" && wm.Description != "" {
 				meta.Description = wm.Description
 			}
+			if meta.Excerpt == "" && wm.Excerpt != "" {
+				meta.Excerpt = wm.Excerpt
+			}
 			if meta.SiteName == "" && wm.SiteName != "" {
 				meta.SiteName = wm.SiteName
 			}
@@ -86,6 +98,8 @@ func (f *fetcher) Fetch(ctx context.Context, rawURL string) (app.PageMeta, error
 			}
 		} else if httpErr != nil {
 			return meta, httpErr
+		} else {
+			return meta, werr
 		}
 	} else if httpErr != nil && meta.Title == "" {
 		return meta, httpErr
@@ -181,10 +195,12 @@ func newHTTPClient() (*http.Client, error) {
 type parsedHTML struct {
 	title       string
 	description string
+	excerpt     string
 	siteName    string
 	icons       []iconCandidate
 	manifests   []string
 	nonHTML     bool
+	challenge   bool
 }
 
 func (f *fetcher) fetchHTML(ctx context.Context, client *http.Client, targetURL string) (string, parsedHTML, error) {
@@ -211,14 +227,19 @@ func (f *fetcher) fetchHTML(ctx context.Context, client *http.Client, targetURL 
 		finalURL = resp.Request.URL.String()
 	}
 
+	if isLoginRedirect(targetURL, finalURL) {
+		return targetURL, parsedHTML{}, errLoginRequired
+	}
+
 	disp := strings.ToLower(resp.Header.Get("Content-Disposition"))
 	ct := resp.Header.Get("Content-Type")
 	mediaType := strings.ToLower(strings.TrimSpace(strings.Split(ct, ";")[0]))
 	nonHTML := strings.Contains(disp, "attachment") ||
 		(mediaType != "" && mediaType != "text/html" && mediaType != "application/xhtml+xml")
+	isCFChallenge := strings.EqualFold(strings.TrimSpace(resp.Header.Get("Cf-Mitigated")), "challenge")
 
 	if resp.StatusCode >= 400 {
-		return finalURL, parsedHTML{nonHTML: nonHTML}, fmt.Errorf("http %d", resp.StatusCode)
+		return finalURL, parsedHTML{nonHTML: nonHTML, challenge: isCFChallenge}, fmt.Errorf("http %d", resp.StatusCode)
 	}
 	if nonHTML {
 		return finalURL, parsedHTML{nonHTML: true}, nil
@@ -234,7 +255,11 @@ func (f *fetcher) fetchHTML(ctx context.Context, client *http.Client, targetURL 
 	}
 
 	baseURL, _ := url.Parse(finalURL)
-	return finalURL, extractHTMLMeta(doc, baseURL), nil
+	parsed := extractHTMLMeta(doc, baseURL)
+	if isCFChallenge || isInterstitialTitle(parsed.title) {
+		return finalURL, parsedHTML{challenge: true}, errBlockedPage
+	}
+	return finalURL, parsed, nil
 }
 
 func extractHTMLMeta(doc *html.Node, base *url.URL) parsedHTML {
@@ -242,9 +267,12 @@ func extractHTMLMeta(doc *html.Node, base *url.URL) parsedHTML {
 	var ogTitle, twTitle, htmlTitle string
 	var metaDesc, ogDesc, twDesc string
 	var ogSite, appName string
+	var excerptParts []string
+	excerptRunes := 0
+	seenSnippet := map[string]bool{}
 
-	var walk func(*html.Node)
-	walk = func(n *html.Node) {
+	var walk func(*html.Node, bool)
+	walk = func(n *html.Node, skipExcerpt bool) {
 		if n.Type == html.ElementNode {
 			switch n.Data {
 			case "title":
@@ -294,17 +322,58 @@ func extractHTMLMeta(doc *html.Node, base *url.URL) parsedHTML {
 						}
 					}
 				}
+			case "head", "script", "style", "noscript", "template", "svg", "nav", "footer", "aside", "header", "form", "menu", "select", "button", "iframe":
+				skipExcerpt = true
+			case "h1", "h2", "p":
+				if !skipExcerpt && len(excerptParts) < 4 && excerptRunes < 340 {
+					minRunes := 8
+					if n.Data == "h1" {
+						minRunes = 2
+					}
+					txt := collapseSpaces(collectVisibleText(n))
+					if txt != "" {
+						rlen := len([]rune(txt))
+						key := strings.ToLower(txt)
+						if rlen >= minRunes && !seenSnippet[key] {
+							seenSnippet[key] = true
+							if excerptRunes+rlen > 360 {
+								rs := []rune(txt)
+								rem := 360 - excerptRunes
+								if rem >= 12 && rem < len(rs) {
+									txt = strings.TrimSpace(string(rs[:rem])) + "…"
+									excerptParts = append(excerptParts, txt)
+									excerptRunes = 360
+								}
+							} else {
+								excerptParts = append(excerptParts, txt)
+								excerptRunes += rlen
+							}
+						}
+					}
+				}
+				return
+			}
+			if !skipExcerpt && (attr(n, "hidden") != "" || strings.EqualFold(attr(n, "aria-hidden"), "true")) {
+				skipExcerpt = true
 			}
 		}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
+			walk(c, skipExcerpt)
 		}
 	}
-	walk(doc)
+	walk(doc, false)
 
 	out.title = firstNonEmpty(htmlTitle, ogTitle, twTitle)
 	out.description = firstNonEmpty(ogDesc, metaDesc, twDesc)
 	out.siteName = firstNonEmpty(ogSite, appName)
+	var filteredExcerpt []string
+	for _, part := range excerptParts {
+		if strings.EqualFold(part, out.title) || strings.EqualFold(part, out.description) {
+			continue
+		}
+		filteredExcerpt = append(filteredExcerpt, part)
+	}
+	out.excerpt = strings.Join(filteredExcerpt, "\n")
 	return out
 }
 
@@ -631,4 +700,98 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+func collectVisibleText(n *html.Node) string {
+	var sb strings.Builder
+	var walk func(*html.Node)
+	walk = func(cur *html.Node) {
+		if cur.Type == html.ElementNode {
+			switch cur.Data {
+			case "script", "style", "noscript", "template", "svg", "iframe":
+				return
+			}
+			if attr(cur, "hidden") != "" || strings.EqualFold(attr(cur, "aria-hidden"), "true") {
+				return
+			}
+		}
+		if cur.Type == html.TextNode {
+			sb.WriteString(cur.Data)
+			sb.WriteByte(' ')
+			return
+		}
+		for c := cur.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(n)
+	return sb.String()
+}
+
+func isInterstitialTitle(title string) bool {
+	s := strings.ToLower(collapseSpaces(title))
+	if s == "" {
+		return false
+	}
+	blockedPhrases := []string{
+		"just a moment",
+		"attention required",
+		"checking your browser",
+		"verify you are human",
+		"one more step",
+		"ddos-guard",
+		"access denied",
+		"403 forbidden",
+		"404 not found",
+		"502 bad gateway",
+		"503 service unavailable",
+		"504 gateway timeout",
+		"error 403",
+		"error 404",
+		"error 502",
+		"error 503",
+		"请稍候",
+		"请稍等",
+		"安全验证",
+		"人机验证",
+		"正在检查您的浏览器",
+		"访问被拒绝",
+		"禁止访问",
+	}
+	for _, phrase := range blockedPhrases {
+		if strings.Contains(s, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+func isLoginRedirect(origURL, finalURL string) bool {
+	if finalURL == "" || origURL == finalURL {
+		return false
+	}
+	if isLoginURL(origURL) {
+		return false
+	}
+	return isLoginURL(finalURL)
+}
+
+func isLoginURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(strings.TrimSpace(u.Hostname()))
+	path := strings.ToLower(u.Path)
+	for _, prefix := range []string{"accounts.", "login.", "signin.", "auth.", "sso.", "passport."} {
+		if strings.HasPrefix(host, prefix) {
+			return true
+		}
+	}
+	for _, seg := range []string{"/signin", "/sign-in", "/sign_in", "/login", "/log-in", "/accounts/login", "/oauth/authorize", "/cas/login"} {
+		if strings.Contains(path, seg) {
+			return true
+		}
+	}
+	return false
 }

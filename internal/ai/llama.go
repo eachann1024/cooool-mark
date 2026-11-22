@@ -81,7 +81,16 @@ func (m *llamaManager) polish(ctx context.Context, s model.Settings, modelPath s
 			"enable_thinking": false,
 		},
 	}
-	return polishOpenAICompat(ctx, s, baseURL, "", filepath.Base(modelPath), in, extra)
+	out, err := polishOpenAICompat(ctx, s, baseURL, "", filepath.Base(modelPath), in, extra)
+	if err != nil {
+		return app.Polish{}, err
+	}
+	// Small local models (0.8B/2B) hallucinate descriptions when given only a
+	// URL and bare site/brand name without webpage text.
+	if !app.HasGroundedNoteContext(in.URL, in.Title, in.Description, in.Excerpt) {
+		out.Note = ""
+	}
+	return out, nil
 }
 
 func (m *llamaManager) isClosed() bool {

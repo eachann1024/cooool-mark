@@ -3896,6 +3896,16 @@ func (msgs Messages) ToastPolishFailed() string {
 	return Catalog.Format(msgs.locale, "toastPolishFailed", nil)
 }
 
+// ToastPolishInsufficient says "Couldn't read this page for AI polish"
+// in the language the app shows.
+func ToastPolishInsufficient() string { return In(i18n.Locale()).ToastPolishInsufficient() }
+
+// ToastPolishInsufficient says "Couldn't read this page for AI polish"
+// in the language of msgs.
+func (msgs Messages) ToastPolishInsufficient() string {
+	return Catalog.Format(msgs.locale, "toastPolishInsufficient", nil)
+}
+
 // ToastTargetSubMissing says "Target sub-group not found"
 // in the language the app shows.
 func ToastTargetSubMissing() string { return In(i18n.Locale()).ToastTargetSubMissing() }

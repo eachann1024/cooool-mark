@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,6 +15,7 @@ type webMeta struct {
 	FinalURL    string
 	Title       string
 	Description string
+	Excerpt     string
 	SiteName    string
 	Icons       []iconCandidate
 }
@@ -130,11 +132,22 @@ func fetchWithWebView(ctx context.Context, targetURL string) (webMeta, error) {
 		}
 		m, err := readWebViewDOM(wctx, w.Page())
 		if err == nil {
+			if isLoginRedirect(targetURL, m.FinalURL) {
+				return webMeta{}, errLoginRequired
+			}
+			if isInterstitialTitle(m.Title) {
+				m.Title = ""
+				m.Description = ""
+				m.Excerpt = ""
+			}
 			meta = m
 			if meta.Title != "" {
 				break
 			}
 		}
+	}
+	if meta.Title == "" {
+		return webMeta{}, errBlockedPage
 	}
 	return meta, nil
 }
@@ -154,10 +167,27 @@ func readWebViewDOM(ctx context.Context, p *mygo.Page) (webMeta, error) {
 				sizes: (el.getAttribute('sizes') || '').toLowerCase(),
 			});
 		}
+		const skipSel = 'nav, footer, aside, header, form, script, style, noscript, template, [hidden], [aria-hidden="true"]';
+		const seen = new Set();
+		const parts = [];
+		let total = 0;
+		for (const el of document.querySelectorAll('h1, h2, main p, article p, p')) {
+			if (parts.length >= 4 || total >= 340) break;
+			if (el.closest(skipSel)) continue;
+			const txt = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+			const minLen = el.tagName === 'H1' ? 2 : 8;
+			if (txt.length < minLen) continue;
+			const key = txt.toLowerCase();
+			if (seen.has(key)) continue;
+			seen.add(key);
+			parts.push(txt.slice(0, 360 - total));
+			total += txt.length;
+		}
 		return {
 			url: location.href || '',
 			title: (document.title || '').trim(),
 			desc: pick('meta[name="description"]', 'content') || pick('meta[property="og:description"]', 'content'),
+			excerpt: parts.join('\n'),
 			site: pick('meta[property="og:site_name"]', 'content') || pick('meta[name="application-name"]', 'content'),
 			links: links,
 		};
@@ -181,6 +211,7 @@ func readWebViewDOM(ctx context.Context, p *mygo.Page) (webMeta, error) {
 		FinalURL:    finalURL,
 		Title:       collapseSpaces(strVal(m["title"])),
 		Description: collapseSpaces(strVal(m["desc"])),
+		Excerpt:     strings.TrimSpace(strVal(m["excerpt"])),
 		SiteName:    collapseSpaces(strVal(m["site"])),
 	}
 	if rawLinks, ok := m["links"].([]any); ok {

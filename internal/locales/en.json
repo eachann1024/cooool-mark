@@ -475,6 +475,7 @@
   "toastSavedTo": "Saved to “{path}”",
   "toastAlreadyIn": "Already in “{path}”",
   "toastPolishFailed": "Polish failed",
+  "toastPolishInsufficient": "Couldn't read this page for AI polish",
   "toastTargetSubMissing": "Target sub-group not found",
   "toastMovedTo": "Moved to “{path}”",
   "toastMovedCount": "{count, plural, one {Moved # item} other {Moved # items}}",

@@ -166,6 +166,7 @@ type state struct {
 	fetchErr       string
 	justPasted     bool
 	lastFetchedURL string
+	fetchedExcerpt string
 
 	aiSeq       uint64
 	aiCancel    context.CancelFunc
@@ -303,6 +304,7 @@ func (s *state) load(req app.EditorRequest) {
 	s.lastFetchedURL = ""
 	s.aiSuggest = nil
 	s.aiDismissed = false
+	s.fetchedExcerpt = ""
 
 	lib := s.a.Store.Lib()
 	if req.ID != "" {
@@ -416,6 +418,7 @@ func (s *state) scheduleDebouncedFetch() {
 	s.aiErr = ""
 	s.aiDismissed = false
 	s.fetchErr = ""
+	s.fetchedExcerpt = ""
 	if s.id == "" {
 		s.icon.Image = ""
 		if !s.titleEdited {
@@ -501,6 +504,7 @@ func (s *state) startFetch(rawURL string, forceMeta, runAI, iconOnly bool) {
 				if meta.Description != "" && (forceMeta || strings.TrimSpace(s.note) == "") {
 					s.note = meta.Description
 				}
+				s.fetchedExcerpt = strings.TrimSpace(meta.Excerpt)
 			}
 			if len(meta.Icon) > 0 {
 				if _, decErr := ui.DecodeImage(meta.Icon); decErr != nil {
@@ -547,6 +551,23 @@ func (s *state) startAI(force bool) {
 		}
 		return
 	}
+	desc := strings.TrimSpace(s.note)
+	if app.IsJunkAINote(desc) {
+		desc = ""
+	}
+	title := strings.TrimSpace(s.title)
+	if s.a.Settings.AIEngine == model.AILocal &&
+		!app.HasGroundedNoteContext(u, title, desc, s.fetchedExcerpt) &&
+		!app.TitleNeedsCleanup(title, u) {
+		if force {
+			s.cancelAI()
+			s.aiSuggest = nil
+			s.aiErr = locales.ToastPolishInsufficient()
+			s.invalidate()
+		}
+		return
+	}
+
 	s.cancelAI()
 	seq := s.aiSeq
 	s.aiLoading = true
@@ -556,14 +577,11 @@ func (s *state) startAI(force bool) {
 		s.aiDismissed = false
 	}
 
-	desc := strings.TrimSpace(s.note)
-	if app.IsJunkAINote(desc) {
-		desc = ""
-	}
 	in := app.PolishInput{
 		URL:         u,
-		Title:       strings.TrimSpace(s.title),
+		Title:       title,
 		Description: desc,
+		Excerpt:     s.fetchedExcerpt,
 		Choices:     s.a.Choices(),
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
@@ -723,11 +741,12 @@ func (s *state) doSave() bool {
 		// the background.
 		allowPolish := !s.polished && !s.aiDismissed && s.aiSuggest == nil && (allowTitle || allowNote)
 		if s.a.SaveNewBookmark(bm, app.EnrichOptions{
-			Fetch:         needFetch,
-			AllowTitle:    allowTitle,
-			AllowNote:     allowNote,
-			AllowPolish:   allowPolish,
-			FallbackTitle: fallbackTitle,
+			Fetch:          needFetch,
+			AllowTitle:     allowTitle,
+			AllowNote:      allowNote,
+			AllowPolish:    allowPolish,
+			FallbackTitle:  fallbackTitle,
+			FetchedExcerpt: s.fetchedExcerpt,
 		}) == "" {
 			s.saveErr = locales.EditorErrDeleted()
 			s.invalidate()

@@ -16,6 +16,7 @@ type PageMeta struct {
 	URL         string // final URL after redirects
 	Title       string // cleaned: site suffixes like " - GitHub" trimmed when redundant
 	Description string
+	Excerpt     string // short visible text excerpt from headings/paragraphs (AI context only)
 	SiteName    string
 	Icon        []byte // best icon found (apple-touch-icon, SVG, manifest, favicon), PNG/SVG/ICO bytes
 	IconExt     string // ".png", ".svg", ".ico", ...
@@ -52,8 +53,8 @@ type GroupChoice struct {
 
 // PolishInput is what the AI sees of a new bookmark.
 type PolishInput struct {
-	URL, Title, Description string
-	Choices                 []GroupChoice
+	URL, Title, Description, Excerpt string
+	Choices                          []GroupChoice
 }
 
 // Polish is the AI's suggestion; empty fields mean no suggestion.

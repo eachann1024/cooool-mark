@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/egoist/mygo"
 
@@ -20,11 +21,12 @@ import (
 // EnrichOptions controls background webpage recognition and AI auto-polish
 // after a bookmark is saved.
 type EnrichOptions struct {
-	Fetch         bool
-	AllowTitle    bool
-	AllowNote     bool
-	AllowPolish   bool
-	FallbackTitle string
+	Fetch          bool
+	AllowTitle     bool
+	AllowNote      bool
+	AllowPolish    bool
+	FallbackTitle  string
+	FetchedExcerpt string
 }
 
 // IsEnriching reports whether bookmark id currently has a background fetch or
@@ -227,11 +229,12 @@ func (a *App) EnrichBookmark(id string, opts EnrichOptions) {
 	if !opts.Fetch || a.Fetch == nil {
 		if opts.AllowPolish {
 			a.polishBookmark(id, polishOptions{
-				force:         false,
-				allowTitle:    opts.AllowTitle,
-				allowNote:     opts.AllowNote,
-				fallbackTitle: opts.FallbackTitle,
-				fetchedOK:     true,
+				force:          false,
+				allowTitle:     opts.AllowTitle,
+				allowNote:      opts.AllowNote,
+				fallbackTitle:  opts.FallbackTitle,
+				fetchedExcerpt: strings.TrimSpace(opts.FetchedExcerpt),
+				fetchedOK:      true,
 			})
 		}
 		return
@@ -250,9 +253,13 @@ func (a *App) EnrichBookmark(id string, opts EnrichOptions) {
 			if a.Store.Dir() != dir || cur == nil || cur.InTrash() || cur.URL != targetURL || !cur.UpdatedAt.Equal(expectedUpdated) {
 				return
 			}
+			fetchedTitle := ""
 			fetchedDesc := ""
+			fetchedExcerpt := ""
 			if err == nil {
+				fetchedTitle = strings.TrimSpace(meta.Title)
 				fetchedDesc = strings.TrimSpace(meta.Description)
+				fetchedExcerpt = strings.TrimSpace(meta.Excerpt)
 				var iconRel string
 				if len(meta.Icon) > 0 && cur.Icon.Image == "" {
 					ext := meta.IconExt
@@ -269,8 +276,8 @@ func (a *App) EnrichBookmark(id string, opts EnrichOptions) {
 						return
 					}
 					changed := false
-					if meta.Title != "" && opts.AllowTitle && isReplaceableTitle(bm.Title, bm.URL, opts.FallbackTitle) {
-						bm.Title = meta.Title
+					if fetchedTitle != "" && opts.AllowTitle && isReplaceableTitle(bm.Title, bm.URL, opts.FallbackTitle) {
+						bm.Title = fetchedTitle
 						changed = true
 					}
 					if fetchedDesc != "" && opts.AllowNote && strings.TrimSpace(bm.Note) == "" {
@@ -288,12 +295,14 @@ func (a *App) EnrichBookmark(id string, opts EnrichOptions) {
 			}
 			if opts.AllowPolish {
 				a.polishBookmark(id, polishOptions{
-					force:         false,
-					allowTitle:    opts.AllowTitle,
-					allowNote:     opts.AllowNote,
-					fallbackTitle: opts.FallbackTitle,
-					fetchedDesc:   fetchedDesc,
-					fetchedOK:     err == nil,
+					force:          false,
+					allowTitle:     opts.AllowTitle,
+					allowNote:      opts.AllowNote,
+					fallbackTitle:  opts.FallbackTitle,
+					fetchedTitle:   fetchedTitle,
+					fetchedDesc:    fetchedDesc,
+					fetchedExcerpt: fetchedExcerpt,
+					fetchedOK:      err == nil,
 				})
 			}
 		})
@@ -434,18 +443,73 @@ func nextOrder(l *model.Library, g, s string) float64 {
 }
 
 type polishOptions struct {
-	force         bool
-	allowTitle    bool
-	allowNote     bool
-	fallbackTitle string
-	fetchedDesc   string
-	fetchedOK     bool
+	force          bool
+	allowTitle     bool
+	allowNote      bool
+	fallbackTitle  string
+	fetchedTitle   string
+	fetchedDesc    string
+	fetchedExcerpt string
+	fetchedOK      bool
 }
 
 // Polish asks the AI to refine a saved bookmark's title and note without
-// moving it out of its user-chosen group. Results land quietly; the row
-// flashes "已润色" through PolishedAt.
+// moving it out of its user-chosen group. Manual re-polish fetches fresh
+// webpage metadata/content first so AI does not guess or recycle stale notes.
 func (a *App) Polish(id string, force bool) {
+	if a.AI == nil || (!force && !a.Settings.AIAutoPolish) || !a.AI.Status().Ready {
+		return
+	}
+	b := a.Store.Lib().Bookmark(id)
+	if b == nil || b.InTrash() || (b.Polished && !force) {
+		return
+	}
+	if force && a.Fetch != nil && !isLocalOrIPURL(b.URL) && !b.IsTemplate() {
+		dir := a.Store.Dir()
+		targetURL := b.URL
+		expectedUpdated := b.UpdatedAt
+		a.startEnriching(id)
+		Background(20*time.Second, func(ctx context.Context) {
+			meta, err := a.Fetch.Fetch(ctx, targetURL)
+			a.Post(func() {
+				defer a.stopEnriching(id)
+				cur := a.Store.Lib().Bookmark(id)
+				if a.Store.Dir() != dir || cur == nil || cur.InTrash() || cur.URL != targetURL || !cur.UpdatedAt.Equal(expectedUpdated) {
+					return
+				}
+				var fetchedTitle, fetchedDesc, fetchedExcerpt string
+				if err == nil {
+					fetchedTitle = strings.TrimSpace(meta.Title)
+					fetchedDesc = strings.TrimSpace(meta.Description)
+					fetchedExcerpt = strings.TrimSpace(meta.Excerpt)
+					if len(meta.Icon) > 0 && cur.Icon.Image == "" {
+						ext := meta.IconExt
+						if ext == "" {
+							ext = ".png"
+						}
+						if savedPath, saveErr := a.Store.SaveIcon(meta.Icon, ext); saveErr == nil {
+							a.Store.Update(func(l *model.Library) {
+								if bm := l.Bookmark(id); bm != nil && bm.Icon.Image == "" {
+									bm.Icon.Image = savedPath
+									bm.UpdatedAt = time.Now()
+								}
+							})
+						}
+					}
+				}
+				a.polishBookmark(id, polishOptions{
+					force:          true,
+					allowTitle:     true,
+					allowNote:      true,
+					fetchedTitle:   fetchedTitle,
+					fetchedDesc:    fetchedDesc,
+					fetchedExcerpt: fetchedExcerpt,
+					fetchedOK:      err == nil,
+				})
+			})
+		})
+		return
+	}
 	a.polishBookmark(id, polishOptions{
 		force:      force,
 		allowTitle: force,
@@ -463,24 +527,49 @@ func (a *App) polishBookmark(id string, opts polishOptions) {
 		return
 	}
 
-	desc := strings.TrimSpace(b.Note)
+	title := strings.TrimSpace(b.Title)
+	if ft := strings.TrimSpace(opts.fetchedTitle); ft != "" {
+		if isReplaceableTitle(title, b.URL, opts.fallbackTitle) || (opts.force && len([]rune(ft)) > len([]rune(title))) {
+			title = ft
+		}
+	}
+
+	desc := strings.TrimSpace(opts.fetchedDesc)
 	if IsJunkAINote(desc) {
 		desc = ""
 	}
-	if desc == "" && opts.fetchedDesc != "" {
-		desc = opts.fetchedDesc
+	// On manual re-polish of an already-polished bookmark, avoid feeding the
+	// old AI-generated note back in as ground truth when fresh fetch failed.
+	if desc == "" && (!opts.force || !b.Polished) {
+		if curNote := strings.TrimSpace(b.Note); curNote != "" && !IsJunkAINote(curNote) {
+			desc = curNote
+		}
 	}
+	excerpt := strings.TrimSpace(opts.fetchedExcerpt)
 
-	title := strings.TrimSpace(b.Title)
-	hasMeaningfulTitle := title != "" && !isReplaceableTitle(title, b.URL, opts.fallbackTitle)
+	grounded := HasGroundedNoteContext(b.URL, title, desc, excerpt)
+	needsTitle := TitleNeedsCleanup(title, b.URL)
+	isLocalEngine := a.Settings.AIEngine == model.AILocal
 
-	// Avoid hallucinating descriptions for bare IPs/local addresses or failed
-	// fetches that returned no title and no description during auto-polish.
+	if isLocalEngine && !grounded && !needsTitle {
+		if opts.force {
+			if IsJunkAINote(b.Note) {
+				a.Store.Update(func(l *model.Library) {
+					if bm := l.Bookmark(id); bm != nil {
+						bm.Note = ""
+						bm.UpdatedAt = time.Now()
+					}
+				})
+			}
+			a.Say(locales.ToastPolishInsufficient())
+		}
+		return
+	}
 	if !opts.force {
-		if isLocalOrIPURL(b.URL) && !hasMeaningfulTitle && desc == "" {
+		if isLocalOrIPURL(b.URL) && !grounded && !needsTitle {
 			return
 		}
-		if !opts.fetchedOK && !hasMeaningfulTitle && desc == "" {
+		if !opts.fetchedOK && !grounded && !needsTitle {
 			return
 		}
 	}
@@ -493,6 +582,7 @@ func (a *App) polishBookmark(id string, opts polishOptions) {
 		URL:         b.URL,
 		Title:       title,
 		Description: desc,
+		Excerpt:     excerpt,
 	}
 	a.startEnriching(id)
 	Background(60*time.Second, func(ctx context.Context) {
@@ -511,22 +601,34 @@ func (a *App) polishBookmark(id string, opts polishOptions) {
 			}
 			p.Title = strings.TrimSpace(p.Title)
 			p.Note = strings.TrimSpace(p.Note)
+			updatedAny := false
 			a.Store.Update(func(l *model.Library) {
 				bm := l.Bookmark(id)
 				if bm == nil {
 					return
 				}
 				if p.Title != "" && (opts.force || opts.allowTitle || isReplaceableTitle(bm.Title, bm.URL, opts.fallbackTitle)) {
-					bm.Title = p.Title
+					if bm.Title != p.Title {
+						bm.Title = p.Title
+						updatedAny = true
+					}
 				}
 				if p.Note != "" && (opts.force || opts.allowNote || strings.TrimSpace(bm.Note) == "" || IsJunkAINote(bm.Note)) {
-					bm.Note = p.Note
+					if bm.Note != p.Note {
+						bm.Note = p.Note
+						updatedAny = true
+					}
 				} else if opts.force && p.Note == "" && IsJunkAINote(bm.Note) {
 					bm.Note = ""
+					updatedAny = true
 				}
 				bm.Polished = true
 				bm.UpdatedAt = time.Now()
 			})
+			if opts.force && !updatedAny && !grounded {
+				a.Say(locales.ToastPolishInsufficient())
+				return
+			}
 			completed := time.Now()
 			a.PolishedAt[id] = completed
 			time.AfterFunc(1500*time.Millisecond, func() {
@@ -538,6 +640,107 @@ func (a *App) polishBookmark(id string, opts polishOptions) {
 			})
 		})
 	})
+}
+
+// HasGroundedNoteContext reports whether the available metadata contains actual
+// webpage text or a descriptive title subtitle, rather than only a bare URL and
+// brand/site name. Small local models should not invent notes when this is false.
+func HasGroundedNoteContext(rawURL, title, desc, excerpt string) bool {
+	if d := strings.TrimSpace(desc); d != "" && !IsJunkAINote(d) {
+		return true
+	}
+	if strings.TrimSpace(excerpt) != "" {
+		return true
+	}
+	t := strings.TrimSpace(title)
+	if t == "" || isReplaceableTitle(t, rawURL, "") || sameAsHostBrand(t, rawURL) {
+		return false
+	}
+	for _, sep := range []string{" - ", " | ", " — ", " – ", " :: ", ": ", "：", " · "} {
+		if strings.Contains(t, sep) {
+			parts := strings.Split(t, sep)
+			for _, part := range parts {
+				p := strings.TrimSpace(part)
+				if p == "" || sameAsHostBrand(p, rawURL) || isGenericSiteSuffix(p) {
+					continue
+				}
+				if countCJK(p) >= 4 || len(strings.Fields(p)) >= 3 {
+					return true
+				}
+			}
+		}
+	}
+	return countCJK(t) >= 18 || len(strings.Fields(t)) >= 7
+}
+
+// TitleNeedsCleanup reports whether title looks noisy, missing, or contains
+// site suffixes that AI title cleanup can usefully simplify.
+func TitleNeedsCleanup(title, rawURL string) bool {
+	t := strings.TrimSpace(title)
+	if t == "" || isReplaceableTitle(t, rawURL, "") {
+		return true
+	}
+	if len([]rune(t)) > 24 {
+		return true
+	}
+	for _, sep := range []string{" - ", " | ", " — ", " – ", " :: ", ": ", "：", "_"} {
+		if strings.Contains(t, sep) {
+			return true
+		}
+	}
+	return false
+}
+
+func sameAsHostBrand(title, rawURL string) bool {
+	normTitle := alphaNumLower(title)
+	if normTitle == "" {
+		return false
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(u.Hostname()), "www."))
+	if host == "" {
+		return false
+	}
+	if normTitle == alphaNumLower(host) {
+		return true
+	}
+	if parts := strings.Split(host, "."); len(parts) >= 2 {
+		if normTitle == alphaNumLower(parts[0]) {
+			return true
+		}
+	}
+	return false
+}
+
+func isGenericSiteSuffix(s string) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "官网", "官方网站", "首页", "主页", "登录", "注册", "home", "homepage", "official", "official site", "official website", "login", "sign in":
+		return true
+	}
+	return false
+}
+
+func alphaNumLower(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func countCJK(s string) int {
+	n := 0
+	for _, r := range s {
+		if unicode.Is(unicode.Han, r) {
+			n++
+		}
+	}
+	return n
 }
 
 func isReplaceableTitle(title, rawURL, fallbackTitle string) bool {

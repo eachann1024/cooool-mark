@@ -10,51 +10,75 @@ import (
 )
 
 const (
-	polishInstructionsZHNoGroup = `你是书签整理助手。根据提供的网页信息，输出简洁的中文标题(title)和一句话中文功能简介(note)。
+	polishInstructionsZHNoGroup = `你是书签整理助手。只根据输入中给出的网页信息，输出简洁标题(title)和一句话中文功能简介(note)。
 只输出严格 JSON（不要 markdown 代码块或额外说明）：{"title":"...","note":"..."}
 规则：
 - title：保留原产品名、品牌名或项目名（英文专有名词不翻译），去掉"- 官网"、"_哔哩哔哩"等冗余后缀，不超过20字。
-- note：用一句简短中文（10-25字）说明这个网页本身的用途或内容；不要重复标题，不要写"该页面属于..."或任何分组说明；信息不足时输出""。
+- note：只能基于输入里明确提到的「原标题」「摘要」或「页面内容」，用一句简短中文（10-25字）说明网页用途。严禁仅凭网址、域名或品牌名猜测或编造功能；不要重复标题，不要写任何分组说明；如果输入里没有说明网页用途，必须输出""。
 示例：
-输入：网址: https://github.com/junegunn/fzf | 原标题: GitHub - junegunn/fzf: A command-line fuzzy finder | 摘要: General-purpose command-line fuzzy finder.
+输入：网址: https://github.com/junegunn/fzf
+原标题: GitHub - junegunn/fzf: A command-line fuzzy finder
+摘要: General-purpose command-line fuzzy finder.
 输出：{"title":"fzf","note":"通用的命令行模糊搜索工具"}
-输入：网址: https://excalidraw.com/ | 原标题: Excalidraw | Hand-drawn look & feel
-输出：{"title":"Excalidraw","note":"开源的手绘风格在线协作白板工具"}`
+输入：网址: https://excalidraw.com/
+原标题: Excalidraw | Hand-drawn look & feel
+页面内容: Virtual collaborative whiteboard tool for sketching hand-drawn like diagrams.
+输出：{"title":"Excalidraw","note":"手绘风格的在线协作白板工具"}
+输入：网址: https://nova.io
+原标题: NOVA IO
+输出：{"title":"NOVA IO","note":""}`
 
-	polishInstructionsZHWithGroup = `你是书签整理助手。根据提供的网页信息，输出简洁的中文标题(title)、一句话中文功能简介(note)和最匹配分组(group)。
+	polishInstructionsZHWithGroup = `你是书签整理助手。只根据输入中给出的网页信息，输出简洁标题(title)、一句话中文功能简介(note)和最匹配分组(group)。
 只输出严格 JSON（不要 markdown 代码块或额外说明）：{"title":"...","note":"...","group":"..."}
 规则：
 - title：保留原产品名、品牌名或项目名（英文专有名词不翻译），去掉"- 官网"、"_哔哩哔哩"等冗余后缀，不超过20字。
-- note：用一句简短中文（10-25字）说明这个网页本身的用途或内容。严禁在 note 中写分类理由、分组说明或"该页面属于..."；信息不足时输出""。
-- group：必须完全等于"可选分组"中的某一项；都不合适就输出""。
+- note：只能基于输入里明确提到的「原标题」「摘要」或「页面内容」，用一句简短中文（10-25字）说明网页用途。严禁仅凭网址、域名或品牌名猜测或编造功能；严禁在 note 中写分类理由或分组说明；如果输入里没有说明网页用途，必须输出""。
+- group：必须完全等于"可选分组"中的某一项；无法确定或都不合适就输出""。
 示例：
-输入：网址: https://github.com/junegunn/fzf | 原标题: GitHub - junegunn/fzf: A command-line fuzzy finder | 可选分组: 开发 / 工具 | 设计 / 灵感
+输入：网址: https://github.com/junegunn/fzf
+原标题: GitHub - junegunn/fzf: A command-line fuzzy finder
+摘要: General-purpose command-line fuzzy finder.
+可选分组: 开发 / 工具 | 设计 / 灵感
 输出：{"title":"fzf","note":"通用的命令行模糊搜索工具","group":"开发 / 工具"}
-输入：网址: https://excalidraw.com/ | 原标题: Excalidraw | Hand-drawn look & feel | 可选分组: 开发 / 工具 | 影音 / 娱乐
-输出：{"title":"Excalidraw","note":"开源的手绘风格在线协作白板工具","group":""}`
+输入：网址: https://nova.io
+原标题: NOVA IO
+可选分组: 开发 / 工具 | 影音 / 娱乐
+输出：{"title":"NOVA IO","note":"","group":""}`
 
-	polishInstructionsENNoGroup = `You are a bookmark organizer. Given webpage details, output a concise title and a one-sentence description of what the webpage does.
+	polishInstructionsENNoGroup = `You are a bookmark organizer. Using ONLY the provided webpage details, output a concise title and a one-sentence description of what the webpage does.
 Output strict JSON only (no markdown fences or extra text): {"title":"...","note":"..."}
 Rules:
-- title: keep the core product, brand, or project name; strip redundant site suffixes like " - Official Site"; concise and clear.
-- note: one short sentence (under 20 words) describing what the site or page is for. Never repeat the title, never mention grouping or classification; output "" if unclear.
+- title: keep the core product, brand, or project name; strip redundant site suffixes like " - Official Site".
+- note: summarize ONLY facts explicitly stated in the provided title, summary, or page content (under 20 words). NEVER guess or invent what a site does from its URL or brand name alone. Never repeat the title or mention grouping. If the input does not state the site's purpose, you MUST output "".
 Examples:
-Input: URL: https://github.com/junegunn/fzf | Original title: GitHub - junegunn/fzf: A command-line fuzzy finder
+Input: URL: https://github.com/junegunn/fzf
+Original title: GitHub - junegunn/fzf: A command-line fuzzy finder
+Summary: General-purpose command-line fuzzy finder.
 Output: {"title":"fzf","note":"General-purpose command-line fuzzy finder"}
-Input: URL: https://excalidraw.com/ | Original title: Excalidraw | Hand-drawn look & feel
-Output: {"title":"Excalidraw","note":"Open-source hand-drawn style collaborative whiteboard"}`
+Input: URL: https://excalidraw.com/
+Original title: Excalidraw | Hand-drawn look & feel
+Page content: Virtual collaborative whiteboard tool for sketching hand-drawn like diagrams.
+Output: {"title":"Excalidraw","note":"Hand-drawn style collaborative online whiteboard"}
+Input: URL: https://nova.io
+Original title: NOVA IO
+Output: {"title":"NOVA IO","note":""}`
 
-	polishInstructionsENWithGroup = `You are a bookmark organizer. Given webpage details, output a concise title, a one-sentence description of what the webpage does, and the best matching group.
+	polishInstructionsENWithGroup = `You are a bookmark organizer. Using ONLY the provided webpage details, output a concise title, a one-sentence description, and the best matching group.
 Output strict JSON only (no markdown fences or extra text): {"title":"...","note":"...","group":"..."}
 Rules:
 - title: keep the core product, brand, or project name; strip redundant site suffixes like " - Official Site".
-- note: one short sentence (under 20 words) describing what the site or page itself does. Never write grouping rationale or mention groups in note; output "" if unclear.
-- group: must exactly match one of the available groups, or "" if none fit.
+- note: summarize ONLY facts explicitly stated in the provided title, summary, or page content (under 20 words). NEVER guess or invent what a site does from its URL or brand name alone. Never mention grouping in note. If the input does not state the site's purpose, you MUST output "".
+- group: must exactly match one of the available groups, or "" if unsure or none fit.
 Examples:
-Input: URL: https://github.com/junegunn/fzf | Original title: GitHub - junegunn/fzf: A command-line fuzzy finder | Available groups: Dev / Tools | Design / Inspiration
+Input: URL: https://github.com/junegunn/fzf
+Original title: GitHub - junegunn/fzf: A command-line fuzzy finder
+Summary: General-purpose command-line fuzzy finder.
+Available groups: Dev / Tools | Design / Inspiration
 Output: {"title":"fzf","note":"General-purpose command-line fuzzy finder","group":"Dev / Tools"}
-Input: URL: https://excalidraw.com/ | Original title: Excalidraw | Hand-drawn look & feel | Available groups: Dev / Tools | Media / Video
-Output: {"title":"Excalidraw","note":"Open-source hand-drawn style collaborative whiteboard","group":""}`
+Input: URL: https://nova.io
+Original title: NOVA IO
+Available groups: Dev / Tools | Media / Video
+Output: {"title":"NOVA IO","note":"","group":""}`
 )
 
 func polishJSONSchema(withGroup bool) map[string]any {
@@ -84,6 +108,15 @@ func polishJSONSchema(withGroup bool) map[string]any {
 
 func buildPolishPrompt(in app.PolishInput) (instructions, userPrompt string) {
 	withGroup := len(in.Choices) > 0
+	desc := strings.TrimSpace(in.Description)
+	if app.IsJunkAINote(desc) {
+		desc = ""
+	}
+	excerpt := strings.TrimSpace(in.Excerpt)
+	if strings.EqualFold(excerpt, desc) {
+		excerpt = ""
+	}
+
 	if locales.IsChinese() {
 		var b strings.Builder
 		b.WriteString("网址: ")
@@ -92,9 +125,13 @@ func buildPolishPrompt(in app.PolishInput) (instructions, userPrompt string) {
 			b.WriteString("\n原标题: ")
 			b.WriteString(truncateRunes(t, 160))
 		}
-		if d := strings.TrimSpace(in.Description); d != "" && !app.IsJunkAINote(d) {
+		if desc != "" {
 			b.WriteString("\n摘要: ")
-			b.WriteString(truncateRunes(d, 300))
+			b.WriteString(truncateRunes(desc, 300))
+		}
+		if excerpt != "" {
+			b.WriteString("\n页面内容: ")
+			b.WriteString(truncateRunes(excerpt, 350))
 		}
 		if withGroup {
 			b.WriteString("\n可选分组: ")
@@ -116,9 +153,13 @@ func buildPolishPrompt(in app.PolishInput) (instructions, userPrompt string) {
 		b.WriteString("\nOriginal title: ")
 		b.WriteString(truncateRunes(t, 160))
 	}
-	if d := strings.TrimSpace(in.Description); d != "" && !app.IsJunkAINote(d) {
+	if desc != "" {
 		b.WriteString("\nSummary: ")
-		b.WriteString(truncateRunes(d, 300))
+		b.WriteString(truncateRunes(desc, 300))
+	}
+	if excerpt != "" {
+		b.WriteString("\nPage content: ")
+		b.WriteString(truncateRunes(excerpt, 350))
 	}
 	if withGroup {
 		b.WriteString("\nAvailable groups: ")
@@ -184,6 +225,7 @@ func sanitizePolish(out app.Polish, in app.PolishInput) app.Polish {
 	if note != "" {
 		if app.IsJunkAINote(note) ||
 			strings.EqualFold(note, out.Title) ||
+			strings.EqualFold(note, strings.TrimSpace(in.Title)) ||
 			strings.EqualFold(note, strings.TrimSpace(in.URL)) {
 			note = ""
 		}
@@ -195,7 +237,8 @@ func sanitizePolish(out app.Polish, in app.PolishInput) app.Polish {
 func isJunkTitle(title string) bool {
 	s := strings.ToLower(strings.TrimSpace(title))
 	switch s {
-	case "", "无标题", "未知标题", "未知页面", "精简中文标题", "untitled", "unknown", "concise title":
+	case "", "无标题", "未知标题", "未知页面", "精简中文标题", "untitled", "unknown", "concise title",
+		"just a moment", "just a moment...", "attention required", "access denied", "请稍候", "请稍等":
 		return true
 	}
 	return false

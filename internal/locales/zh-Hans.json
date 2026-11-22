@@ -384,6 +384,7 @@
   "toastSavedTo": "已保存到「{path}」",
   "toastAlreadyIn": "已在「{path}」",
   "toastPolishFailed": "润色失败",
+  "toastPolishInsufficient": "无法读取该网页内容，暂无法 AI 润色",
   "toastTargetSubMissing": "目标子分组已找不到",
   "toastMovedTo": "已移到「{path}」",
   "toastMovedCount": "{count, plural, other {已移动 # 项}}",
