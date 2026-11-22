@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	polishInstructionsZH = `你是书签整理助手。请根据网页信息生成简洁准确的中文整理结果，只输出严格 JSON（不要 markdown 代码块或额外说明），格式：{"title":"精简中文标题","note":"一句话中文备注","tags":["最多3个简短标签"],"group":"最匹配的分组路径或空字符串"}`
-	polishInstructionsEN = `You are a bookmark organizer. Given webpage details, produce concise and accurate English metadata as strict JSON only (no markdown fences or extra text) in this format: {"title":"concise title","note":"one-sentence note","tags":["up to 3 short tags"],"group":"best matching group path or empty string"}`
+	polishInstructionsZH = `你是书签整理助手。请根据网页信息生成简洁准确的中文整理结果，只输出严格 JSON（不要 markdown 代码块或额外说明），格式：{"title":"精简中文标题","note":"一句话中文备注","group":"最匹配的分组路径或空字符串"}`
+	polishInstructionsEN = `You are a bookmark organizer. Given webpage details, produce concise and accurate English metadata as strict JSON only (no markdown fences or extra text) in this format: {"title":"concise title","note":"one-sentence note","group":"best matching group path or empty string"}`
 )
 
 func buildPolishPrompt(in app.PolishInput) (instructions, userPrompt string) {
@@ -36,7 +36,7 @@ func buildPolishPrompt(in app.PolishInput) (instructions, userPrompt string) {
 				b.WriteString(c.Path)
 			}
 		}
-		b.WriteString("\n要求: 标题精简并去掉网站后缀；备注限一句话；tags 最多3个；group 必须完全等于某个可选分组或留空\"\"。")
+		b.WriteString("\n要求: 标题精简并去掉网站后缀；备注限一句话；group 必须完全等于某个可选分组或留空\"\"。")
 		return polishInstructionsZH, b.String()
 	}
 
@@ -60,15 +60,14 @@ func buildPolishPrompt(in app.PolishInput) (instructions, userPrompt string) {
 			b.WriteString(c.Path)
 		}
 	}
-	b.WriteString("\nRules: keep title concise without redundant site suffix; note is one sentence; max 3 short tags; group must exactly match one of the available groups or \"\".")
+	b.WriteString("\nRules: keep title concise without redundant site suffix; note is one sentence; group must exactly match one of the available groups or \"\".")
 	return polishInstructionsEN, b.String()
 }
 
 type rawPolishJSON struct {
-	Title string   `json:"title"`
-	Note  string   `json:"note"`
-	Tags  []string `json:"tags"`
-	Group string   `json:"group"`
+	Title string `json:"title"`
+	Note  string `json:"note"`
+	Group string `json:"group"`
 }
 
 func parsePolishJSON(raw string, choices []app.GroupChoice) (app.Polish, error) {
@@ -86,7 +85,6 @@ func parsePolishJSON(raw string, choices []app.GroupChoice) (app.Polish, error) 
 	out := app.Polish{
 		Title: strings.TrimSpace(parsed.Title),
 		Note:  strings.TrimSpace(parsed.Note),
-		Tags:  cleanTags(parsed.Tags),
 	}
 
 	if g := strings.TrimSpace(parsed.Group); g != "" {
@@ -95,26 +93,6 @@ func parsePolishJSON(raw string, choices []app.GroupChoice) (app.Polish, error) 
 		out.SubID = sid
 	}
 	return out, nil
-}
-
-func cleanTags(tags []string) []string {
-	var out []string
-	seen := make(map[string]struct{}, 3)
-	for _, t := range tags {
-		t = strings.TrimSpace(t)
-		if t == "" {
-			continue
-		}
-		if _, dup := seen[t]; dup {
-			continue
-		}
-		seen[t] = struct{}{}
-		out = append(out, t)
-		if len(out) >= 3 {
-			break
-		}
-	}
-	return out
 }
 
 func matchGroupChoice(groupPath string, choices []app.GroupChoice) (string, string) {

@@ -359,7 +359,7 @@ func sameContent(a, b *model.Library) bool {
 
 func sameBookmark(a, b model.Bookmark) bool {
 	return a.ID == b.ID && a.Title == b.Title && a.URL == b.URL && a.Note == b.Note &&
-		slices.Equal(a.Tags, b.Tags) && a.Icon == b.Icon && a.GroupID == b.GroupID &&
+		a.Icon == b.Icon && a.GroupID == b.GroupID &&
 		a.SubID == b.SubID && a.Order == b.Order && a.CreatedAt.Equal(b.CreatedAt) &&
 		a.UpdatedAt.Equal(b.UpdatedAt) && a.Polished == b.Polished &&
 		(a.DeletedAt == nil && b.DeletedAt == nil || a.DeletedAt != nil && b.DeletedAt != nil && a.DeletedAt.Equal(*b.DeletedAt))

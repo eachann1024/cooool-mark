@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"net/url"
-	"slices"
 	"strings"
 	"time"
 
@@ -120,7 +119,6 @@ type editorSnapshot struct {
 	url     string
 	title   string
 	note    string
-	tags    []string
 	groupID string
 	subID   string
 	iconImg string
@@ -136,7 +134,6 @@ type state struct {
 	url       string
 	title     string
 	note      string
-	tags      []string
 	icon      model.Icon
 	groupID   string
 	subID     string
@@ -153,8 +150,7 @@ type state struct {
 	quitAfterClose bool
 	forceClose     bool
 
-	// Tag / sub-group inline drafts
-	tagDraft   string
+	// Sub-group inline draft
 	addingSub  bool
 	newSubName string
 
@@ -230,7 +226,6 @@ func (s *state) snapshot() editorSnapshot {
 		url:     strings.TrimSpace(s.url),
 		title:   strings.TrimSpace(s.title),
 		note:    strings.TrimSpace(s.note),
-		tags:    slices.Clone(s.tags),
 		groupID: s.groupID,
 		subID:   s.subID,
 		iconImg: s.icon.Image,
@@ -241,11 +236,9 @@ func (s *state) isDirty() bool {
 	if strings.TrimSpace(s.url) != s.baseline.url ||
 		strings.TrimSpace(s.title) != s.baseline.title ||
 		strings.TrimSpace(s.note) != s.baseline.note ||
-		!slices.Equal(s.tags, s.baseline.tags) ||
 		s.groupID != s.baseline.groupID ||
 		s.subID != s.baseline.subID ||
 		s.icon.Image != s.baseline.iconImg ||
-		strings.TrimSpace(s.tagDraft) != "" ||
 		(s.addingSub && strings.TrimSpace(s.newSubName) != "") {
 		return true
 	}
@@ -302,7 +295,6 @@ func (s *state) load(req app.EditorRequest) {
 	s.forceClose = false
 	s.addingSub = false
 	s.newSubName = ""
-	s.tagDraft = ""
 	s.fetchErr = ""
 	s.aiErr = ""
 	s.saveErr = ""
@@ -317,7 +309,6 @@ func (s *state) load(req app.EditorRequest) {
 			s.url = b.URL
 			s.title = b.Title
 			s.note = b.Note
-			s.tags = slices.Clone(b.Tags)
 			s.icon = b.Icon
 			s.groupID = b.GroupID
 			s.subID = b.SubID
@@ -344,7 +335,6 @@ func (s *state) load(req app.EditorRequest) {
 	s.url = strings.TrimSpace(req.URL)
 	s.title = strings.TrimSpace(req.Title)
 	s.note = ""
-	s.tags = nil
 	s.createdAt = time.Time{}
 	s.order = 0
 	s.polished = false
@@ -584,8 +574,7 @@ func (s *state) startAI(force bool) {
 			}
 			p.Title = strings.TrimSpace(p.Title)
 			p.Note = strings.TrimSpace(p.Note)
-			p.Tags = cleanTags(p.Tags)
-			if p.Title == "" && p.Note == "" && len(p.Tags) == 0 && p.GroupID == "" {
+			if p.Title == "" && p.Note == "" && p.GroupID == "" {
 				s.aiSuggest = nil
 			} else {
 				s.aiSuggest = &p
@@ -606,11 +595,6 @@ func (s *state) hasAISuggestion() bool {
 	if p.Note != "" && p.Note != strings.TrimSpace(s.note) {
 		return true
 	}
-	for _, t := range p.Tags {
-		if !slices.Contains(s.tags, t) {
-			return true
-		}
-	}
 	if p.GroupID != "" && s.a.Store.Lib().Sub(p.GroupID, p.SubID) != nil &&
 		(p.GroupID != s.groupID || p.SubID != s.subID) {
 		return true
@@ -622,21 +606,12 @@ func (s *state) applyAI() {
 	if s.aiSuggest == nil {
 		return
 	}
-	if strings.TrimSpace(s.tagDraft) != "" {
-		s.commitTagDraft()
-	}
 	p := s.aiSuggest
 	if p.Title != "" {
 		s.title = p.Title
 	}
 	if p.Note != "" {
 		s.note = p.Note
-	}
-	for _, t := range p.Tags {
-		t = strings.TrimSpace(t)
-		if t != "" && !slices.Contains(s.tags, t) {
-			s.tags = append(s.tags, t)
-		}
 	}
 	if p.GroupID != "" && s.a.Store.Lib().Sub(p.GroupID, p.SubID) != nil {
 		s.groupID, s.subID = p.GroupID, p.SubID
@@ -647,35 +622,11 @@ func (s *state) applyAI() {
 	s.polished = true
 }
 
-func cleanTags(tags []string) []string {
-	var out []string
-	for _, t := range tags {
-		t = strings.TrimSpace(t)
-		if t != "" && !slices.Contains(out, t) {
-			out = append(out, t)
-		}
-	}
-	return out
-}
-
 func (s *state) previewIcon() model.Icon {
 	if s.icon.Image != "" {
 		return s.icon
 	}
 	return theme.DefaultIcon(s.title, s.url)
-}
-
-func (s *state) commitTagDraft() {
-	parts := strings.FieldsFunc(s.tagDraft, func(r rune) bool {
-		return r == ',' || r == '，'
-	})
-	s.tagDraft = ""
-	for _, part := range parts {
-		tag := strings.TrimSpace(part)
-		if tag != "" && !slices.Contains(s.tags, tag) {
-			s.tags = append(s.tags, tag)
-		}
-	}
 }
 
 func (s *state) commitNewSub() {
@@ -717,9 +668,6 @@ func (s *state) doSave() bool {
 	if s.addingSub {
 		s.commitNewSub()
 	}
-	if strings.TrimSpace(s.tagDraft) != "" {
-		s.commitTagDraft()
-	}
 
 	title := strings.TrimSpace(s.title)
 	if title == "" {
@@ -738,7 +686,6 @@ func (s *state) doSave() bool {
 		Title:     title,
 		URL:       u,
 		Note:      strings.TrimSpace(s.note),
-		Tags:      slices.Clone(s.tags),
 		Icon:      icon,
 		GroupID:   s.groupID,
 		SubID:     s.subID,

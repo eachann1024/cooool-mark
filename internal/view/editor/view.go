@@ -3,7 +3,6 @@ package editor
 import (
 	"fmt"
 	"runtime"
-	"slices"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
@@ -356,8 +355,6 @@ func (s *state) cardSection(c *ui.Context, p *theme.Palette) {
 		if s.hasAISuggestion() {
 			s.aiSuggestionBox(c, p)
 		}
-
-		s.tagsRow(c, p)
 	})
 }
 
@@ -405,72 +402,6 @@ func (s *state) aiSuggestionBox(c *ui.Context, p *theme.Palette) {
 		if sug.Note != "" && sug.Note != strings.TrimSpace(s.note) {
 			ui.Text(c, sug.Note).FontSize(12).TextColor(p.Text2).Wrap().Selectable()
 		}
-	})
-}
-
-func (s *state) tagsRow(c *ui.Context, p *theme.Palette) {
-	ui.Column(c).FillWidth().Padding(9, 0, 0, 0).BorderWidth(1, 0, 0, 0).BorderColor(p.LineSoft).Children(func() {
-		ui.Row(c).FillWidth().Wrap().Gap(5).AlignItems(ui.Center).Children(func() {
-			ui.Icon(c, theme.IconTag).FontSize(12).TextColor(p.Muted)
-			removeIdx := -1
-			for i, tag := range s.tags {
-				chip := ui.Row(c.Key(fmt.Sprintf("tag-%d-%s", i, tag))).Height(22).Padding(0, 3, 0, 7).Radius(6).
-					Gap(2).AlignItems(ui.Center).Background(p.Field)
-				chip.Children(func() {
-					ui.Text(c, tag).FontSize(12).TextColor(p.Text).SingleLine()
-					rm := ui.ButtonBase(c.Key(fmt.Sprintf("rm-tag-%d", i))).Size(16, 16).Radius(4).Center().
-						TextColor(p.Muted).Label(locales.EditorRemoveTag(tag)).Tooltip(locales.EditorRemoveTagTip())
-					if rm.Hovered() {
-						rm.Background(p.Line).TextColor(p.Text)
-					}
-					rm.Children(func() { ui.Icon(c, theme.IconClose).FontSize(9) })
-					if rm.Clicked() {
-						removeIdx = i
-					}
-				})
-			}
-			if removeIdx >= 0 {
-				s.tags = slices.Delete(s.tags, removeIdx, removeIdx+1)
-			}
-
-			if s.aiReady() && s.aiSuggest != nil && !s.aiDismissed {
-				for i, at := range s.aiSuggest.Tags {
-					if slices.Contains(s.tags, at) {
-						continue
-					}
-					addChip := ui.ButtonBase(c.Key(fmt.Sprintf("ai-tag-%d-%s", i, at))).Height(22).PaddingX(7).Radius(6).
-						AlignItems(ui.Center).Background(p.AccentBg.Mix(p.Surface, 0.45)).
-						Border(1, p.Accent.Alpha(0.4)).BorderStyle(ui.BorderDashed).TextColor(p.AccentText).
-						Label(locales.EditorAddTag(at)).Tooltip(locales.EditorAddTagTip())
-					if addChip.Hovered() {
-						addChip.Background(p.AccentBg)
-					}
-					addChip.Children(func() {
-						ui.Text(c, "+ "+at).FontSize(11.5).SingleLine()
-					})
-					if addChip.Clicked() {
-						s.tags = append(s.tags, at)
-					}
-				}
-			}
-
-			tagIn := ui.TextInputBase(c.Key(fmt.Sprintf("tag-draft-%d", s.sessionSeq)), &s.tagDraft).
-				Grow(1).MinWidth(72).Height(22).
-				Placeholder(locales.EditorAddTagPlaceholder()).Label(locales.EditorAddTagLabel()).FontSize(12).TextColor(p.Text)
-			tagIn.OnTextKey(func(k ui.TextKey) bool {
-				if k.Key == ui.KeyBackspace && k.Mods == 0 && k.Text() == "" && len(s.tags) > 0 {
-					s.tags = s.tags[:len(s.tags)-1]
-					return true
-				}
-				return false
-			})
-			if tagIn.Changed() && (strings.Contains(s.tagDraft, ",") || strings.Contains(s.tagDraft, "，")) {
-				s.commitTagDraft()
-			}
-			if tagIn.Submitted() {
-				s.commitTagDraft()
-			}
-		})
 	})
 }
 

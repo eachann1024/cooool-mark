@@ -264,16 +264,6 @@ func (msgs Messages) MenuShowNotes() string {
 	return Catalog.Format(msgs.locale, "menuShowNotes", nil)
 }
 
-// MenuShowTags says "Show Tags"
-// in the language the app shows.
-func MenuShowTags() string { return In(i18n.Locale()).MenuShowTags() }
-
-// MenuShowTags says "Show Tags"
-// in the language of msgs.
-func (msgs Messages) MenuShowTags() string {
-	return Catalog.Format(msgs.locale, "menuShowTags", nil)
-}
-
 // MenuOpenMain says "Open Main Window"
 // in the language the app shows.
 func MenuOpenMain() string { return In(i18n.Locale()).MenuOpenMain() }
@@ -1678,21 +1668,21 @@ func (msgs Messages) EditorPolishingShort() string {
 	return Catalog.Format(msgs.locale, "editorPolishingShort", nil)
 }
 
-// EditorPolishTip says "Use AI to polish title, note, and tags"
+// EditorPolishTip says "Use AI to polish title and note"
 // in the language the app shows.
 func EditorPolishTip() string { return In(i18n.Locale()).EditorPolishTip() }
 
-// EditorPolishTip says "Use AI to polish title, note, and tags"
+// EditorPolishTip says "Use AI to polish title and note"
 // in the language of msgs.
 func (msgs Messages) EditorPolishTip() string {
 	return Catalog.Format(msgs.locale, "editorPolishTip", nil)
 }
 
-// EditorPolishingTip says "Polishing title, note, and tags"
+// EditorPolishingTip says "Polishing title and note"
 // in the language the app shows.
 func EditorPolishingTip() string { return In(i18n.Locale()).EditorPolishingTip() }
 
-// EditorPolishingTip says "Polishing title, note, and tags"
+// EditorPolishingTip says "Polishing title and note"
 // in the language of msgs.
 func (msgs Messages) EditorPolishingTip() string {
 	return Catalog.Format(msgs.locale, "editorPolishingTip", nil)
@@ -1736,66 +1726,6 @@ func EditorDismissSuggestion() string { return In(i18n.Locale()).EditorDismissSu
 // in the language of msgs.
 func (msgs Messages) EditorDismissSuggestion() string {
 	return Catalog.Format(msgs.locale, "editorDismissSuggestion", nil)
-}
-
-// EditorRemoveTag says "Remove tag {tag}"
-// in the language the app shows.
-func EditorRemoveTag(tag string) string { return In(i18n.Locale()).EditorRemoveTag(tag) }
-
-// EditorRemoveTag says "Remove tag {tag}"
-// in the language of msgs.
-func (msgs Messages) EditorRemoveTag(tag string) string {
-	return Catalog.Format(msgs.locale, "editorRemoveTag", map[string]any{"tag": tag})
-}
-
-// EditorRemoveTagTip says "Remove tag"
-// in the language the app shows.
-func EditorRemoveTagTip() string { return In(i18n.Locale()).EditorRemoveTagTip() }
-
-// EditorRemoveTagTip says "Remove tag"
-// in the language of msgs.
-func (msgs Messages) EditorRemoveTagTip() string {
-	return Catalog.Format(msgs.locale, "editorRemoveTagTip", nil)
-}
-
-// EditorAddTag says "Add tag {tag}"
-// in the language the app shows.
-func EditorAddTag(tag string) string { return In(i18n.Locale()).EditorAddTag(tag) }
-
-// EditorAddTag says "Add tag {tag}"
-// in the language of msgs.
-func (msgs Messages) EditorAddTag(tag string) string {
-	return Catalog.Format(msgs.locale, "editorAddTag", map[string]any{"tag": tag})
-}
-
-// EditorAddTagTip says "Click to add suggested tag"
-// in the language the app shows.
-func EditorAddTagTip() string { return In(i18n.Locale()).EditorAddTagTip() }
-
-// EditorAddTagTip says "Click to add suggested tag"
-// in the language of msgs.
-func (msgs Messages) EditorAddTagTip() string {
-	return Catalog.Format(msgs.locale, "editorAddTagTip", nil)
-}
-
-// EditorAddTagPlaceholder says "Add tags…"
-// in the language the app shows.
-func EditorAddTagPlaceholder() string { return In(i18n.Locale()).EditorAddTagPlaceholder() }
-
-// EditorAddTagPlaceholder says "Add tags…"
-// in the language of msgs.
-func (msgs Messages) EditorAddTagPlaceholder() string {
-	return Catalog.Format(msgs.locale, "editorAddTagPlaceholder", nil)
-}
-
-// EditorAddTagLabel says "Add tags"
-// in the language the app shows.
-func EditorAddTagLabel() string { return In(i18n.Locale()).EditorAddTagLabel() }
-
-// EditorAddTagLabel says "Add tags"
-// in the language of msgs.
-func (msgs Messages) EditorAddTagLabel() string {
-	return Catalog.Format(msgs.locale, "editorAddTagLabel", nil)
 }
 
 // EditorPlaceInGroup says "Group"
@@ -2268,16 +2198,6 @@ func SettingsShowNotes() string { return In(i18n.Locale()).SettingsShowNotes() }
 // in the language of msgs.
 func (msgs Messages) SettingsShowNotes() string {
 	return Catalog.Format(msgs.locale, "settingsShowNotes", nil)
-}
-
-// SettingsShowTags says "Show Tags"
-// in the language the app shows.
-func SettingsShowTags() string { return In(i18n.Locale()).SettingsShowTags() }
-
-// SettingsShowTags says "Show Tags"
-// in the language of msgs.
-func (msgs Messages) SettingsShowTags() string {
-	return Catalog.Format(msgs.locale, "settingsShowTags", nil)
 }
 
 // SettingsSummonModes says "Summon Modes"

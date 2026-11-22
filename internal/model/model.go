@@ -41,7 +41,6 @@ type Bookmark struct {
 	Title     string    `json:"title"`
 	URL       string    `json:"url"`
 	Note      string    `json:"note,omitempty"`
-	Tags      []string  `json:"tags,omitempty"`
 	Icon      Icon      `json:"icon"`
 	GroupID   string    `json:"groupId"`
 	SubID     string    `json:"subId"`
@@ -50,7 +49,7 @@ type Bookmark struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 	// DeletedAt is kept only to ignore legacy trash entries when loading old files.
 	DeletedAt *time.Time `json:"deletedAt,omitempty"`
-	// Polished is set once the AI pass filled title/note/tags.
+	// Polished is set once the AI pass filled title/note.
 	Polished bool `json:"polished,omitempty"`
 }
 
@@ -202,7 +201,7 @@ const (
 const (
 	AIOff    = "off"
 	AILocal  = "local"  // downloaded Qwen GGUF run by llama-server
-	AIOpenAI = "openai" // any OpenAI compatible endpoint; key in the keychain
+	AIOpenAI = "openai" // any OpenAI compatible endpoint; key in local secrets.json
 )
 
 // Storage locations.
@@ -325,7 +324,6 @@ type Settings struct {
 	CompactCardPad    int    `json:"compactCardPad,omitempty"`    // 6..16 (0 = default 10)
 	CompactCardRadius int    `json:"compactCardRadius,omitempty"` // 4..16 (0 = default 9)
 	ShowNote          bool   `json:"showNote"`
-	ShowTags          bool   `json:"showTags"`
 
 	// OpenModes are the summon modes switched on, besides the main window.
 	OpenModes          []string `json:"openModes"`
@@ -354,7 +352,7 @@ type Settings struct {
 	LocalModel   string `json:"localModel"`   // qwen3.5-0.8b | qwen3.5-2b
 	OpenAIURL    string `json:"openaiUrl"`
 	OpenAIModel  string `json:"openaiModel"`
-	// The OpenAI key lives in mygo.Secrets under "openai-key".
+	// The OpenAI key lives in secrets.json in the app's user data dir.
 
 	// UseWebView renders pages that need JavaScript in a hidden webview
 	// when plain HTTP finds no title.

@@ -335,7 +335,7 @@ func nextOrder(l *model.Library, g, s string) float64 {
 	return max + 1
 }
 
-// Polish asks the AI to fill a saved bookmark's empty title/note/tags.
+// Polish asks the AI to fill a saved bookmark's empty title/note.
 // A manual request can replace fields and change its sub-group. Results
 // land quietly; the row flashes "已润色" through PolishedAt.
 func (a *App) Polish(id string, force bool) {
@@ -371,9 +371,6 @@ func (a *App) Polish(id string, force bool) {
 				}
 				if p.Note != "" && (force || b.Note == "") {
 					b.Note = p.Note
-				}
-				if len(p.Tags) > 0 && (force || len(b.Tags) == 0) {
-					b.Tags = p.Tags
 				}
 				if force && p.GroupID != "" && l.Sub(p.GroupID, p.SubID) != nil {
 					if b.GroupID != p.GroupID || b.SubID != p.SubID {
@@ -497,9 +494,7 @@ func (a *App) Delete(ids ...string) {
 	a.Store.Update(func(l *model.Library) {
 		for _, b := range l.Bookmarks {
 			if gone[b.ID] {
-				cp := b
-				cp.Tags = append([]string(nil), b.Tags...)
-				saved = append(saved, cp)
+				saved = append(saved, b)
 			}
 		}
 		store.Purge(l, ids...)
@@ -787,9 +782,7 @@ func (a *App) purgeWhere(match func(*model.Bookmark) bool) []model.Bookmark {
 	a.Store.Update(func(l *model.Library) {
 		for _, b := range l.Bookmarks {
 			if !b.InTrash() && match(&b) {
-				cp := b
-				cp.Tags = append([]string(nil), b.Tags...)
-				removed = append(removed, cp)
+				removed = append(removed, b)
 				ids = append(ids, b.ID)
 			}
 		}

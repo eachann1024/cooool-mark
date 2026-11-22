@@ -37,7 +37,7 @@ type Hit struct {
 	Path   string   // "group / sub"
 }
 
-// Searcher finds bookmarks by title, URL, note and tags, in Chinese by
+// Searcher finds bookmarks by title, URL and note, in Chinese by
 // pinyin initials and full pinyin too (ssp → 少数派). Called on the main
 // thread; must stay under a few ms for 10k bookmarks.
 type Searcher interface {
@@ -60,7 +60,6 @@ type PolishInput struct {
 type Polish struct {
 	Title   string
 	Note    string
-	Tags    []string
 	GroupID string
 	SubID   string
 }

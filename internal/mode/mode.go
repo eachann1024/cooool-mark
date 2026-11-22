@@ -375,7 +375,7 @@ func searchBookmarks(a *app.App, query, groupID string) []*model.Bookmark {
 		if groupID != "" && b.GroupID != groupID {
 			continue
 		}
-		if strings.Contains(strings.ToLower(b.Title+" "+b.URL+" "+b.Note+" "+strings.Join(b.Tags, " ")), low) {
+		if strings.Contains(strings.ToLower(b.Title+" "+b.URL+" "+b.Note), low) {
 			out = append(out, b)
 		}
 	}

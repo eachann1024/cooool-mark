@@ -59,7 +59,6 @@ func (s *state) pageGeneral(c *ui.Context, p *theme.Palette) {
 			},
 		)
 		switchRow(c, p, locales.SettingsShowNotes(), &a.Settings.ShowNote, a.SaveSettings)
-		switchRow(c, p, locales.SettingsShowTags(), &a.Settings.ShowTags, a.SaveSettings)
 	})
 
 	s.compactCardSection(c, p)

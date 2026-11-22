@@ -327,7 +327,6 @@ func CloneLibrary(lib *model.Library) *model.Library {
 	cp.Bookmarks = make([]model.Bookmark, len(lib.Bookmarks))
 	for i, b := range lib.Bookmarks {
 		cp.Bookmarks[i] = b
-		cp.Bookmarks[i].Tags = append([]string(nil), b.Tags...)
 		if b.DeletedAt != nil {
 			t := *b.DeletedAt
 			cp.Bookmarks[i].DeletedAt = &t

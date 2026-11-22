@@ -419,15 +419,6 @@ func appMenu(a *app.App) *mygo.Menu {
 					a.SaveSettings()
 				}),
 			},
-			{
-				Label:   locales.MenuShowTags(),
-				Type:    mygo.MenuItemCheckbox,
-				Checked: a.Settings.ShowTags,
-				Click: click(func() {
-					a.Settings.ShowTags = !a.Settings.ShowTags
-					a.SaveSettings()
-				}),
-			},
 			mygo.Separator(),
 			{Role: mygo.RoleToggleFullScreen},
 		},

@@ -1,4 +1,4 @@
-// Package search finds bookmarks by title, URL, note, tags, and Chinese pinyin.
+// Package search finds bookmarks by title, URL, note, and Chinese pinyin.
 package search
 
 import (
@@ -34,8 +34,6 @@ type bmIndex struct {
 	urlLower string
 	rawURL   string
 	note     textIndex
-	tagsKey  string
-	tags     []textIndex
 }
 
 type searcher struct {
@@ -52,7 +50,7 @@ func New() app.Searcher {
 	}
 }
 
-// Search matches live bookmarks by multi-term AND across title, URL, note and tags,
+// Search matches live bookmarks by multi-term AND across title, URL, and note,
 // supporting Chinese full pinyin and initials, and maps matched title pinyin back to rune ranges.
 func (s *searcher) Search(lib *model.Library, query string, groupID string) []app.Hit {
 	if lib == nil {
@@ -141,21 +139,9 @@ func (s *searcher) Search(lib *model.Library, query string, groupID string) []ap
 				}
 			}
 
-			// 3. Other fields: tags > URL > note (literal then pinyin)
+			// 3. Other fields: URL > note (literal then pinyin)
 			if bestScore == 0 {
 				otherScore := 0
-				for ti := range idx.tags {
-					tIdx := &idx.tags[ti]
-					if tIdx.lower == pt.raw {
-						otherScore = max(otherScore, 1400)
-					} else if strings.Contains(tIdx.lower, pt.raw) {
-						otherScore = max(otherScore, 1300)
-					} else if pt.isASCII && pt.hasAlnum && (tIdx.mask&pt.asciiMask) == pt.asciiMask {
-						if _, _, _, ok := matchPinyinUnits(tIdx.units, pt.raw); ok {
-							otherScore = max(otherScore, 1200)
-						}
-					}
-				}
 				if strings.Contains(idx.urlLower, pt.raw) {
 					otherScore = max(otherScore, 1150)
 				}
@@ -251,18 +237,6 @@ func (s *searcher) indexFor(b *model.Bookmark) *bmIndex {
 	}
 	if !ok || idx.note.raw != b.Note {
 		idx.note = s.buildTextIndex(b.Note, false)
-	}
-	tagsKey := strings.Join(b.Tags, "\x00")
-	if !ok || idx.tagsKey != tagsKey {
-		idx.tagsKey = tagsKey
-		if len(b.Tags) == 0 {
-			idx.tags = nil
-		} else {
-			idx.tags = make([]textIndex, len(b.Tags))
-			for i, t := range b.Tags {
-				idx.tags[i] = s.buildTextIndex(t, false)
-			}
-		}
 	}
 	return idx
 }

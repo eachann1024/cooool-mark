@@ -714,13 +714,6 @@ func (s *mainState) buildBookmarkListRow(c *ui.Context, p *theme.Palette, g *mod
 						if polished {
 							polishedBadge(c, p)
 						}
-						if a.Settings.ShowTags && len(b.Tags) > 0 {
-							for _, tg := range b.Tags {
-								ui.Row(c).Height(18).PaddingX(6).Radius(5).Background(p.Field).AlignItems(ui.Center).Shrink(0).Children(func() {
-									ui.Text(c, tg).FontSize(11).TextColor(p.Muted).SingleLine()
-								})
-							}
-						}
 					})
 
 					if a.Settings.ShowNote && b.Note != "" {
