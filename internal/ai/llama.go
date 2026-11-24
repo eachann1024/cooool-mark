@@ -89,6 +89,18 @@ func (m *llamaManager) polish(ctx context.Context, s model.Settings, modelPath s
 	// URL and bare site/brand name without webpage text.
 	if !app.HasGroundedNoteContext(in.URL, in.Title, in.Description, in.Excerpt) {
 		out.Note = ""
+		return out, nil
+	}
+	// With real page text, an empty note means the model echoed the input or
+	// answered in the wrong language; sample once more before giving up.
+	if out.Note == "" {
+		extra["temperature"] = 0.6
+		if again, err := polishOpenAICompat(ctx, s, baseURL, "", filepath.Base(modelPath), in, extra); err == nil && again.Note != "" {
+			if again.Title == "" {
+				again.Title = out.Title
+			}
+			out = again
+		}
 	}
 	return out, nil
 }

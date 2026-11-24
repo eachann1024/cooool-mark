@@ -386,6 +386,7 @@
   "toastPolishFailed": "润色失败",
   "toastPolishDone": "书签已润色",
   "toastPolishUnchanged": "没有需要更新的内容",
+  "toastPolishNoNote": "AI 没能生成中文简介，请重试",
   "toastPolishCanceled": "润色期间书签已变化，请重试",
   "toastPolishInsufficient": "无法读取该网页内容，暂无法 AI 润色",
   "toastPolishCleared": "无法读取该网页内容，已清空旧的 AI 简介",

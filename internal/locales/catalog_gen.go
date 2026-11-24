@@ -3916,6 +3916,16 @@ func (msgs Messages) ToastPolishUnchanged() string {
 	return Catalog.Format(msgs.locale, "toastPolishUnchanged", nil)
 }
 
+// ToastPolishNoNote says "AI couldn't write a description. Try again."
+// in the language the app shows.
+func ToastPolishNoNote() string { return In(i18n.Locale()).ToastPolishNoNote() }
+
+// ToastPolishNoNote says "AI couldn't write a description. Try again."
+// in the language of msgs.
+func (msgs Messages) ToastPolishNoNote() string {
+	return Catalog.Format(msgs.locale, "toastPolishNoNote", nil)
+}
+
 // ToastPolishCanceled says "Bookmark changed while polishing. Try again."
 // in the language the app shows.
 func ToastPolishCanceled() string { return In(i18n.Locale()).ToastPolishCanceled() }

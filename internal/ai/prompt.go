@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"unicode"
 
 	"cooool-mark/internal/app"
 	"cooool-mark/internal/locales"
@@ -226,7 +227,9 @@ func sanitizePolish(out app.Polish, in app.PolishInput) app.Polish {
 		if app.IsJunkAINote(note) ||
 			strings.EqualFold(note, out.Title) ||
 			strings.EqualFold(note, strings.TrimSpace(in.Title)) ||
-			strings.EqualFold(note, strings.TrimSpace(in.URL)) {
+			strings.EqualFold(note, strings.TrimSpace(in.URL)) ||
+			echoesInput(note, in.Description) || echoesInput(note, in.Excerpt) ||
+			(locales.IsChinese() && !hasHan(note)) {
 			note = ""
 		}
 	}
@@ -234,7 +237,32 @@ func sanitizePolish(out app.Polish, in app.PolishInput) app.Polish {
 	return out
 }
 
+// echoesInput reports whether a generated note just copies the source text
+// (small models sometimes return the input verbatim instead of summarizing).
+func echoesInput(note, src string) bool {
+	trim := func(s string) string {
+		return strings.ToLower(strings.Join(strings.Fields(strings.TrimRight(strings.TrimSpace(s), ".…。 ")), " "))
+	}
+	n, s := trim(note), trim(src)
+	if n == "" || s == "" {
+		return false
+	}
+	return n == s || (len([]rune(n)) >= 24 && strings.HasPrefix(s, n))
+}
+
+func hasHan(s string) bool {
+	for _, r := range s {
+		if unicode.Is(unicode.Han, r) {
+			return true
+		}
+	}
+	return false
+}
+
 func isJunkTitle(title string) bool {
+	if app.IsPlaceholderTitle(title) {
+		return true
+	}
 	s := strings.ToLower(strings.TrimSpace(title))
 	switch s {
 	case "", "无标题", "未知标题", "未知页面", "精简中文标题", "untitled", "unknown", "concise title",

@@ -582,7 +582,7 @@ func (a *App) polishBookmark(id string, opts polishOptions) {
 	}
 
 	title := strings.TrimSpace(b.Title)
-	if ft := strings.TrimSpace(opts.fetchedTitle); ft != "" {
+	if ft := strings.TrimSpace(opts.fetchedTitle); ft != "" && !IsPlaceholderTitle(ft) {
 		if isReplaceableTitle(title, b.URL, opts.fallbackTitle) || (opts.force && len([]rune(ft)) > len([]rune(title))) {
 			title = ft
 		}
@@ -672,15 +672,23 @@ func (a *App) polishBookmark(id string, opts polishOptions) {
 				next.Note = ""
 				clearedNote = true
 			}
+			// A grounded manual run that yields no usable note (the model echoed
+			// the input or answered in the wrong language) is a failure, not
+			// "nothing to change"; keep the bookmark unpolished so a retry still
+			// feeds the existing description back in.
+			noteFailed := opts.force && grounded && p.Note == "" && !current.Polished
+			retry := func() { a.Polish(id, true) }
 			if opts.force && next.Title == current.Title && next.Note == current.Note {
-				if !grounded && p.Title == "" && p.Note == "" {
+				if noteFailed {
+					a.SayErr(locales.ToastPolishNoNote(), locales.ActionRetry(), retry)
+				} else if !grounded && p.Title == "" && p.Note == "" {
 					a.Say(locales.ToastPolishInsufficient())
 				} else {
 					a.Say(locales.ToastPolishUnchanged())
 				}
 				return
 			}
-			next.Polished = !clearedNote
+			next.Polished = !clearedNote && !noteFailed
 			next.UpdatedAt = time.Now()
 			a.Store.Update(func(l *model.Library) { *l.Bookmark(id) = next })
 			if opts.force {
@@ -688,7 +696,11 @@ func (a *App) polishBookmark(id string, opts polishOptions) {
 					a.Say(locales.ToastPolishCleared())
 					return
 				}
-				a.Say(locales.ToastPolishDone())
+				if noteFailed {
+					a.SayErr(locales.ToastPolishNoNote(), locales.ActionRetry(), retry)
+				} else {
+					a.Say(locales.ToastPolishDone())
+				}
 			}
 			completed := time.Now()
 			a.PolishedAt[id] = completed
@@ -807,7 +819,7 @@ func countCJK(s string) int {
 
 func isReplaceableTitle(title, rawURL, fallbackTitle string) bool {
 	t := strings.TrimSpace(title)
-	if t == "" || t == rawURL {
+	if t == "" || t == rawURL || IsPlaceholderTitle(t) {
 		return true
 	}
 	if fallbackTitle != "" && strings.EqualFold(t, strings.TrimSpace(fallbackTitle)) {
@@ -815,6 +827,19 @@ func isReplaceableTitle(title, rawURL, fallbackTitle string) bool {
 	}
 	host := hostFallbackTitle(rawURL)
 	return host != "" && strings.EqualFold(t, host)
+}
+
+// IsPlaceholderTitle reports whether title is a loading or bot-check page
+// title rather than the site's real name.
+func IsPlaceholderTitle(title string) bool {
+	s := strings.ToLower(strings.TrimRight(strings.TrimSpace(title), ".…。 "))
+	switch s {
+	case "", "无标题", "未知标题", "未知页面", "untitled", "unknown", "loading", "page loading",
+		"just a moment", "attention required", "access denied", "please wait",
+		"请稍候", "请稍等", "加载中", "页面加载中", "正在加载":
+		return true
+	}
+	return false
 }
 
 // IsLocalOrIPURL reports whether raw points to localhost, a .local host, or a

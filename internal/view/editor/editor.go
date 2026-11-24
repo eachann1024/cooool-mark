@@ -616,7 +616,7 @@ func (s *state) startAI(force bool) {
 			fcancel()
 			if ferr == nil {
 				fetchedMeta = &meta
-				if ft := strings.TrimSpace(meta.Title); ft != "" && (title == "" || len([]rune(ft)) > len([]rune(title))) {
+				if ft := strings.TrimSpace(meta.Title); ft != "" && !app.IsPlaceholderTitle(ft) && (title == "" || app.IsPlaceholderTitle(title) || len([]rune(ft)) > len([]rune(title))) {
 					title = ft
 				}
 				if fd := strings.TrimSpace(meta.Description); fd != "" && !app.IsJunkAINote(fd) {
@@ -697,6 +697,8 @@ func (s *state) startAI(force bool) {
 						s.note = ""
 						s.polished = false
 						s.aiErr = locales.ToastPolishCleared()
+					} else if p.Note == "" && !s.polished && app.HasGroundedNoteContext(u, title, desc, excerpt) {
+						s.aiErr = locales.ToastPolishNoNote()
 					} else {
 						s.a.Say(locales.ToastPolishUnchanged())
 					}

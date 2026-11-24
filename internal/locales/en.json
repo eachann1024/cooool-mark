@@ -477,6 +477,7 @@
   "toastPolishFailed": "Polish failed",
   "toastPolishDone": "Bookmark polished",
   "toastPolishUnchanged": "No changes suggested",
+  "toastPolishNoNote": "AI couldn't write a description. Try again.",
   "toastPolishCanceled": "Bookmark changed while polishing. Try again.",
   "toastPolishInsufficient": "Couldn't read this page for AI polish",
   "toastPolishCleared": "Couldn't read this page; cleared previous AI note",
