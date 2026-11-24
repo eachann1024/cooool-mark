@@ -1,10 +1,8 @@
 package mainwin
 
 import (
-	"context"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/egoist/mygo/ui"
 
@@ -151,17 +149,25 @@ func (s *mainState) buildBookmarkMenu(c *ui.Context, m *ui.Menu, b *model.Bookma
 	if m.Item(locales.ActionMoveTo()).Icon(icon(theme.IconMove)).Shortcut(ui.Cmd|ui.Shift, ui.KeyM).Chosen() {
 		s.openMoveModal([]string{b.ID})
 	}
-	aiReady := a.AI != nil && a.AI.Status().Ready
-	if m.Item(locales.ActionAIRePolish()).Icon(icon(theme.IconSparkle)).Disabled(!aiReady).Chosen() {
-		a.Polish(b.ID, true)
+	busy := a.IsEnriching(b.ID)
+	if a.AI != nil && a.AI.Status().Ready {
+		if m.Item(locales.ActionAIRePolish()).ID("re-polish").Icon(icon(theme.IconSparkle)).Disabled(busy).Chosen() {
+			a.Polish(b.ID, true)
+		}
 	}
-	if m.Item(locales.ActionRefreshIcon()).Icon(icon(theme.IconRefresh)).Disabled(a.Fetch == nil).Chosen() {
-		s.refreshBookmarkIcon(b.ID)
+	if a.Fetch != nil {
+		if m.Item(locales.ActionRefreshIcon()).ID("refresh-icon").Icon(icon(theme.IconRefresh)).Disabled(busy).Chosen() {
+			a.RefreshBookmarkIcon(b.ID)
+		}
 	}
 
 	m.Separator()
 
-	if m.Item(locales.ActionDelete()).Icon(icon(theme.IconTrash)).IconColor(s.pal.Danger).Danger().Shortcut(0, ui.KeyBackspace).Chosen() {
+	deleteItem := m.Item(locales.ActionDelete()).Icon(icon(theme.IconTrash)).IconColor(s.pal.Danger).Danger()
+	if !s.searchOpen {
+		deleteItem.Shortcut(0, ui.KeyBackspace)
+	}
+	if deleteItem.Chosen() {
 		a.Delete(b.ID)
 	}
 }
@@ -549,43 +555,6 @@ func (s *mainState) visibleBookmarkIDs() []string {
 	}
 	_, ids := s.ensureGroupCache(lib, g)
 	return ids
-}
-
-func (s *mainState) refreshBookmarkIcon(id string) {
-	a := s.app
-	if a.Fetch == nil {
-		return
-	}
-	b := a.Store.Lib().Bookmark(id)
-	if b == nil {
-		return
-	}
-	targetURL := b.URL
-	libraryDir := a.Store.Dir()
-	app.Background(20*time.Second, func(ctx context.Context) {
-		meta, err := a.Fetch.Fetch(ctx, targetURL)
-		a.Post(func() {
-			if current := a.Store.Lib().Bookmark(id); current == nil || current.URL != targetURL || a.Store.Dir() != libraryDir {
-				return
-			}
-			if err != nil || len(meta.Icon) == 0 {
-				a.Say(locales.ToastNoIconFetched())
-				return
-			}
-			imgPath, err := a.Store.SaveIcon(meta.Icon, meta.IconExt)
-			if err != nil {
-				a.Say(locales.ToastSaveIconFailed())
-				return
-			}
-			a.Store.Update(func(l *model.Library) {
-				if cur := l.Bookmark(id); cur != nil {
-					cur.Icon.Image = imgPath
-					cur.UpdatedAt = time.Now()
-				}
-			})
-			a.Say(locales.ToastIconUpdated())
-		})
-	})
 }
 
 func looksLikeURL(q string) bool {

@@ -3896,6 +3896,36 @@ func (msgs Messages) ToastPolishFailed() string {
 	return Catalog.Format(msgs.locale, "toastPolishFailed", nil)
 }
 
+// ToastPolishDone says "Bookmark polished"
+// in the language the app shows.
+func ToastPolishDone() string { return In(i18n.Locale()).ToastPolishDone() }
+
+// ToastPolishDone says "Bookmark polished"
+// in the language of msgs.
+func (msgs Messages) ToastPolishDone() string {
+	return Catalog.Format(msgs.locale, "toastPolishDone", nil)
+}
+
+// ToastPolishUnchanged says "No changes suggested"
+// in the language the app shows.
+func ToastPolishUnchanged() string { return In(i18n.Locale()).ToastPolishUnchanged() }
+
+// ToastPolishUnchanged says "No changes suggested"
+// in the language of msgs.
+func (msgs Messages) ToastPolishUnchanged() string {
+	return Catalog.Format(msgs.locale, "toastPolishUnchanged", nil)
+}
+
+// ToastPolishCanceled says "Bookmark changed while polishing. Try again."
+// in the language the app shows.
+func ToastPolishCanceled() string { return In(i18n.Locale()).ToastPolishCanceled() }
+
+// ToastPolishCanceled says "Bookmark changed while polishing. Try again."
+// in the language of msgs.
+func (msgs Messages) ToastPolishCanceled() string {
+	return Catalog.Format(msgs.locale, "toastPolishCanceled", nil)
+}
+
 // ToastPolishInsufficient says "Couldn't read this page for AI polish"
 // in the language the app shows.
 func ToastPolishInsufficient() string { return In(i18n.Locale()).ToastPolishInsufficient() }

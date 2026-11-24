@@ -254,6 +254,8 @@ func (s *state) urlSection(c *ui.Context, p *theme.Palette) {
 			ui.Text(c, locales.EditorFetchingPage()).FontSize(12).TextColor(p.Muted).SingleLine()
 		case s.fetchErr != "":
 			ui.Text(c, s.fetchErr).FontSize(12).TextColor(p.Danger).Wrap().Selectable()
+		}
+		switch {
 		case s.aiLoading:
 			ui.Text(c, locales.EditorAIPolishing()).FontSize(12).TextColor(p.Muted).SingleLine()
 		case s.aiErr != "":

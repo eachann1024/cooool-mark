@@ -453,16 +453,55 @@ type polishOptions struct {
 	fetchedOK      bool
 }
 
+// RefreshBookmarkIcon fetches and replaces a saved bookmark's site icon.
+func (a *App) RefreshBookmarkIcon(id string) {
+	b := a.Store.Lib().Bookmark(id)
+	if a.Fetch == nil || b == nil || b.InTrash() || a.IsEnriching(id) {
+		return
+	}
+	targetURL, icon, dir := b.URL, b.Icon, a.Store.Dir()
+	a.startEnriching(id)
+	a.Say(locales.EditorFetchingIcon())
+	Background(20*time.Second, func(ctx context.Context) {
+		meta, err := a.Fetch.Fetch(ctx, targetURL)
+		a.Post(func() {
+			defer a.stopEnriching(id)
+			cur := a.Store.Lib().Bookmark(id)
+			if a.Store.Dir() != dir || cur == nil || cur.InTrash() || cur.URL != targetURL || cur.Icon != icon {
+				return
+			}
+			if err != nil || len(meta.Icon) == 0 {
+				a.SayErr(locales.ToastNoIconFetched(), locales.ActionRetry(), func() { a.RefreshBookmarkIcon(id) })
+				return
+			}
+			imgPath, err := a.Store.SaveIcon(meta.Icon, meta.IconExt)
+			if err != nil {
+				a.SayErr(locales.ToastSaveIconFailed(), locales.ActionRetry(), func() { a.RefreshBookmarkIcon(id) })
+				return
+			}
+			a.Store.Update(func(l *model.Library) {
+				bm := l.Bookmark(id)
+				bm.Icon.Image = imgPath
+				bm.UpdatedAt = time.Now()
+			})
+			a.Say(locales.ToastIconUpdated())
+		})
+	})
+}
+
 // Polish asks the AI to refine a saved bookmark's title and note without
 // moving it out of its user-chosen group. Manual re-polish fetches fresh
 // webpage metadata/content first so AI does not guess or recycle stale notes.
 func (a *App) Polish(id string, force bool) {
-	if a.AI == nil || (!force && !a.Settings.AIAutoPolish) || !a.AI.Status().Ready {
+	b := a.Store.Lib().Bookmark(id)
+	if b == nil || b.InTrash() || (force && a.IsEnriching(id)) || (b.Polished && !force) {
 		return
 	}
-	b := a.Store.Lib().Bookmark(id)
-	if b == nil || b.InTrash() || (b.Polished && !force) {
+	if !a.canPolish(force) {
 		return
+	}
+	if force {
+		a.Say(locales.EditorAIPolishing())
 	}
 	if force && a.Fetch != nil && !IsLocalOrIPURL(b.URL) && !b.IsTemplate() {
 		dir := a.Store.Dir()
@@ -475,6 +514,7 @@ func (a *App) Polish(id string, force bool) {
 				defer a.stopEnriching(id)
 				cur := a.Store.Lib().Bookmark(id)
 				if a.Store.Dir() != dir || cur == nil || cur.InTrash() || cur.URL != targetURL || !cur.UpdatedAt.Equal(expectedUpdated) {
+					a.Say(locales.ToastPolishCanceled())
 					return
 				}
 				var fetchedTitle, fetchedDesc, fetchedExcerpt string
@@ -518,8 +558,22 @@ func (a *App) Polish(id string, force bool) {
 	})
 }
 
+func (a *App) canPolish(manual bool) bool {
+	if a.AI != nil && (manual || a.Settings.AIAutoPolish) && a.AI.Status().Ready {
+		return true
+	}
+	if manual {
+		if show := a.Win.ShowSettings; show != nil {
+			a.SayErr(locales.AiStatusNotReady(), locales.MenuSettings(), func() { show("ai") })
+		} else {
+			a.SayErr(locales.AiStatusNotReady(), "", nil)
+		}
+	}
+	return false
+}
+
 func (a *App) polishBookmark(id string, opts polishOptions) {
-	if a.AI == nil || (!opts.force && !a.Settings.AIAutoPolish) || !a.AI.Status().Ready {
+	if !a.canPolish(opts.force) {
 		return
 	}
 	b := a.Store.Lib().Bookmark(id)
@@ -594,6 +648,9 @@ func (a *App) polishBookmark(id string, opts polishOptions) {
 			defer a.stopEnriching(id)
 			current := a.Store.Lib().Bookmark(id)
 			if current == nil || current.InTrash() || a.Store.Dir() != dir || !current.UpdatedAt.Equal(updated) {
+				if opts.force {
+					a.Say(locales.ToastPolishCanceled())
+				}
 				return
 			}
 			if err != nil {
@@ -604,39 +661,34 @@ func (a *App) polishBookmark(id string, opts polishOptions) {
 			}
 			p.Title = strings.TrimSpace(p.Title)
 			p.Note = strings.TrimSpace(p.Note)
-			updatedAny := false
+			next := *current
+			if p.Title != "" && (opts.force || opts.allowTitle || isReplaceableTitle(next.Title, next.URL, opts.fallbackTitle)) {
+				next.Title = p.Title
+			}
 			clearedNote := false
-			a.Store.Update(func(l *model.Library) {
-				bm := l.Bookmark(id)
-				if bm == nil {
-					return
+			if p.Note != "" && (opts.force || opts.allowNote || strings.TrimSpace(next.Note) == "" || IsJunkAINote(next.Note)) {
+				next.Note = p.Note
+			} else if opts.force && p.Note == "" && strings.TrimSpace(next.Note) != "" && (next.Polished || IsJunkAINote(next.Note)) {
+				next.Note = ""
+				clearedNote = true
+			}
+			if opts.force && next.Title == current.Title && next.Note == current.Note {
+				if !grounded && p.Title == "" && p.Note == "" {
+					a.Say(locales.ToastPolishInsufficient())
+				} else {
+					a.Say(locales.ToastPolishUnchanged())
 				}
-				if p.Title != "" && (opts.force || opts.allowTitle || isReplaceableTitle(bm.Title, bm.URL, opts.fallbackTitle)) {
-					if bm.Title != p.Title {
-						bm.Title = p.Title
-						updatedAny = true
-					}
-				}
-				if p.Note != "" && (opts.force || opts.allowNote || strings.TrimSpace(bm.Note) == "" || IsJunkAINote(bm.Note)) {
-					if bm.Note != p.Note {
-						bm.Note = p.Note
-						updatedAny = true
-					}
-				} else if opts.force && p.Note == "" && strings.TrimSpace(bm.Note) != "" && (bm.Polished || IsJunkAINote(bm.Note)) {
-					bm.Note = ""
-					updatedAny = true
-					clearedNote = true
-				}
-				bm.Polished = !clearedNote || p.Note != ""
-				bm.UpdatedAt = time.Now()
-			})
-			if opts.force && clearedNote && p.Note == "" && !grounded {
-				a.Say(locales.ToastPolishCleared())
 				return
 			}
-			if opts.force && !updatedAny && !grounded {
-				a.Say(locales.ToastPolishInsufficient())
-				return
+			next.Polished = !clearedNote
+			next.UpdatedAt = time.Now()
+			a.Store.Update(func(l *model.Library) { *l.Bookmark(id) = next })
+			if opts.force {
+				if clearedNote && !grounded {
+					a.Say(locales.ToastPolishCleared())
+					return
+				}
+				a.Say(locales.ToastPolishDone())
 			}
 			completed := time.Now()
 			a.PolishedAt[id] = completed

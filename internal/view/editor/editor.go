@@ -138,11 +138,11 @@ type state struct {
 	noteEdited  bool
 	noteDirty   bool
 	icon        model.Icon
-	groupID   string
-	subID     string
-	createdAt time.Time
-	order     float64
-	polished  bool
+	groupID     string
+	subID       string
+	createdAt   time.Time
+	order       float64
+	polished    bool
 
 	// Draft protection & queued incoming requests
 	fromExternal   bool
@@ -688,15 +688,19 @@ func (s *state) startAI(force bool) {
 			}
 			p.Title = strings.TrimSpace(p.Title)
 			p.Note = strings.TrimSpace(p.Note)
-			if p.Title == "" && p.Note == "" && p.GroupID == "" {
+			s.aiSuggest = &p
+			if !s.hasAISuggestion() {
 				s.aiSuggest = nil
-				if force && strings.TrimSpace(s.note) != "" && ((s.polished && !s.noteDirty) || app.IsJunkAINote(s.note)) {
-					s.note = ""
-					s.polished = false
-					s.aiErr = locales.ToastPolishCleared()
+				if force {
+					if p.Title == "" && p.Note == "" && p.GroupID == "" && strings.TrimSpace(s.note) != "" &&
+						((s.polished && !s.noteDirty) || app.IsJunkAINote(s.note)) {
+						s.note = ""
+						s.polished = false
+						s.aiErr = locales.ToastPolishCleared()
+					} else {
+						s.a.Say(locales.ToastPolishUnchanged())
+					}
 				}
-			} else {
-				s.aiSuggest = &p
 			}
 			s.invalidate()
 		})

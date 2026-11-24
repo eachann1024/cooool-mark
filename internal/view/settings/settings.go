@@ -93,10 +93,14 @@ func Export(a *app.App, format string) {
 			DefaultPath: name,
 			Filters:     []mygo.FileFilter{filter},
 		})
-		if err != nil || path == "" {
-			return
-		}
 		a.Post(func() {
+			if err != nil {
+				a.SayErr(locales.DataExportFailed(err.Error()), "", nil)
+				return
+			}
+			if path == "" {
+				return
+			}
 			if err := a.Import.Export(a.Store.Lib(), path, format); err != nil {
 				a.SayErr(locales.DataExportFailed(err.Error()), "", nil)
 			} else {

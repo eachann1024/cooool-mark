@@ -473,12 +473,15 @@ func (s *state) pickStorageFolder() {
 			Directory:         true,
 			CreateDirectories: true,
 		})
-		if err != nil || len(paths) == 0 {
-			return
-		}
-		dir := paths[0]
 		a.Post(func() {
-			if err := a.SetStorage(model.StorageFolder, dir); err != nil {
+			if err != nil {
+				a.SayErr(locales.StorageSwitchFailed(err.Error()), "", nil)
+				return
+			}
+			if len(paths) == 0 {
+				return
+			}
+			if err := a.SetStorage(model.StorageFolder, paths[0]); err != nil {
 				a.SayErr(locales.StorageSwitchFailed(err.Error()), "", nil)
 			} else {
 				a.Say(locales.StorageSwitchedFolder())

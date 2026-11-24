@@ -296,6 +296,11 @@ func (s *mainState) buildModalSearchRow(c *ui.Context, p *theme.Palette, hit app
 				if b.IsTemplate() {
 					ui.Icon(c, theme.IconBraces).FontSize(12).TextColor(p.Primary).Shrink(0)
 				}
+				if a.IsEnriching(b.ID) {
+					enrichingBadge(c, p)
+				} else if _, polished := a.PolishedAt[b.ID]; polished {
+					polishedBadge(c, p)
+				}
 			})
 			ui.Text(c, shortDomain(b.URL)).FontSize(12).TextColor(p.Muted).SingleLine()
 		})
