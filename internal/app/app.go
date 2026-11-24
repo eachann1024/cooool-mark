@@ -88,6 +88,11 @@ type Windows struct {
 	// RefreshChrome rebuilds menus, Dock/JumpList entries, and open window titles
 	// after locale or preference changes.
 	RefreshChrome func()
+	// IsMainOpen reports whether the main window is currently open.
+	IsMainOpen func() bool
+	// SyncUpdateMenu updates the native application / help menu items in-place
+	// to reflect the current update state.
+	SyncUpdateMenu func()
 	// ToggleNotch, ToggleEdge, ToggleTray summon or collapse individual panels.
 	ToggleNotch func()
 	ToggleEdge  func()
@@ -115,6 +120,7 @@ type App struct {
 
 	Toast           Toast
 	Updater         *update.Service
+	UpdateNotesOpen bool
 	ShortcutErrs    map[string]string
 	ShortcutBound   map[string]string
 	ShortcutPending map[string]bool
@@ -131,8 +137,12 @@ type App struct {
 	notifyClicks     map[string]func()
 	postMu           sync.Mutex
 	postQueue        []func()
-	toastSeq         int
-	notifiedUpdate   string
+	toastSeq              int
+	notifiedUpdate        string
+	manualUpdateCheck     bool
+	updateDismissedStatus update.Status
+	updateDismissedVer    string
+	lastUpdateStatus      update.Status
 	// PolishedAt marks bookmarks the AI just filled, for a 1.5 s highlight.
 	PolishedAt map[string]time.Time
 	// Enriching counts active background fetch / AI polish tasks per bookmark.
@@ -210,9 +220,10 @@ func New() (*App, error) {
 		},
 		FlushBeforeUpdate: a.flushBeforeUpdate,
 		QuitApp:           quitForUpdate,
-		OnChange:          a.Invalidate,
+		OnChange:          func() { a.Post(a.onUpdateStateChanged) },
 		OnCheckResult:     a.onUpdateCheckResult,
 	})
+	a.lastUpdateStatus = a.Updater.Snapshot().Status
 	return a, nil
 }
 
@@ -474,14 +485,155 @@ func (a *App) HandleNotificationClick(id string) {
 	}
 }
 
+// SyncDownloadProgress reconciles active local AI model and app update
+// downloads into the Dock / taskbar progress indicator.
+func (a *App) SyncDownloadProgress() {
+	var prog float64
+	if a.AI != nil {
+		for _, id := range []string{"qwen3.5-0.8b", "qwen3.5-2b"} {
+			if st := a.AI.LocalModelStatus(id); st.Downloading && st.Progress > 0 && st.Progress < 1 {
+				prog = st.Progress
+				break
+			}
+		}
+	}
+	if prog == 0 && a.Updater != nil {
+		snap := a.Updater.Snapshot()
+		if snap.Status == update.StatusDownloading && !snap.Preparing && snap.Percent > 0 && snap.Percent < 100 {
+			prog = float64(snap.Percent) / 100
+		}
+	}
+	a.SetDownloadProgress(prog)
+}
+
 // CheckUpdate checks for a new release in the background. When manual is
-// true, the result is also reported with a toast.
+// true, the result is also reported interactively.
 func (a *App) CheckUpdate(manual bool) {
+	if manual {
+		a.updateDismissedStatus = ""
+		a.updateDismissedVer = ""
+		snap := a.Updater.Snapshot()
+		if snap.Status == update.StatusDownloading || snap.Status == update.StatusInstalling {
+			a.Invalidate()
+			return
+		}
+		a.manualUpdateCheck = true
+		a.Invalidate()
+	}
 	a.Updater.CheckAsync(manual)
+}
+
+// StartUpdateDownload begins downloading an available in-place update, or
+// opens the release download page on non-in-place platforms.
+func (a *App) StartUpdateDownload() {
+	a.UpdateNotesOpen = false
+	a.updateDismissedStatus = ""
+	a.updateDismissedVer = ""
+	if a.Updater == nil {
+		return
+	}
+	snap := a.Updater.Snapshot()
+	if snap.Status == update.StatusAvailable && !snap.InPlace {
+		_ = a.OpenURL(snap.ReleaseURL)
+		return
+	}
+	a.Updater.StartDownload()
+	a.Invalidate()
+}
+
+// CancelUpdateDownload cancels an active update download and returns to the
+// available prompt.
+func (a *App) CancelUpdateDownload() {
+	a.UpdateNotesOpen = false
+	a.updateDismissedStatus = ""
+	a.updateDismissedVer = ""
+	if a.Updater == nil {
+		return
+	}
+	a.Updater.CancelDownload()
+	a.Invalidate()
+}
+
+// InstallUpdateNow triggers restarting and installing a ready update.
+func (a *App) InstallUpdateNow() {
+	a.UpdateNotesOpen = false
+	a.updateDismissedStatus = ""
+	a.updateDismissedVer = ""
+	if a.Updater == nil {
+		return
+	}
+	a.Updater.InstallNow()
+	a.Invalidate()
+}
+
+// DismissUpdateBar hides the floating update prompt for the given stage and
+// version; native menus still retain the action.
+func (a *App) DismissUpdateBar(status update.Status, version string) {
+	a.UpdateNotesOpen = false
+	a.updateDismissedStatus = status
+	a.updateDismissedVer = strings.TrimPrefix(version, "v")
+	a.Invalidate()
+}
+
+// UpdateBarVisible reports whether the bottom interactive update bar should
+// currently be shown in the main window.
+func (a *App) UpdateBarVisible(snap update.Snapshot) bool {
+	ver := strings.TrimPrefix(snap.LatestVersion, "v")
+	switch snap.Status {
+	case update.StatusChecking:
+		return a.manualUpdateCheck
+	case update.StatusAvailable:
+		if !snap.HasActionableUpdate() {
+			return false
+		}
+		return a.updateDismissedStatus != update.StatusAvailable || a.updateDismissedVer != ver
+	case update.StatusDownloading:
+		return snap.HasActionableUpdate()
+	case update.StatusReady:
+		if !snap.HasActionableUpdate() {
+			return false
+		}
+		return a.updateDismissedStatus != update.StatusReady || a.updateDismissedVer != ver
+	case update.StatusInstalling:
+		return true
+	default:
+		return false
+	}
+}
+
+func (a *App) onUpdateStateChanged() {
+	if a.Updater == nil {
+		return
+	}
+	snap := a.Updater.Snapshot()
+	prev := a.lastUpdateStatus
+	a.lastUpdateStatus = snap.Status
+
+	if snap.Status != update.StatusChecking {
+		a.manualUpdateCheck = false
+	}
+	if snap.Status != update.StatusAvailable {
+		a.UpdateNotesOpen = false
+	}
+
+	if prev == update.StatusDownloading && snap.Status == update.StatusError && snap.ErrorMessage != "" {
+		a.SayErr(locales.ToastUpdateDownloadFailed(snap.ErrorMessage), locales.ActionRetry(), func() {
+			a.StartUpdateDownload()
+		})
+	} else if prev == update.StatusInstalling && snap.ErrorMessage != "" &&
+		(snap.Status == update.StatusReady || snap.Status == update.StatusError) {
+		a.SayErr(snap.ErrorMessage, "", nil)
+	}
+
+	a.SyncDownloadProgress()
+	if a.Win.SyncUpdateMenu != nil {
+		a.Win.SyncUpdateMenu()
+	}
 }
 
 func (a *App) onUpdateCheckResult(manual bool, snap update.Snapshot, err error) {
 	a.Post(func() {
+		a.manualUpdateCheck = false
 		currentVer := strings.TrimPrefix(snap.CurrentVersion, "v")
 		if err != nil {
 			if manual {
@@ -497,7 +649,18 @@ func (a *App) onUpdateCheckResult(manual bool, snap update.Snapshot, err error) 
 		}
 		ver := strings.TrimPrefix(snap.LatestVersion, "v")
 		if manual {
-			a.Say(locales.ToastUpdateFound(ver))
+			a.updateDismissedStatus = ""
+			a.updateDismissedVer = ""
+			if a.Win.IsMainOpen == nil || !a.Win.IsMainOpen() {
+				switch {
+				case snap.Status == update.StatusReady:
+					a.SayAction(locales.UpdateBarReady(ver), locales.SettingsUpdateRestart(), func() { a.InstallUpdateNow() })
+				case snap.InPlace:
+					a.SayAction(locales.ToastUpdateFound(ver), locales.UpdateBarNow(), func() { a.StartUpdateDownload() })
+				default:
+					a.SayAction(locales.ToastUpdateFound(ver), locales.SettingsOpenDownload(), func() { _ = a.OpenURL(snap.ReleaseURL) })
+				}
+			}
 			return
 		}
 		if a.notifiedUpdate == ver {
@@ -959,6 +1122,11 @@ func (a *App) PathOf(b *model.Bookmark) string {
 
 // Say shows a toast for 1.8 s, or 5 s with an action.
 func (a *App) Say(text string) { a.toast(Toast{Text: text}, 1800*time.Millisecond) }
+
+// SayAction shows an informational toast with a primary action button for 5 s.
+func (a *App) SayAction(text, action string, do func()) {
+	a.toast(Toast{Text: text, Action: action, Do: do}, 5*time.Second)
+}
 
 // SayErr shows an error toast with an optional retry.
 func (a *App) SayErr(text, action string, do func()) {

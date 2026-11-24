@@ -131,6 +131,11 @@ type mainState struct {
 	moveFocused bool
 }
 
+// IsOpen reports whether the main window is currently open.
+func IsOpen() bool {
+	return win != nil && !win.IsDestroyed()
+}
+
 // RefreshChrome invalidates the main window when open (e.g. after locale changes).
 func RefreshChrome() {
 	if win != nil && !win.IsDestroyed() {
@@ -271,7 +276,7 @@ func (s *mainState) view(c *ui.Context) {
 				s.buildHeader(c, p)
 				s.buildBody(c, p)
 			}
-			widget.Toast(c, a, p, 24)
+			widget.ToastWithUpdate(c, a, p, 24)
 		})
 	})
 
@@ -400,6 +405,10 @@ func (s *mainState) handleGlobalShortcuts(c *ui.Context) {
 	}
 
 	if s.inputFocused(c) {
+		return
+	}
+	if a.UpdateNotesOpen && c.Shortcut(0, ui.KeyEscape) {
+		a.UpdateNotesOpen = false
 		return
 	}
 	lib := a.Store.Lib()

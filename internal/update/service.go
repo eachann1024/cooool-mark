@@ -675,12 +675,15 @@ func (s *Service) installMockUpdate() {
 
 func (s *Service) runMockDownload() {
 	s.mu.Lock()
-	if s.downloadRunning {
+	if s.downloadRunning || s.installRunning || s.status == StatusReady || s.latestEntry == nil {
 		s.mu.Unlock()
 		return
 	}
+	s.downloadGen++
+	dlGen := s.downloadGen
 	s.downloadRunning = true
 	s.status = StatusDownloading
+	s.preparing = false
 	total := int64(13_421_772)
 	s.totalBytes = total
 	s.downloadedBytes = 0
@@ -690,10 +693,10 @@ func (s *Service) runMockDownload() {
 	s.notify()
 
 	go func() {
-		for step := 1; step <= 10; step++ {
-			time.Sleep(120 * time.Millisecond)
+		for step := 1; step <= 9; step++ {
+			time.Sleep(160 * time.Millisecond)
 			s.mu.Lock()
-			if !s.downloadRunning {
+			if !s.downloadRunning || dlGen != s.downloadGen {
 				s.mu.Unlock()
 				return
 			}
@@ -702,8 +705,26 @@ func (s *Service) runMockDownload() {
 			s.mu.Unlock()
 			s.notify()
 		}
+		time.Sleep(160 * time.Millisecond)
 		s.mu.Lock()
+		if !s.downloadRunning || dlGen != s.downloadGen {
+			s.mu.Unlock()
+			return
+		}
+		s.downloadedBytes = total
+		s.percent = 100
+		s.preparing = true
+		s.mu.Unlock()
+		s.notify()
+
+		time.Sleep(360 * time.Millisecond)
+		s.mu.Lock()
+		if !s.downloadRunning || dlGen != s.downloadGen {
+			s.mu.Unlock()
+			return
+		}
 		s.downloadRunning = false
+		s.preparing = false
 		s.speedMBps = 0
 		s.readyRecord = &VerifiedRecord{Version: s.latestEntry.Version, InPlace: true}
 		s.status = StatusReady

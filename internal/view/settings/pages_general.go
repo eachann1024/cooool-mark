@@ -498,7 +498,7 @@ func (s *state) updateAvailableSection(c *ui.Context, p *theme.Palette, snap upd
 			case update.StatusAvailable:
 				if snap.InPlace {
 					if btnPrimary(c, p, locales.SettingsUpdateDownload()).Clicked() {
-						a.Updater.StartDownload()
+						a.StartUpdateDownload()
 					}
 				} else if btnPrimary(c, p, locales.SettingsOpenDownload()).Clicked() {
 					_ = a.OpenURL(snap.ReleaseURL)
@@ -507,22 +507,30 @@ func (s *state) updateAvailableSection(c *ui.Context, p *theme.Palette, snap upd
 					_ = a.OpenURL(snap.ReleaseURL)
 				}
 			case update.StatusDownloading:
-				label := locales.SettingsUpdateDownloading(strconv.Itoa(snap.Percent))
 				if snap.Preparing {
-					label = locales.SettingsUpdatePreparing()
-				}
-				ui.Text(c, label).FontSize(12.5).TextColor(p.Muted).SingleLine()
-				if btnSecondary(c, p, locales.ActionCancel()).Clicked() {
-					a.Updater.CancelDownload()
+					ui.Spinner(c.Key("settings-update-spinner")).Size(13, 13).TextColor(p.Accent)
+					ui.Text(c, locales.SettingsUpdatePreparing()).FontSize(12.5).TextColor(p.Muted).SingleLine()
+				} else {
+					progVal := float64(snap.Percent) / 100
+					if snap.TotalBytes <= 0 && snap.Percent == 0 {
+						progVal = -1
+					}
+					ui.Progress(c.Key("settings-update-progress"), progVal).Width(110).Height(5).Radius(999).
+						Background(p.Line).TextColor(p.Accent).Label(locales.SettingsUpdateDownloading(strconv.Itoa(snap.Percent)))
+					ui.Text(c, locales.SettingsUpdateDownloading(strconv.Itoa(snap.Percent))).FontSize(12.5).TextColor(p.Muted).SingleLine()
+					if btnSecondary(c, p, locales.ActionCancel()).Clicked() {
+						a.CancelUpdateDownload()
+					}
 				}
 			case update.StatusReady:
 				if btnPrimary(c, p, locales.SettingsUpdateRestart()).Clicked() {
-					a.Updater.InstallNow()
+					a.InstallUpdateNow()
 				}
 				if btnSecondary(c, p, locales.SettingsViewRelease()).Clicked() {
 					_ = a.OpenURL(snap.ReleaseURL)
 				}
 			case update.StatusInstalling:
+				ui.Spinner(c.Key("settings-update-spinner")).Size(13, 13).TextColor(p.Accent)
 				ui.Text(c, locales.SettingsUpdateInstalling()).FontSize(12.5).TextColor(p.Muted).SingleLine()
 			}
 		})

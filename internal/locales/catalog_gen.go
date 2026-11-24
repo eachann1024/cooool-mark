@@ -164,6 +164,70 @@ func (msgs Messages) MenuCheckUpdates() string {
 	return Catalog.Format(msgs.locale, "menuCheckUpdates", nil)
 }
 
+// MenuCheckingUpdates says "Checking for Updates…"
+// in the language the app shows.
+func MenuCheckingUpdates() string { return In(i18n.Locale()).MenuCheckingUpdates() }
+
+// MenuCheckingUpdates says "Checking for Updates…"
+// in the language of msgs.
+func (msgs Messages) MenuCheckingUpdates() string {
+	return Catalog.Format(msgs.locale, "menuCheckingUpdates", nil)
+}
+
+// MenuDownloadUpdate says "Download Update (v{version})…"
+// in the language the app shows.
+func MenuDownloadUpdate(version string) string { return In(i18n.Locale()).MenuDownloadUpdate(version) }
+
+// MenuDownloadUpdate says "Download Update (v{version})…"
+// in the language of msgs.
+func (msgs Messages) MenuDownloadUpdate(version string) string {
+	return Catalog.Format(msgs.locale, "menuDownloadUpdate", map[string]any{"version": version})
+}
+
+// MenuDownloadingUpdate says "Downloading Update… {percent}%"
+// in the language the app shows.
+func MenuDownloadingUpdate(percent string) string {
+	return In(i18n.Locale()).MenuDownloadingUpdate(percent)
+}
+
+// MenuDownloadingUpdate says "Downloading Update… {percent}%"
+// in the language of msgs.
+func (msgs Messages) MenuDownloadingUpdate(percent string) string {
+	return Catalog.Format(msgs.locale, "menuDownloadingUpdate", map[string]any{"percent": percent})
+}
+
+// MenuVerifyingUpdate says "Verifying Update…"
+// in the language the app shows.
+func MenuVerifyingUpdate() string { return In(i18n.Locale()).MenuVerifyingUpdate() }
+
+// MenuVerifyingUpdate says "Verifying Update…"
+// in the language of msgs.
+func (msgs Messages) MenuVerifyingUpdate() string {
+	return Catalog.Format(msgs.locale, "menuVerifyingUpdate", nil)
+}
+
+// MenuRestartToUpdate says "Restart & Update (v{version})"
+// in the language the app shows.
+func MenuRestartToUpdate(version string) string {
+	return In(i18n.Locale()).MenuRestartToUpdate(version)
+}
+
+// MenuRestartToUpdate says "Restart & Update (v{version})"
+// in the language of msgs.
+func (msgs Messages) MenuRestartToUpdate(version string) string {
+	return Catalog.Format(msgs.locale, "menuRestartToUpdate", map[string]any{"version": version})
+}
+
+// MenuInstallingUpdate says "Installing Update…"
+// in the language the app shows.
+func MenuInstallingUpdate() string { return In(i18n.Locale()).MenuInstallingUpdate() }
+
+// MenuInstallingUpdate says "Installing Update…"
+// in the language of msgs.
+func (msgs Messages) MenuInstallingUpdate() string {
+	return Catalog.Format(msgs.locale, "menuInstallingUpdate", nil)
+}
+
 // MenuSettings says "Settings…"
 // in the language the app shows.
 func MenuSettings() string { return In(i18n.Locale()).MenuSettings() }
@@ -2478,11 +2542,11 @@ func (msgs Messages) SettingsUpdatePreparing() string {
 	return Catalog.Format(msgs.locale, "settingsUpdatePreparing", nil)
 }
 
-// SettingsUpdateRestart says "Restart to Update"
+// SettingsUpdateRestart says "Restart & Update"
 // in the language the app shows.
 func SettingsUpdateRestart() string { return In(i18n.Locale()).SettingsUpdateRestart() }
 
-// SettingsUpdateRestart says "Restart to Update"
+// SettingsUpdateRestart says "Restart & Update"
 // in the language of msgs.
 func (msgs Messages) SettingsUpdateRestart() string {
 	return Catalog.Format(msgs.locale, "settingsUpdateRestart", nil)
@@ -4126,6 +4190,122 @@ func ToastUpdateFailed(err string) string { return In(i18n.Locale()).ToastUpdate
 // in the language of msgs.
 func (msgs Messages) ToastUpdateFailed(err string) string {
 	return Catalog.Format(msgs.locale, "toastUpdateFailed", map[string]any{"err": err})
+}
+
+// ToastUpdateDownloadFailed says "Update download failed: {err}"
+// in the language the app shows.
+func ToastUpdateDownloadFailed(err string) string {
+	return In(i18n.Locale()).ToastUpdateDownloadFailed(err)
+}
+
+// ToastUpdateDownloadFailed says "Update download failed: {err}"
+// in the language of msgs.
+func (msgs Messages) ToastUpdateDownloadFailed(err string) string {
+	return Catalog.Format(msgs.locale, "toastUpdateDownloadFailed", map[string]any{"err": err})
+}
+
+// UpdateChecking says "Checking for updates…"
+// in the language the app shows.
+func UpdateChecking() string { return In(i18n.Locale()).UpdateChecking() }
+
+// UpdateChecking says "Checking for updates…"
+// in the language of msgs.
+func (msgs Messages) UpdateChecking() string {
+	return Catalog.Format(msgs.locale, "updateChecking", nil)
+}
+
+// UpdateBarAvailable says "v{version} is available"
+// in the language the app shows.
+func UpdateBarAvailable(version string) string { return In(i18n.Locale()).UpdateBarAvailable(version) }
+
+// UpdateBarAvailable says "v{version} is available"
+// in the language of msgs.
+func (msgs Messages) UpdateBarAvailable(version string) string {
+	return Catalog.Format(msgs.locale, "updateBarAvailable", map[string]any{"version": version})
+}
+
+// UpdateBarNow says "Update Now"
+// in the language the app shows.
+func UpdateBarNow() string { return In(i18n.Locale()).UpdateBarNow() }
+
+// UpdateBarNow says "Update Now"
+// in the language of msgs.
+func (msgs Messages) UpdateBarNow() string {
+	return Catalog.Format(msgs.locale, "updateBarNow", nil)
+}
+
+// UpdateBarDetails says "Details"
+// in the language the app shows.
+func UpdateBarDetails() string { return In(i18n.Locale()).UpdateBarDetails() }
+
+// UpdateBarDetails says "Details"
+// in the language of msgs.
+func (msgs Messages) UpdateBarDetails() string {
+	return Catalog.Format(msgs.locale, "updateBarDetails", nil)
+}
+
+// UpdateBarDownloading says "Downloading v{version}"
+// in the language the app shows.
+func UpdateBarDownloading(version string) string {
+	return In(i18n.Locale()).UpdateBarDownloading(version)
+}
+
+// UpdateBarDownloading says "Downloading v{version}"
+// in the language of msgs.
+func (msgs Messages) UpdateBarDownloading(version string) string {
+	return Catalog.Format(msgs.locale, "updateBarDownloading", map[string]any{"version": version})
+}
+
+// UpdateBarVerifying says "Verifying v{version}…"
+// in the language the app shows.
+func UpdateBarVerifying(version string) string { return In(i18n.Locale()).UpdateBarVerifying(version) }
+
+// UpdateBarVerifying says "Verifying v{version}…"
+// in the language of msgs.
+func (msgs Messages) UpdateBarVerifying(version string) string {
+	return Catalog.Format(msgs.locale, "updateBarVerifying", map[string]any{"version": version})
+}
+
+// UpdateBarReady says "v{version} is ready"
+// in the language the app shows.
+func UpdateBarReady(version string) string { return In(i18n.Locale()).UpdateBarReady(version) }
+
+// UpdateBarReady says "v{version} is ready"
+// in the language of msgs.
+func (msgs Messages) UpdateBarReady(version string) string {
+	return Catalog.Format(msgs.locale, "updateBarReady", map[string]any{"version": version})
+}
+
+// UpdateBarInstalling says "Installing v{version}…"
+// in the language the app shows.
+func UpdateBarInstalling(version string) string {
+	return In(i18n.Locale()).UpdateBarInstalling(version)
+}
+
+// UpdateBarInstalling says "Installing v{version}…"
+// in the language of msgs.
+func (msgs Messages) UpdateBarInstalling(version string) string {
+	return Catalog.Format(msgs.locale, "updateBarInstalling", map[string]any{"version": version})
+}
+
+// UpdateBarLater says "Restart Later"
+// in the language the app shows.
+func UpdateBarLater() string { return In(i18n.Locale()).UpdateBarLater() }
+
+// UpdateBarLater says "Restart Later"
+// in the language of msgs.
+func (msgs Messages) UpdateBarLater() string {
+	return Catalog.Format(msgs.locale, "updateBarLater", nil)
+}
+
+// UpdateNotesTitle says "What’s new in v{version}"
+// in the language the app shows.
+func UpdateNotesTitle(version string) string { return In(i18n.Locale()).UpdateNotesTitle(version) }
+
+// UpdateNotesTitle says "What’s new in v{version}"
+// in the language of msgs.
+func (msgs Messages) UpdateNotesTitle(version string) string {
+	return Catalog.Format(msgs.locale, "updateNotesTitle", map[string]any{"version": version})
 }
 
 // ToastDownloadDone says "{name} is ready"

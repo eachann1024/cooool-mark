@@ -3,12 +3,15 @@
 package widget
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
 
 	"cooool-mark/internal/app"
+	"cooool-mark/internal/locales"
 	"cooool-mark/internal/theme"
+	"cooool-mark/internal/update"
 )
 
 // IconButton is a 30×30 borderless button showing an icon, named label
@@ -118,6 +121,186 @@ func Toast(c *ui.Context, a *app.App, p *theme.Palette, bottom float32) {
 			}
 		})
 	})
+}
+
+// ToastWithUpdate draws any active transient toast, or the persistent
+// interactive update bar (with optional release-notes popover) when an update
+// stage is active in the main window.
+func ToastWithUpdate(c *ui.Context, a *app.App, p *theme.Palette, bottom float32) {
+	if a.Toast.Text != "" {
+		Toast(c, a, p, bottom)
+		return
+	}
+	if a.Updater == nil {
+		return
+	}
+	snap := a.Updater.Snapshot()
+	if !a.UpdateBarVisible(snap) {
+		return
+	}
+	updateBar(c, a, p, snap, bottom)
+}
+
+func updateBar(c *ui.Context, a *app.App, p *theme.Palette, snap update.Snapshot, bottom float32) {
+	ui.Column(c.Key("update-bar-anchor")).Absolute().Left(0).Right(0).Bottom(bottom).
+		AlignItems(ui.Center).Gap(8).PassThrough().Children(func() {
+		if snap.Status == update.StatusAvailable && a.UpdateNotesOpen {
+			updateNotesCard(c, a, p, snap)
+		}
+		updateBarPill(c, a, p, snap)
+	})
+}
+
+func updateNotesCard(c *ui.Context, a *app.App, p *theme.Palette, snap update.Snapshot) {
+	lines := snap.Notes.ForLanguage(locales.IsChinese()).Lines()
+	if len(lines) == 0 {
+		return
+	}
+	ver := strings.TrimPrefix(snap.LatestVersion, "v")
+	ui.Column(c.Key("update-notes-pop")).Width(320).MaxWidth(360).Padding(11, 13).Gap(6).
+		Radius(10).Background(p.Surface).BorderWidth(1).BorderColor(p.Line).
+		Shadow(0, 12, 30, -8, ui.RGBA(0, 0, 0, 0.22)).Children(func() {
+		ui.Row(c.Key("update-notes-head")).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
+			ui.Text(c, locales.UpdateNotesTitle(ver)).FontSize(12).FontWeight(600).
+				TextColor(p.AccentText).Grow(1).MinWidth(0).SingleLine()
+			closeBtn := ui.ButtonBase(c.Key("update-notes-close")).Size(20, 20).Radius(4).Center().Shrink(0).
+				Label(locales.ActionClose()).Tooltip(locales.ActionClose()).TextColor(p.Muted)
+			if closeBtn.Hovered() {
+				closeBtn.Background(p.Hover).TextColor(p.Text)
+			}
+			closeBtn.Children(func() { ui.Icon(c, theme.IconClose).FontSize(11) })
+			if closeBtn.Clicked() {
+				a.UpdateNotesOpen = false
+				a.Invalidate()
+			}
+		})
+		bullets := make([]string, len(lines))
+		for i, line := range lines {
+			bullets[i] = "• " + line
+		}
+		AutoScrollbar(c, ui.Scroll(c.Key("update-notes-list"))).FillWidth().MaxHeight(160).Children(func() {
+			ui.Text(c, strings.Join(bullets, "\n")).FontSize(12).LineHeight(1.5).
+				TextColor(p.Text2).Wrap().Selectable()
+		})
+	})
+}
+
+func updateBarPill(c *ui.Context, a *app.App, p *theme.Palette, snap update.Snapshot) {
+	bg, fg := p.ToastBg, p.ToastText
+	accentBg, accentFg := theme.Dark.Primary, theme.Dark.OnPrimary
+	accentHover := accentBg.Mix(ui.Hex("#ffffff"), 0.14)
+	ver := strings.TrimPrefix(snap.LatestVersion, "v")
+
+	box := ui.Row(c.Key("update-bar-pill")).AlignItems(ui.Center).Radius(10).Background(bg).
+		Shadow(0, 12, 30, -8, ui.RGBA(0, 0, 0, 0.42))
+
+	switch snap.Status {
+	case update.StatusChecking:
+		box.Gap(8).Padding(8, 13).Children(func() {
+			ui.Spinner(c.Key("update-bar-spinner")).Size(13, 13).TextColor(accentBg).Label(locales.UpdateChecking())
+			ui.Text(c, locales.UpdateChecking()).FontSize(12.5).TextColor(fg).SingleLine()
+		})
+
+	case update.StatusAvailable:
+		box.Gap(8).Padding(5, 6, 5, 13).Children(func() {
+			ui.Text(c, locales.UpdateBarAvailable(ver)).FontSize(12.5).TextColor(fg).SingleLine()
+			primaryLabel := locales.UpdateBarNow()
+			if !snap.InPlace {
+				primaryLabel = locales.SettingsOpenDownload()
+			}
+			if toastPrimaryBtn(c, "update-bar-primary", primaryLabel, accentBg, accentHover, accentFg).Clicked() {
+				a.StartUpdateDownload()
+			}
+			if toastGhostBtn(c, "update-bar-details", locales.UpdateBarDetails(), fg, a.UpdateNotesOpen).Clicked() {
+				if len(snap.Notes.ForLanguage(locales.IsChinese()).Lines()) > 0 {
+					a.UpdateNotesOpen = !a.UpdateNotesOpen
+					a.Invalidate()
+				} else {
+					_ = a.OpenURL(snap.ReleaseURL)
+				}
+			}
+			if toastCloseBtn(c, "update-bar-dismiss", locales.ActionClose(), fg).Clicked() {
+				a.DismissUpdateBar(update.StatusAvailable, ver)
+			}
+		})
+
+	case update.StatusDownloading:
+		if snap.Preparing {
+			box.Gap(8).Padding(8, 13).Children(func() {
+				label := locales.UpdateBarVerifying(ver)
+				ui.Spinner(c.Key("update-bar-spinner")).Size(13, 13).TextColor(accentBg).Label(label)
+				ui.Text(c, label).FontSize(12.5).TextColor(fg).SingleLine()
+			})
+			return
+		}
+		box.Gap(9).Padding(5, 6, 5, 13).Children(func() {
+			label := locales.UpdateBarDownloading(ver)
+			ui.Text(c, label).FontSize(12.5).TextColor(fg).SingleLine()
+			ui.Row(c.Key("update-bar-prog")).Gap(8).AlignItems(ui.Center).Children(func() {
+				progVal := float64(snap.Percent) / 100
+				if snap.TotalBytes <= 0 && snap.Percent == 0 {
+					progVal = -1
+				}
+				ui.Progress(c.Key("update-bar-progress"), progVal).Width(92).Height(5).Radius(999).
+					Background(fg.Alpha(0.18)).TextColor(accentBg).Label(label)
+				ui.Text(c, fmt.Sprintf("%d%%", snap.Percent)).FontSize(12).TextColor(fg.Alpha(0.82)).
+					MinWidth(28).SingleLine()
+			})
+			if toastGhostBtn(c, "update-bar-cancel", locales.ActionCancel(), fg, false).Clicked() {
+				a.CancelUpdateDownload()
+			}
+		})
+
+	case update.StatusReady:
+		box.Gap(8).Padding(5, 6, 5, 13).Children(func() {
+			ui.Text(c, locales.UpdateBarReady(ver)).FontSize(12.5).TextColor(fg).SingleLine()
+			if toastPrimaryBtn(c, "update-bar-restart", locales.SettingsUpdateRestart(), accentBg, accentHover, accentFg).Clicked() {
+				a.InstallUpdateNow()
+			}
+			if toastCloseBtn(c, "update-bar-dismiss-ready", locales.UpdateBarLater(), fg).Clicked() {
+				a.DismissUpdateBar(update.StatusReady, ver)
+			}
+		})
+
+	case update.StatusInstalling:
+		box.Gap(8).Padding(8, 13).Children(func() {
+			label := locales.UpdateBarInstalling(ver)
+			ui.Spinner(c.Key("update-bar-spinner")).Size(13, 13).TextColor(accentBg).Label(label)
+			ui.Text(c, label).FontSize(12.5).TextColor(fg).SingleLine()
+		})
+	}
+}
+
+func toastPrimaryBtn(c *ui.Context, key, label string, bg, hover, fg ui.Color) ui.Element {
+	b := ui.ButtonBase(c.Key(key)).Height(26).PaddingX(10).Radius(6).AlignItems(ui.Center).Shrink(0).
+		Label(label).Background(bg).TextColor(fg)
+	if b.Hovered() {
+		b.Background(hover)
+	}
+	b.Children(func() { ui.Text(c, label).FontSize(12).FontWeight(500).SingleLine() })
+	return b
+}
+
+func toastGhostBtn(c *ui.Context, key, label string, fg ui.Color, active bool) ui.Element {
+	b := ui.ButtonBase(c.Key(key)).Height(26).PaddingX(10).Radius(6).AlignItems(ui.Center).Shrink(0).
+		Label(label).TextColor(fg)
+	if active || b.Hovered() {
+		b.Background(fg.Alpha(0.22))
+	} else {
+		b.Background(fg.Alpha(0.13))
+	}
+	b.Children(func() { ui.Text(c, label).FontSize(12).FontWeight(500).SingleLine() })
+	return b
+}
+
+func toastCloseBtn(c *ui.Context, key, label string, fg ui.Color) ui.Element {
+	b := ui.ButtonBase(c.Key(key)).Size(24, 24).Radius(6).Center().Shrink(0).
+		Label(label).Tooltip(label).TextColor(fg.Alpha(0.56))
+	if b.Hovered() {
+		b.Background(fg.Alpha(0.12)).TextColor(fg)
+	}
+	b.Children(func() { ui.Icon(c, theme.IconClose).FontSize(12) })
+	return b
 }
 
 // TextTruncated reports whether a ui.Text element bound to h was clipped by
