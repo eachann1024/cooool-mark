@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -72,20 +73,11 @@ func main() {
 		a.AI = ai.New(a)
 		a.Import = importer.New()
 		a.AI.OnChange(func() {
-			a.Post(func() {
-				var prog float64
-				for _, id := range []string{"qwen3.5-0.8b", "qwen3.5-2b"} {
-					if st := a.AI.LocalModelStatus(id); st.Downloading && st.Progress > 0 && st.Progress < 1 {
-						prog = st.Progress
-						break
-					}
-				}
-				a.SetDownloadProgress(prog)
-			})
+			a.Post(a.SyncDownloadProgress)
 		})
 		a.AI.OnDownloadComplete(func(modelName string) {
 			a.Post(func() {
-				a.SetDownloadProgress(0)
+				a.SyncDownloadProgress()
 				a.Say(locales.ToastDownloadDone(modelName))
 				if !mygo.App.IsActive() {
 					a.Notify("model-"+modelName, locales.NotifyModelReadyTitle(), locales.NotifyModelReadyBody(modelName), func() {
@@ -98,8 +90,35 @@ func main() {
 		})
 		a.AI.Configure(a.Settings)
 
+		var (
+			updateMenuItems []*mygo.MenuItem
+			lastMenuState   updateMenuState
+		)
+		syncUpdateMenu := func() {
+			if len(updateMenuItems) == 0 || a.Updater == nil {
+				return
+			}
+			next := computeUpdateMenuState(a.Updater.Snapshot())
+			if next == lastMenuState {
+				return
+			}
+			lastMenuState = next
+			var icon *mygo.MenuIcon
+			if next.dot {
+				icon = theme.UpdateDotMenuIcon()
+			}
+			for _, it := range updateMenuItems {
+				it.SetLabel(next.label)
+				it.SetEnabled(next.enabled)
+				it.SetIcon(icon)
+			}
+		}
+
 		refreshChrome := func() {
-			mygo.App.SetMenu(appMenu(a))
+			menu, items, st := appMenu(a)
+			updateMenuItems = items
+			lastMenuState = st
+			mygo.App.SetMenu(menu)
 			mygo.App.Dock.SetMenu(dockMenu(a))
 			syncJumpList()
 			mainwin.RefreshChrome()
@@ -111,26 +130,28 @@ func main() {
 		}
 
 		a.Win = app.Windows{
-			ShowMain:           func() { mainwin.Show(a) },
-			FocusSearch:        func() { mainwin.FocusSearch(a) },
-			ShowSearch:         func(q string) { mainwin.ShowSearch(a, q) },
-			ShowQuickSearch:    func() { mainwin.ShowSearch(a, "") },
-			ShowEditor:         func(r app.EditorRequest) { editor.Show(a, r) },
-			ShowSettings:       func(p string) { settings.Show(a, p) },
-			ShowImport:         func(p string) { manage.ShowImport(a, p) },
-			ShowAbout:          func() { showAboutPanel() },
-			Export:             func(format string) { settings.Export(a, format) },
-			ApplyModes:         func() { mode.Apply(a) },
-			HasActiveSummon:    mode.HasActiveSummonMode,
+			ShowMain:              func() { mainwin.Show(a) },
+			FocusSearch:           func() { mainwin.FocusSearch(a) },
+			ShowSearch:            func(q string) { mainwin.ShowSearch(a, q) },
+			ShowQuickSearch:       func() { mainwin.ShowSearch(a, "") },
+			ShowEditor:            func(r app.EditorRequest) { editor.Show(a, r) },
+			ShowSettings:          func(p string) { settings.Show(a, p) },
+			ShowImport:            func(p string) { manage.ShowImport(a, p) },
+			ShowAbout:             func() { showAboutPanel() },
+			Export:                func(format string) { settings.Export(a, format) },
+			ApplyModes:            func() { mode.Apply(a) },
+			HasActiveSummon:       mode.HasActiveSummonMode,
 			ApplyShortcuts:        func() { applyGlobalShortcuts(a) },
 			SetShortcut:           func(slot, accel string) bool { return trySetShortcut(a, slot, accel) },
 			CancelPendingShortcut: func(slot string) { cancelPendingShortcut(a, slot) },
 			SetShortcutsPaused:    func(paused bool) { setGlobalShortcutsPaused(a, paused) },
-			RefreshChrome:      refreshChrome,
-			ToggleNotch:        func() { mode.ToggleNotch(a) },
-			ToggleEdge:         func() { mode.ToggleEdge(a) },
-			ToggleTray:         func() { mode.ToggleTray(a) },
-			HideSummoned:       mode.HideSummoned,
+			RefreshChrome:         refreshChrome,
+			IsMainOpen:            mainwin.IsOpen,
+			SyncUpdateMenu:        syncUpdateMenu,
+			ToggleNotch:           func() { mode.ToggleNotch(a) },
+			ToggleEdge:            func() { mode.ToggleEdge(a) },
+			ToggleTray:            func() { mode.ToggleTray(a) },
+			HideSummoned:          mode.HideSummoned,
 		}
 
 		ensureURLSchemeRegistered()
@@ -343,18 +364,96 @@ func syncJumpList() {
 	})
 }
 
-func appMenu(a *app.App) *mygo.Menu {
+type updateMenuState struct {
+	label   string
+	enabled bool
+	dot     bool
+}
+
+func computeUpdateMenuState(snap update.Snapshot) updateMenuState {
+	ver := strings.TrimPrefix(snap.LatestVersion, "v")
+	switch snap.Status {
+	case update.StatusChecking:
+		return updateMenuState{label: locales.MenuCheckingUpdates(), enabled: false}
+	case update.StatusAvailable:
+		if snap.HasActionableUpdate() {
+			return updateMenuState{label: locales.MenuDownloadUpdate(ver), enabled: true, dot: true}
+		}
+	case update.StatusDownloading:
+		if snap.Preparing {
+			return updateMenuState{label: locales.MenuVerifyingUpdate(), enabled: false}
+		}
+		return updateMenuState{label: locales.MenuDownloadingUpdate(strconv.Itoa(snap.Percent)), enabled: false}
+	case update.StatusReady:
+		if snap.HasActionableUpdate() {
+			return updateMenuState{label: locales.MenuRestartToUpdate(ver), enabled: true, dot: true}
+		}
+	case update.StatusInstalling:
+		return updateMenuState{label: locales.MenuInstallingUpdate(), enabled: false}
+	}
+	return updateMenuState{label: locales.MenuCheckUpdates(), enabled: true}
+}
+
+func handleUpdateMenuClick(a *app.App) {
+	if a.Updater == nil {
+		return
+	}
+	snap := a.Updater.Snapshot()
+	switch snap.Status {
+	case update.StatusAvailable:
+		if snap.HasActionableUpdate() {
+			a.StartUpdateDownload()
+			return
+		}
+	case update.StatusReady:
+		if snap.HasActionableUpdate() {
+			a.InstallUpdateNow()
+			return
+		}
+	case update.StatusChecking, update.StatusDownloading, update.StatusInstalling:
+		return
+	}
+	a.CheckUpdate(true)
+}
+
+func newUpdateMenuItem(a *app.App, id string, st updateMenuState) *mygo.MenuItem {
+	var icon *mygo.MenuIcon
+	if st.dot {
+		icon = theme.UpdateDotMenuIcon()
+	}
+	return &mygo.MenuItem{
+		ID:       id,
+		Label:    st.label,
+		Disabled: !st.enabled,
+		Icon:     icon,
+		Click: func(*mygo.MenuItem, *mygo.Window) {
+			handleUpdateMenuClick(a)
+		},
+	}
+}
+
+func appMenu(a *app.App) (*mygo.Menu, []*mygo.MenuItem, updateMenuState) {
 	click := func(fn func()) func(*mygo.MenuItem, *mygo.Window) {
 		return func(*mygo.MenuItem, *mygo.Window) { fn() }
 	}
 
+	var st updateMenuState
+	if a.Updater != nil {
+		st = computeUpdateMenuState(a.Updater.Snapshot())
+	} else {
+		st = updateMenuState{label: locales.MenuCheckUpdates(), enabled: true}
+	}
+	var updateItems []*mygo.MenuItem
+
 	var top []*mygo.MenuItem
 	if runtime.GOOS == "darwin" {
+		appUpdateItem := newUpdateMenuItem(a, "update-app", st)
+		updateItems = append(updateItems, appUpdateItem)
 		top = append(top, &mygo.MenuItem{
 			Role: mygo.RoleAppMenu,
 			Submenu: []*mygo.MenuItem{
 				{Label: locales.MenuAbout(), Click: click(func() { a.Win.ShowAbout() })},
-				{Label: locales.MenuCheckUpdates(), Click: click(func() { a.CheckUpdate(true) })},
+				appUpdateItem,
 				mygo.Separator(),
 				{Label: locales.MenuSettings(), Accelerator: "CmdOrCtrl+,", Click: click(func() { a.Win.ShowSettings("general") })},
 				mygo.Separator(),
@@ -447,8 +546,10 @@ func appMenu(a *app.App) *mygo.Menu {
 		})
 	}
 
+	helpUpdateItem := newUpdateMenuItem(a, "update-help", st)
+	updateItems = append(updateItems, helpUpdateItem)
 	helpItems := []*mygo.MenuItem{
-		{Label: locales.MenuCheckUpdates(), Click: click(func() { a.CheckUpdate(true) })},
+		helpUpdateItem,
 		{Label: locales.MenuRevealDataFolder(), Click: click(func() { _ = mygo.Shell.OpenPath(a.Store.Dir()) })},
 		mygo.Separator(),
 		{Label: locales.MenuGitHubRepo(), Click: click(func() { _ = a.OpenURL(githubRepoURL) })},
@@ -463,5 +564,5 @@ func appMenu(a *app.App) *mygo.Menu {
 		top = append(top, &mygo.MenuItem{Label: locales.MenuHelp(), Submenu: helpItems})
 	}
 
-	return mygo.NewMenu(top)
+	return mygo.NewMenu(top), updateItems, st
 }
