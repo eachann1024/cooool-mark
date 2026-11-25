@@ -23,3 +23,13 @@ designs/
 .artifact-server.log
 tmp/
 __pycache__/
+
+# Added by maotou cleanup
+.cache/
+*.log
+*.tmp
+*.dump
+*.har
+debug*
+*.debug
+*.trace
