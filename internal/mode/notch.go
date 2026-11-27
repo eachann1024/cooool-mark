@@ -812,7 +812,7 @@ func (n *notchMode) renderTile(c *ui.Context, b *model.Bookmark, selected bool, 
 	tile.Children(func() {
 		ui.Column(c).AlignItems(ui.Center).Gap(7).FillWidth().Children(func() {
 			sq := theme.Tile(c, b.Icon, n.app.Store.IconPath(b.Icon), 44).Radius(12).
-				Border(1, ui.RGBA(255, 255, 255, 0.08))
+				Border(1, ui.RGBA(255, 255, 255, 0.14))
 			if tile.Hovered() || selected {
 				sq.Translate(0, -2).Scale(1.04, 1.04)
 			}

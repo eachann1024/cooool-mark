@@ -490,10 +490,15 @@ func renderModeSearchBox(
 	iconSize := float32(14)
 	if style.darkNotch {
 		iconSize = 13
-		if focused || hasQ || locked != nil {
-			sbox.Background(ui.RGBA(255, 255, 255, 0.16)).Border(1.5, ui.Hex("#e0875f"))
-		} else {
-			sbox.Background(ui.RGBA(255, 255, 255, 0.11)).Border(1.5, ui.RGBA(255, 255, 255, 0.08))
+		// The notch input is focused whenever the panel opens; keep the
+		// accent for typed or locked state so it doesn't glare at rest.
+		switch {
+		case hasQ || locked != nil:
+			sbox.Background(ui.RGBA(255, 255, 255, 0.14)).Border(1, ui.Hex("#e0875f").Alpha(0.85))
+		case focused:
+			sbox.Background(ui.RGBA(255, 255, 255, 0.12)).Border(1, ui.RGBA(255, 255, 255, 0.22))
+		default:
+			sbox.Background(ui.RGBA(255, 255, 255, 0.09)).Border(1, ui.RGBA(255, 255, 255, 0.08))
 		}
 		textCol = ui.Hex("#ffffff")
 		placeholderCol = ui.RGBA(234, 232, 225, 0.60)

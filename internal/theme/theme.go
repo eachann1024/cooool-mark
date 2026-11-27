@@ -288,7 +288,7 @@ func LoadIcon(path string) ui.ImageSource {
 // grids and panels).
 func Tile(c *ui.Context, icon model.Icon, iconPath string, size float32) ui.Element {
 	radius := size * 0.27
-	if src := LoadIcon(iconPath); src != nil {
+	if src := LoadIcon(iconPath); src != nil && LoadIconTone(iconPath) != ToneEmpty {
 		// A white glyph on transparency vanishes on the light card and a
 		// black one on the dark card: give those a contrasting plate.
 		dark := c.Theme().Dark
@@ -299,6 +299,22 @@ func Tile(c *ui.Context, icon model.Icon, iconPath string, size float32) ui.Elem
 		case tone == ToneDark && dark:
 			plate = ui.Hex("#eae8e1")
 		default:
+			// A bitmap smaller than the tile (a 16/32px favicon) blurs when
+			// stretched: show it smaller on a soft plate instead.
+			if _, ok := src.(*ui.Bitmap); ok {
+				if iw, ih := ui.ImageSize(src); max(iw, ih) < size {
+					soft := ui.RGBA(0, 0, 0, 0.05)
+					if dark {
+						soft = ui.RGBA(255, 255, 255, 0.10)
+					}
+					inner := min(size*0.62, max(iw, ih)*1.25)
+					box := ui.Row(c).Size(size, size).Radius(radius).Background(soft).Center()
+					box.Children(func() {
+						ui.Image(c, src).Size(inner, inner).Radius(inner * 0.2)
+					})
+					return box
+				}
+			}
 			return ui.Image(c, src).Size(size, size).Radius(radius)
 		}
 		inner := size * 0.72

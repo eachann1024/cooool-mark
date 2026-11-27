@@ -24,6 +24,9 @@ const (
 	ToneMixed IconTone = iota
 	ToneLight
 	ToneDark
+	// ToneEmpty marks an icon with (almost) nothing visible, such as a fully
+	// transparent placeholder a site served; draw the letter tile instead.
+	ToneEmpty
 )
 
 var (
@@ -92,6 +95,9 @@ func classifyTone(img image.Image) IconTone {
 				dark += wgt
 			}
 		}
+	}
+	if total > 0 && vis/total < 0.01 {
+		return ToneEmpty
 	}
 	if total == 0 || vis == 0 || clear/total < 0.12 {
 		return ToneMixed
