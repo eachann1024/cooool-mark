@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/transfer"
@@ -379,90 +380,458 @@ func searchBookmarks(a *app.App, query, groupID string) []*model.Bookmark {
 	return out
 }
 
-// renderTemplateBar renders an inline input bar when a template bookmark is clicked.
-func renderTemplateBar(c *ui.Context, a *app.App, b *model.Bookmark, query *string, handle *ui.Handle, dark bool, onCancel func()) {
-	bg := ui.Hex("#f0eee6")
-	fg := ui.Hex("#1f1e1d")
-	muted := ui.Hex("#6c6b64")
-	accent := ui.Hex("#b5583a")
-	if dark {
-		bg = ui.RGBA(255, 255, 255, 0.12)
-		fg = ui.Hex("#eae8e1")
-		muted = ui.RGBA(234, 232, 225, 0.65)
-		accent = ui.Hex("#e0875f")
-	}
-	row := ui.Row(c.Key("tmpl-bar")).Height(34).Padding(0, 8, 0, 10).Gap(8).Radius(9).Background(bg).AlignItems(ui.Center)
-	titleH := ui.Local(row, "tmplTitleH", func() ui.Handle { return ui.Handle{} })
-	row.Children(func() {
-		titleEl := ui.Text(c, b.Title).FontSize(12).FontWeight(500).TextColor(accent).MaxWidth(106).
-			MinWidth(0).SingleLine().Bind(titleH)
-		if widget.TextTruncated(c, titleH, b.Title, 12, 500, 1) {
-			titleEl.Tooltip(b.Title)
-		}
-		in := ui.TextInputBase(c.Key("tmpl-in"), query).Bind(handle).Grow(1).MinWidth(80).
-			FontSize(12).Label(locales.MainTemplateLabel()).Placeholder(locales.MainTemplatePlaceholder()).TextColor(fg).PlaceholderColor(muted)
-		if in.Submitted() && a.Open(b, *query) {
-			onCancel()
-		}
-		if in.Shortcut(0, ui.KeyEscape) {
-			onCancel()
-		}
-		cancel := ui.ButtonBase(c.Key("tmpl-cancel")).PaddingX(6).Height(22).Radius(6).
-			TextColor(muted).Label(locales.ActionCancel()).Tooltip(locales.ActionCancel()).Center().Shrink(0)
-		cancel.Children(func() { ui.Text(c, locales.ActionCancel()).FontSize(11).SingleLine() })
-		if cancel.Clicked() {
-			onCancel()
-		}
-	})
+// modeSearchState holds shared search, selection, and locked-engine state for summon modes.
+type modeSearchState struct {
+	query         string
+	lockedID      string
+	lockedKW      string
+	selIdx        int
+	selTemplateID string
+	scrollMoved   bool
+	caretPending  bool
+	pendingCaret  int
 }
 
-// renderModeSearchBox renders the compact search input shared by summon mode panels.
+func (s *modeSearchState) reset() {
+	s.query = ""
+	s.lockedID = ""
+	s.lockedKW = ""
+	s.selIdx = 0
+	s.selTemplateID = ""
+	s.scrollMoved = false
+	s.caretPending = false
+	s.pendingCaret = 0
+}
+
+func (s *modeSearchState) unlockKeepQuery() {
+	s.lockedID = ""
+	s.lockedKW = ""
+	s.selIdx = 0
+	s.selTemplateID = ""
+	s.scrollMoved = false
+}
+
+func (s *modeSearchState) lockEngine(b *model.Bookmark, kw, rest string) {
+	if b == nil {
+		return
+	}
+	if kw == "" {
+		kw = firstKeyword(b)
+	}
+	s.lockedID = b.ID
+	s.lockedKW = kw
+	s.query = rest
+	s.selIdx = 0
+	s.selTemplateID = ""
+	s.scrollMoved = false
+	s.caretPending = true
+	s.pendingCaret = utf8.RuneCountInString(rest)
+}
+
+func (s *modeSearchState) trimmedQuery() string {
+	return strings.TrimSpace(s.query)
+}
+
+func firstKeyword(b *model.Bookmark) string {
+	if b != nil && len(b.Keywords) > 0 {
+		return b.Keywords[0]
+	}
+	return ""
+}
+
+func previewEngineURL(rawURL, query string) string {
+	q := strings.TrimSpace(query)
+	if q == "" {
+		return rawURL
+	}
+	return strings.ReplaceAll(rawURL, "{query}", q)
+}
+
+type modeSearchStyle struct {
+	fieldBg   ui.Color
+	darkNotch bool
+	width     float32
+}
+
+// renderModeSearchBox renders the compact search input (with optional locked engine capsule)
+// shared by tray, edge, and notch modes.
 func renderModeSearchBox(
 	c *ui.Context,
+	a *app.App,
 	p *theme.Palette,
 	keyPrefix string,
-	query *string,
+	st *modeSearchState,
 	handle *ui.Handle,
-	fieldBg ui.Color,
-	onScrollTop func(),
-	onSubmit func(),
-) {
-	focused := handle.Focused(c)
-	hasQ := *query != ""
-	sbox := ui.Row(c.Key(keyPrefix+"-sbox")).Grow(1).MinWidth(0).Height(30).Padding(0, 6, 0, 10).Gap(6).Radius(9).
-		AlignItems(ui.Center)
-	if focused || hasQ {
-		sbox.Background(p.Surface).Border(1.5, p.Accent)
-	} else {
-		sbox.Background(fieldBg).Border(1.5, ui.Transparent)
+	style modeSearchStyle,
+	onStateChange func(),
+) ui.Element {
+	lib := a.Store.Lib()
+	locked := templateBookmark(lib, st.lockedID)
+	if st.lockedID != "" && locked == nil {
+		st.unlockKeepQuery()
 	}
+
+	focused := handle.Focused(c)
+	hasQ := st.query != ""
+	padLeft := float32(10)
+	if locked != nil {
+		padLeft = 5
+	}
+	sbox := ui.Row(c.Key(keyPrefix+"-sbox")).Height(30).Padding(0, 6, 0, padLeft).Gap(6).Radius(9).
+		AlignItems(ui.Center)
+	if style.width > 0 {
+		sbox.Width(style.width).Shrink(0)
+	} else {
+		sbox.Grow(1).MinWidth(0)
+	}
+
+	var textCol, placeholderCol, iconCol, clrHoverBg, clrHoverFg, clrFg ui.Color
+	var capsuleBg, capsuleHoverBg, capsuleFg ui.Color
+	iconSize := float32(14)
+	if style.darkNotch {
+		iconSize = 13
+		if focused || hasQ || locked != nil {
+			sbox.Background(ui.RGBA(255, 255, 255, 0.16)).Border(1.5, ui.Hex("#e0875f"))
+		} else {
+			sbox.Background(ui.RGBA(255, 255, 255, 0.11)).Border(1.5, ui.RGBA(255, 255, 255, 0.08))
+		}
+		textCol = ui.Hex("#ffffff")
+		placeholderCol = ui.RGBA(234, 232, 225, 0.60)
+		iconCol = ui.RGBA(234, 232, 225, 0.65)
+		clrFg = ui.RGBA(234, 232, 225, 0.70)
+		clrHoverBg = ui.RGBA(255, 255, 255, 0.14)
+		clrHoverFg = ui.Hex("#ffffff")
+		capsuleBg = ui.RGBA(224, 135, 95, 0.24)
+		capsuleHoverBg = ui.RGBA(224, 135, 95, 0.34)
+		capsuleFg = ui.Hex("#f0a07c")
+	} else {
+		if focused || hasQ || locked != nil {
+			sbox.Background(p.Surface).Border(1.5, p.Accent)
+		} else {
+			sbox.Background(style.fieldBg).Border(1.5, ui.Transparent)
+		}
+		textCol = p.Text
+		placeholderCol = p.Muted
+		iconCol = p.Muted
+		clrFg = p.Muted
+		clrHoverBg = p.RowSel
+		clrHoverFg = p.Text
+		capsuleBg = p.AccentBg
+		capsuleHoverBg = p.AccentBg.Mix(p.Accent, 0.18)
+		capsuleFg = p.AccentText
+	}
+
+	var in ui.Element
 	sbox.Children(func() {
-		ui.Icon(c, theme.IconSearch).FontSize(14).TextColor(p.Muted).Shrink(0)
-		in := ui.TextInputBase(c.Key(keyPrefix+"-q"), query).Bind(handle).Grow(1).MinWidth(0).
-			Label(locales.MainSearchPlaceholder()).Placeholder(locales.MainSearchPlaceholder()).
-			TextColor(p.Text).PlaceholderColor(p.Muted)
-		if in.Changed() && onScrollTop != nil {
-			onScrollTop()
+		if locked != nil {
+			pill := ui.ButtonBase(c.Key(keyPrefix+"-lock")).Height(22).Padding(0, 6, 0, 5).Gap(4).Radius(6).
+				AlignItems(ui.Center).Shrink(0).Background(capsuleBg).TextColor(capsuleFg).
+				Label(locales.EngineUnlock()).Tooltip(locales.EngineUnlock())
+			if pill.Hovered() {
+				pill.Background(capsuleHoverBg)
+			}
+			maxTitleW := float32(76)
+			if style.darkNotch {
+				maxTitleW = 64
+			}
+			pill.Children(func() {
+				theme.Tile(c, locked.Icon, a.Store.IconPath(locked.Icon), 14).Radius(4)
+				ui.Text(c, locked.Title).FontSize(11.5).FontWeight(500).MaxWidth(maxTitleW).SingleLine()
+				ui.Icon(c, theme.IconClose).FontSize(10).Shrink(0)
+			})
+			if pill.Clicked() {
+				st.unlockKeepQuery()
+				handle.Focus(c)
+				if onStateChange != nil {
+					onStateChange()
+				}
+			}
+		} else {
+			ui.Icon(c, theme.IconSearch).FontSize(iconSize).TextColor(iconCol).Shrink(0)
 		}
-		if in.Submitted() && onSubmit != nil {
-			onSubmit()
+
+		placeholder := locales.MainSearchPlaceholder()
+		if locked != nil {
+			placeholder = locales.EngineLockedPlaceholder(locked.Title)
 		}
-		if hasQ {
+		in = ui.TextInputBase(c.Key(keyPrefix+"-q"), &st.query).Bind(handle).Grow(1).MinWidth(0).
+			Label(placeholder).Placeholder(placeholder).
+			TextColor(textCol).PlaceholderColor(placeholderCol)
+		if st.caretPending {
+			in.SetTextSelection(st.pendingCaret, st.pendingCaret)
+			st.caretPending = false
+		}
+		in.OnTextKey(func(k ui.TextKey) bool {
+			if st.lockedID != "" && k.Key == ui.KeyBackspace && k.Mods == 0 && k.Text() == "" {
+				kw := st.lockedKW
+				st.unlockKeepQuery()
+				st.query = kw
+				st.caretPending = true
+				st.pendingCaret = utf8.RuneCountInString(kw)
+				k.SetText(kw)
+				if onStateChange != nil {
+					onStateChange()
+				}
+				return true
+			}
+			if st.lockedID == "" && k.Key == ui.KeyTab && k.Mods == 0 && st.selTemplateID != "" {
+				if b := templateBookmark(a.Store.Lib(), st.selTemplateID); b != nil {
+					st.lockEngine(b, "", "")
+					k.SetText("")
+					if onStateChange != nil {
+						onStateChange()
+					}
+					return true
+				}
+			}
+			return false
+		})
+		if in.Changed() {
+			st.selIdx = 0
+			if st.lockedID == "" {
+				if b, rest, ok := a.ParseLock(st.query); ok && b != nil {
+					kw := ""
+					if sp := strings.IndexByte(st.query, ' '); sp > 0 {
+						kw = st.query[:sp]
+					}
+					st.lockEngine(b, kw, rest)
+					in.ReplaceText(0, math.MaxInt, rest)
+				}
+			}
+			if onStateChange != nil {
+				onStateChange()
+			}
+		}
+		if st.query != "" {
 			clr := ui.ButtonBase(c.Key(keyPrefix+"-qclr")).Size(18, 18).Radius(5).Center().
-				TextColor(p.Muted).Label(locales.ActionClearSearch()).Tooltip(locales.ActionClearSearch()).Shrink(0)
+				TextColor(clrFg).Label(locales.ActionClearSearch()).Tooltip(locales.ActionClearSearch()).Shrink(0)
 			if clr.Hovered() {
-				clr.Background(p.RowSel).TextColor(p.Text)
+				clr.Background(clrHoverBg).TextColor(clrHoverFg)
 			}
 			clr.Children(func() { ui.Icon(c, theme.IconClose).FontSize(11) })
 			if clr.Clicked() {
-				*query = ""
-				if onScrollTop != nil {
-					onScrollTop()
+				st.query = ""
+				st.selIdx = 0
+				if onStateChange != nil {
+					onStateChange()
 				}
 				handle.Focus(c)
 			}
 		}
 	})
+	return in
+}
+
+// handleModeSearchNav processes Up/Down/Enter for locked mode or bookmark+engine search results.
+func handleModeSearchNav(
+	a *app.App,
+	lib *model.Library,
+	st *modeSearchState,
+	in ui.Element,
+	hits []*model.Bookmark,
+	engines []*model.Bookmark,
+	onStateChange func(),
+) {
+	if locked := templateBookmark(lib, st.lockedID); locked != nil {
+		st.selTemplateID = ""
+		if in.Submitted() {
+			a.Open(locked, st.trimmedQuery())
+		}
+		return
+	}
+	q := st.trimmedQuery()
+	if q == "" {
+		st.selIdx = 0
+		st.selTemplateID = ""
+		return
+	}
+	total := len(hits) + len(engines)
+	if total == 0 {
+		st.selIdx = 0
+		st.selTemplateID = ""
+		return
+	}
+	st.selIdx = max(0, min(st.selIdx, total-1))
+	if in.Shortcut(0, ui.KeyDown) {
+		st.selIdx = min(st.selIdx+1, total-1)
+		st.scrollMoved = true
+	}
+	if in.Shortcut(0, ui.KeyUp) {
+		st.selIdx = max(st.selIdx-1, 0)
+		st.scrollMoved = true
+	}
+	if st.selIdx < len(hits) && hits[st.selIdx].IsTemplate() {
+		st.selTemplateID = hits[st.selIdx].ID
+	} else {
+		st.selTemplateID = ""
+	}
+	if in.Submitted() {
+		if st.selIdx < len(hits) {
+			b := hits[st.selIdx]
+			if b.IsTemplate() {
+				st.lockEngine(b, "", "")
+				in.ReplaceText(0, math.MaxInt, "")
+				if onStateChange != nil {
+					onStateChange()
+				}
+				return
+			}
+			a.Open(b, "")
+			return
+		}
+		eng := engines[st.selIdx-len(hits)]
+		a.Open(eng, q)
+	}
+}
+
+func renderEngineSectionHeader(c *ui.Context, p *theme.Palette, key, query string, top float32, darkNotch bool) {
+	title := locales.EngineSearchSection(query)
+	if darkNotch {
+		ui.Box(c.Key(key)).Padding(top, 2, 2, 4).Children(func() {
+			ui.Text(c, title).Font(theme.TitleFont(c)).FontSize(12.5).FontWeight(500).
+				TextColor(ui.RGBA(234, 232, 225, 0.72)).SingleLine()
+		})
+		return
+	}
+	ui.Box(c.Key(key)).Padding(top, 0, 3, 8).Children(func() {
+		widget.Title(c, p, title, 13)
+	})
+}
+
+func renderEngineRow(
+	c *ui.Context,
+	a *app.App,
+	p *theme.Palette,
+	key string,
+	eng *model.Bookmark,
+	query string,
+	height float32,
+	selected bool,
+	darkNotch bool,
+	onOpen func(),
+) ui.Element {
+	row := ui.ButtonBase(c.Key(key)).Height(height).PaddingX(8).Gap(10).
+		Radius(8).Justify(ui.Start).AlignItems(ui.Center).
+		Label(query + " " + locales.EngineRowWith(eng.Title)).Tooltip(locales.EngineLockedTitle(eng.Title, query))
+	var fg, muted, kwBg ui.Color
+	if darkNotch {
+		fg = ui.Hex("#e8e6df")
+		muted = ui.RGBA(234, 232, 225, 0.65)
+		kwBg = ui.RGBA(255, 255, 255, 0.10)
+		if selected {
+			row.Background(ui.RGBA(255, 255, 255, 0.16))
+		} else if row.Hovered() {
+			row.Background(ui.RGBA(255, 255, 255, 0.08))
+		}
+	} else {
+		fg = p.Text
+		muted = p.Muted
+		kwBg = p.Field
+		if selected {
+			row.Background(p.RowSel)
+			kwBg = p.Text.Alpha(0.07)
+		} else if row.Hovered() {
+			row.Background(p.Hover)
+		}
+	}
+	row.Children(func() {
+		theme.Tile(c, eng.Icon, a.Store.IconPath(eng.Icon), 22).Radius(6)
+		ui.Row(c).Grow(1).MinWidth(0).Gap(6).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, query).FontWeight(500).TextColor(fg).SingleLine().Shrink(1).MinWidth(0)
+			ui.Text(c, locales.EngineRowWith(eng.Title)).FontSize(12).TextColor(muted).
+				MaxWidth(130).SingleLine().Shrink(1)
+		})
+		if kw := firstKeyword(eng); kw != "" {
+			ui.Row(c).Height(20).PaddingX(6).Radius(5).Background(kwBg).AlignItems(ui.Center).Shrink(0).Children(func() {
+				ui.Text(c, kw).FontSize(11).TextColor(muted).SingleLine()
+			})
+		}
+	})
+	if row.Clicked() && onOpen != nil {
+		onOpen()
+	}
+	return row
+}
+
+func renderLockedEngineRow(
+	c *ui.Context,
+	a *app.App,
+	p *theme.Palette,
+	key string,
+	eng *model.Bookmark,
+	query string,
+	height float32,
+	darkNotch bool,
+	onOpen func(),
+) {
+	title := locales.EngineLockedTitle(eng.Title, query)
+	preview := previewEngineURL(eng.URL, query)
+	row := ui.ButtonBase(c.Key(key)).FillWidth().Height(height).PaddingX(8).Gap(10).
+		Radius(8).Justify(ui.Start).AlignItems(ui.Center).Label(title).Tooltip(preview)
+	var fg, muted ui.Color
+	if darkNotch {
+		fg = ui.Hex("#ffffff")
+		muted = ui.RGBA(234, 232, 225, 0.65)
+		if row.Hovered() {
+			row.Background(ui.RGBA(255, 255, 255, 0.18))
+		} else {
+			row.Background(ui.RGBA(255, 255, 255, 0.12))
+		}
+	} else {
+		fg = p.Text
+		muted = p.Muted
+		if row.Hovered() {
+			row.Background(p.RowSel.Mix(p.Hover, 0.4))
+		} else {
+			row.Background(p.RowSel)
+		}
+	}
+	row.Children(func() {
+		theme.Tile(c, eng.Icon, a.Store.IconPath(eng.Icon), 22).Radius(6)
+		ui.Column(c).Grow(1).MinWidth(0).Gap(1).Children(func() {
+			ui.Text(c, title).FontWeight(500).TextColor(fg).SingleLine()
+			ui.Text(c, preview).FontSize(11.5).TextColor(muted).SingleLine()
+		})
+		ui.Text(c, "↵").FontSize(11.5).TextColor(muted).Shrink(0)
+	})
+	if row.Clicked() && onOpen != nil {
+		onOpen()
+	}
+}
+
+func handleModeEscape(
+	st *modeSearchState,
+	searchH *ui.Handle,
+	c *ui.Context,
+	onStateChange func(),
+	onEmptyEsc func(),
+	invalidate func(),
+) {
+	if st.lockedID != "" {
+		st.unlockKeepQuery()
+		if onStateChange != nil {
+			onStateChange()
+		}
+		searchH.Focus(c)
+		if invalidate != nil {
+			invalidate()
+		}
+		return
+	}
+	if st.query != "" {
+		st.reset()
+		if onStateChange != nil {
+			onStateChange()
+		}
+		searchH.Focus(c)
+		if invalidate != nil {
+			invalidate()
+		}
+		return
+	}
+	if onEmptyEsc != nil {
+		onEmptyEsc()
+	}
 }
 
 // trayIconBytes loads resources/trayTemplate.png (macOS) or resources/tray.png,

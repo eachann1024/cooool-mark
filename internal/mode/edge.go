@@ -1,8 +1,9 @@
 package mode
 
 import (
-	"strings"
+	"math"
 	"time"
+	"unicode/utf8"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -30,9 +31,20 @@ const (
 	edgePanelW     = 320
 )
 
+type edgeRowKind uint8
+
+const (
+	edgeRowBookmark edgeRowKind = iota
+	edgeRowSub
+	edgeRowEngHeader
+	edgeRowEngine
+)
+
 type edgeRow struct {
-	sub model.Sub
-	b   *model.Bookmark
+	kind   edgeRowKind
+	sub    model.Sub
+	b      *model.Bookmark
+	selIdx int
 }
 
 type edgeMode struct {
@@ -43,16 +55,13 @@ type edgeMode struct {
 	groupID         string
 	menuOpen        bool
 	autoHideOnLeave bool
-	query           string
+	search          modeSearchState
 	searchInput     ui.Handle
 	hoverSince      time.Time
 	leaveSince      time.Time
 	dragLeftAt      time.Time
 	openedAt        time.Time
 	needSlide       bool
-	tmplID          string
-	tmplQuery       string
-	tmplInput       ui.Handle
 	disp            mygo.Display
 	unsubDisp       func()
 	list            ui.ListState
@@ -62,6 +71,8 @@ type edgeMode struct {
 		groupID  string
 		query    string
 		rows     []edgeRow
+		hits     []*model.Bookmark
+		engines  []*model.Bookmark
 	}
 }
 
@@ -205,9 +216,7 @@ func (e *edgeMode) setState(st edgeState) {
 	if st == edgeHidden {
 		e.menuOpen = false
 		e.autoHideOnLeave = false
-		e.query = ""
-		e.tmplID = ""
-		e.tmplQuery = ""
+		e.search.reset()
 		e.list.ScrollTo(0, ui.Start)
 	} else {
 		e.disp = cursorDisplay()
@@ -261,17 +270,20 @@ func (e *edgeMode) view(c *ui.Context) {
 	c.Root().Background(ui.Transparent)
 
 	lib := e.app.Store.Lib()
-	if e.tmplID != "" && templateBookmark(lib, e.tmplID) == nil {
-		e.tmplID = ""
+	if e.search.lockedID != "" && templateBookmark(lib, e.search.lockedID) == nil {
+		e.search.unlockKeepQuery()
 	}
 
 	if !e.menuOpen && e.state == edgeOut && c.Shortcut(ui.Cmd, ui.KeyF) && !c.ShortcutRepeated() {
 		e.searchInput.SelectAll(c)
 	}
 
-	if !e.menuOpen && e.state == edgeOut && !e.searchInput.Focused(c) && !e.tmplInput.Focused(c) {
+	if !e.menuOpen && e.state == edgeOut && !e.searchInput.Focused(c) {
 		if ch, ok := widget.TypedSearchKey(c); ok {
-			e.query += ch
+			e.search.query += ch
+			e.search.selIdx = 0
+			e.search.caretPending = true
+			e.search.pendingCaret = utf8.RuneCountInString(e.search.query)
 			e.list.ScrollTo(0, ui.Start)
 			e.searchInput.Focus(c)
 		}
@@ -292,25 +304,17 @@ func (e *edgeMode) view(c *ui.Context) {
 		e.viewPanel(c, p, lib, &menuOpenThisFrame)
 	}
 
-	// Evaluate Escape after TextInputBase so e.query is synced with text typed this frame.
+	// Evaluate Escape after TextInputBase so e.search.query is synced with text typed this frame.
 	if !e.menuOpen && !menuOpenThisFrame && e.state == edgeOut && c.Shortcut(0, ui.KeyEscape) {
-		if e.tmplID != "" {
-			e.tmplID = ""
-			e.tmplQuery = ""
-			e.searchInput.Focus(c)
-			if e.win != nil {
-				e.win.Invalidate()
-			}
-		} else if e.query != "" {
-			e.query = ""
-			e.list.ScrollTo(0, ui.Start)
-			e.searchInput.Focus(c)
-			if e.win != nil {
-				e.win.Invalidate()
-			}
-		} else {
-			e.collapse()
-		}
+		handleModeEscape(&e.search, &e.searchInput, c,
+			func() { e.list.ScrollTo(0, ui.Start) },
+			e.collapse,
+			func() {
+				if e.win != nil {
+					e.win.Invalidate()
+				}
+			},
+		)
 	}
 }
 
@@ -517,9 +521,9 @@ func (e *edgeMode) viewPanel(c *ui.Context, p *theme.Palette, lib *model.Library
 		slide := panel.AnimateTo("slide", 0, ui.Animation{Spring: ui.SpringOptions{Duration: 320 * time.Millisecond, Bounce: 0.08}})
 		panel.Translate(slide, 0)
 
-		// Collapse hover-opened panel when pointer leaves for 600ms (unless typing, template, or menu open).
+		// Collapse hover-opened panel when pointer leaves for 600ms (unless typing, locked, or menu open).
 		_, _, over := wrap.PointerPosition()
-		if !e.autoHideOnLeave || over || e.menuOpen || e.query != "" || e.tmplID != "" || e.tmplInput.Focused(c) {
+		if !e.autoHideOnLeave || over || e.menuOpen || e.search.query != "" || e.search.lockedID != "" {
 			e.leaveSince = time.Time{}
 		} else if delay := 400*time.Millisecond - time.Since(e.openedAt); delay > 0 {
 			c.After(delay)
@@ -562,14 +566,13 @@ func (e *edgeMode) viewPanel(c *ui.Context, p *theme.Palette, lib *model.Library
 						ui.Row(c.Key("eg-tabs-row")).Gap(4).AlignItems(ui.Center).Children(func() {
 							for i := range lib.Groups {
 								g := &lib.Groups[i]
-								selected := g.ID == e.groupID && strings.TrimSpace(e.query) == ""
+								selected := g.ID == e.groupID && e.search.trimmedQuery() == "" && e.search.lockedID == ""
 								pill := widget.Pill(c.Key("eg-grp-"+g.ID), p, g.Name, selected)
 								widget.RevealSelectedTab(pill, selected, i)
 								if pill.Clicked() {
 									e.groupID = g.ID
 									e.app.SetModeGroup(model.ModeEdge, g.ID)
-									e.query = ""
-									e.tmplID = ""
+									e.search.reset()
 									e.list.ScrollTo(0, ui.Start)
 									e.searchInput.Focus(c)
 								}
@@ -602,38 +605,47 @@ func (e *edgeMode) viewPanel(c *ui.Context, p *theme.Palette, lib *model.Library
 				}
 			})
 
+			scrollTop := func() { e.list.ScrollTo(0, ui.Start) }
+			var searchIn ui.Element
 			ui.Row(c.Key("eg-srow")).Padding(0, 10, 8, 10).AlignItems(ui.Center).
 				BorderWidth(0, 0, 1, 0).BorderColor(p.LineSoft).Children(func() {
-				renderModeSearchBox(c, p, "eg", &e.query, &e.searchInput, p.Field,
-					func() { e.list.ScrollTo(0, ui.Start) },
-					func() {
-						hits := searchBookmarks(e.app, e.query, "")
-						if len(hits) > 0 {
-							e.openItem(hits[0])
-							if e.tmplID != "" {
-								e.tmplInput.Focus(c)
-							}
-						}
-					},
-				)
+				searchIn = renderModeSearchBox(c, e.app, p, "eg", &e.search, &e.searchInput, modeSearchStyle{fieldBg: p.Field}, scrollTop)
 			})
 
-			q := strings.TrimSpace(e.query)
+			q := e.search.trimmedQuery()
+			locked := templateBookmark(lib, e.search.lockedID)
+			var rows []edgeRow
+			var hits, engines []*model.Bookmark
+			if locked == nil {
+				rows, hits, engines = e.currentRows(lib, q)
+			}
+			if locked == nil && q != "" {
+				handleModeSearchNav(e.app, lib, &e.search, searchIn, hits, engines, scrollTop)
+			} else {
+				handleModeSearchNav(e.app, lib, &e.search, searchIn, nil, nil, scrollTop)
+			}
+			locked = templateBookmark(lib, e.search.lockedID)
 
-			if b := templateBookmark(lib, e.tmplID); b != nil {
-				ui.Box(c.Key("eg-tmpl-wrap")).Padding(6, 10, 4, 10).Children(func() {
-					renderTemplateBar(c, e.app, b, &e.tmplQuery, &e.tmplInput, p.Dark, func() {
-						e.tmplID = ""
-						e.tmplQuery = ""
-						if e.state == edgeOut {
-							e.searchInput.Focus(c)
-						}
-					})
-				})
+			openOrLock := func(b *model.Bookmark) {
+				if b.IsTemplate() {
+					e.search.lockEngine(b, "", "")
+					searchIn.ReplaceText(0, math.MaxInt, "")
+					scrollTop()
+					e.searchInput.Focus(c)
+					return
+				}
+				e.app.Open(b, "")
 			}
 
-			// Body: search results OR sub-group sections
-			rows := e.currentRows(lib, q)
+			// Body: locked engine preview, search results + engines, OR sub-group sections
+			if locked != nil {
+				ui.Column(c.Key("eg-locked-wrap")).Grow(1).Padding(4, 6).Children(func() {
+					renderLockedEngineRow(c, e.app, p, "eg-locked", locked, q, 44, false, func() {
+						e.app.Open(locked, q)
+					})
+				})
+				return
+			}
 			if len(rows) == 0 {
 				msg := locales.MainNoBookmarks()
 				size := float32(14)
@@ -650,19 +662,38 @@ func (e *edgeMode) viewPanel(c *ui.Context, p *theme.Palette, lib *model.Library
 				})
 				return
 			}
-			widget.AutoScrollbar(c, ui.List(c.Key("eg-list"), &e.list, len(rows))).Grow(1).MinHeight(0).FillWidth().
+			if q != "" && e.search.scrollMoved {
+				e.search.scrollMoved = false
+				rowIdx := e.search.selIdx
+				if rowIdx >= len(hits) {
+					rowIdx++ // account for engine section header
+				}
+				e.list.ScrollIntoView(rowIdx)
+			}
+			listKey := "eg-list"
+			if q != "" {
+				listKey = "eg-search-list"
+			}
+			widget.AutoScrollbar(c, ui.List(c.Key(listKey), &e.list, len(rows))).Grow(1).MinHeight(0).FillWidth().
 				Padding(4, 6, 14, 6).Gap(1).
 				ItemKey(func(i int) any {
 					r := rows[i]
-					if r.b != nil {
+					switch r.kind {
+					case edgeRowSub:
+						return "shdr-" + r.sub.ID
+					case edgeRowEngHeader:
+						return "eng-hdr"
+					case edgeRowEngine:
+						return "eng-" + r.b.ID
+					default:
 						return "bm-" + r.b.ID
 					}
-					return "shdr-" + r.sub.ID
 				}).
 				Rows(func(row ui.ListRow) {
 					c := row.Context
 					r := rows[row.Index]
-					if r.b == nil {
+					switch r.kind {
+					case edgeRowSub:
 						top := float32(10)
 						if row.Index > 0 {
 							top = 9
@@ -670,22 +701,44 @@ func (e *edgeMode) viewPanel(c *ui.Context, p *theme.Palette, lib *model.Library
 						ui.Box(c.Key("eg-shdr-"+r.sub.ID)).Padding(top, 0, 3, 8).Children(func() {
 							widget.Title(c, p, r.sub.Name, 13)
 						})
-						return
+					case edgeRowEngHeader:
+						top := float32(10)
+						if row.Index == 0 {
+							top = 4
+						}
+						renderEngineSectionHeader(c, p, "eg-eng-hdr", q, top, false)
+					case edgeRowEngine:
+						selected := r.selIdx == e.search.selIdx
+						renderEngineRow(c, e.app, p, "eg-eng-"+r.b.ID, r.b, q, 34, selected, false, func() {
+							e.app.Open(r.b, q)
+						})
+					default:
+						selected := q != "" && r.selIdx == e.search.selIdx
+						e.renderRow(c, p, r.b, selected, menuOpen, openOrLock)
 					}
-					e.renderRow(c, p, r.b, menuOpen)
 				})
 		})
 	})
 }
 
-func (e *edgeMode) currentRows(lib *model.Library, q string) []edgeRow {
+func (e *edgeMode) currentRows(lib *model.Library, q string) ([]edgeRow, []*model.Bookmark, []*model.Bookmark) {
 	if e.cache.library == lib && e.cache.revision == lib.Revision && e.cache.groupID == e.groupID && e.cache.query == q {
-		return e.cache.rows
+		return e.cache.rows, e.cache.hits, e.cache.engines
 	}
 	var rows []edgeRow
+	var hits, engines []*model.Bookmark
 	if q != "" {
-		for _, bm := range searchBookmarks(e.app, q, "") {
-			rows = append(rows, edgeRow{b: bm})
+		hits = searchBookmarks(e.app, q, "")
+		engines = e.app.Engines()
+		rows = make([]edgeRow, 0, len(hits)+len(engines)+1)
+		for i, bm := range hits {
+			rows = append(rows, edgeRow{kind: edgeRowBookmark, b: bm, selIdx: i})
+		}
+		if len(engines) > 0 {
+			rows = append(rows, edgeRow{kind: edgeRowEngHeader, selIdx: -1})
+			for j, eng := range engines {
+				rows = append(rows, edgeRow{kind: edgeRowEngine, b: eng, selIdx: len(hits) + j})
+			}
 		}
 	} else if len(lib.Groups) > 0 {
 		g := activeGroup(lib, e.groupID)
@@ -694,9 +747,9 @@ func (e *edgeMode) currentRows(lib *model.Library, q string) []edgeRow {
 			if len(items) == 0 {
 				continue
 			}
-			rows = append(rows, edgeRow{sub: sub})
+			rows = append(rows, edgeRow{kind: edgeRowSub, sub: sub, selIdx: -1})
 			for _, bm := range items {
-				rows = append(rows, edgeRow{b: bm})
+				rows = append(rows, edgeRow{kind: edgeRowBookmark, b: bm, selIdx: -1})
 			}
 		}
 	}
@@ -705,46 +758,36 @@ func (e *edgeMode) currentRows(lib *model.Library, q string) []edgeRow {
 	e.cache.groupID = e.groupID
 	e.cache.query = q
 	e.cache.rows = rows
-	return rows
+	e.cache.hits = hits
+	e.cache.engines = engines
+	return rows, hits, engines
 }
 
-func (e *edgeMode) renderRow(c *ui.Context, p *theme.Palette, b *model.Bookmark, menuOpen *bool) {
+func (e *edgeMode) renderRow(c *ui.Context, p *theme.Palette, b *model.Bookmark, selected bool, menuOpen *bool, openOrLock func(*model.Bookmark)) {
 	row := ui.ButtonBase(c.Key("eg-bm-" + b.ID)).Height(34).PaddingX(8).Gap(10).
 		Radius(8).Justify(ui.Start).AlignItems(ui.Center).Label(b.Title)
 	titleH := ui.Local(row, "titleH", func() ui.Handle { return ui.Handle{} })
 	if widget.TextTruncated(c, titleH, b.Title, 0, 0, 1) {
 		row.Tooltip(b.Title)
 	}
-	if row.Hovered() {
+	if selected {
+		row.Background(p.RowSel)
+	} else if row.Hovered() {
 		row.Background(p.Hover)
 	}
 	row.Children(func() {
 		theme.Tile(c, b.Icon, e.app.Store.IconPath(b.Icon), 22).Radius(6)
 		ui.Text(c, b.Title).Grow(1).MinWidth(0).TextColor(p.Text).SingleLine().Bind(titleH)
+		if selected && b.IsTemplate() {
+			ui.Text(c, locales.EngineTabLock()).FontSize(11).TextColor(p.Muted).SingleLine().Shrink(0)
+		}
 	})
 	if row.Clicked() {
-		e.openItem(b)
-		if e.tmplID != "" {
-			e.tmplInput.Focus(c)
-		}
+		openOrLock(b)
 	}
 	bindBookmarkPopoverMenu(c, e.app, row, b, modeMenuOptions(p), menuOpen,
-		func() {
-			e.openItem(b)
-			if e.tmplID != "" {
-				e.tmplInput.Focus(c)
-			}
-		},
+		func() { openOrLock(b) },
 		e.collapse,
 		nil,
 	)
-}
-
-func (e *edgeMode) openItem(b *model.Bookmark) {
-	if b.IsTemplate() {
-		e.tmplID = b.ID
-		e.tmplQuery = ""
-		return
-	}
-	e.app.Open(b, "")
 }

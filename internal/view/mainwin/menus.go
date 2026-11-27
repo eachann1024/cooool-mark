@@ -375,7 +375,7 @@ func (s *mainState) activateBookmark(c *ui.Context, b *model.Bookmark) {
 	s.app.Open(b, "")
 }
 
-func (s *mainState) activateSearchIndex(c *ui.Context, hits []app.Hit, isURL bool, idx int) {
+func (s *mainState) activateSearchIndex(c *ui.Context, hits []app.Hit, engines []*model.Bookmark, query string, isURL bool, idx int) {
 	a := s.app
 	if isURL && idx == 0 {
 		if a.Win.ShowEditor != nil {
@@ -395,6 +395,12 @@ func (s *mainState) activateSearchIndex(c *ui.Context, hits []app.Hit, isURL boo
 	}
 	if hitIdx >= 0 && hitIdx < len(hits) {
 		s.activateSearchBookmark(c, hits[hitIdx].B)
+		return
+	}
+	if engIdx := hitIdx - len(hits); engIdx >= 0 && engIdx < len(engines) {
+		if a.Open(engines[engIdx], query) {
+			s.closeSearch(c)
+		}
 	}
 }
 

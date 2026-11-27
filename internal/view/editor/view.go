@@ -244,6 +244,12 @@ func (s *state) urlSection(c *ui.Context, p *theme.Palette) {
 			}
 		})
 
+		if !isTemplateURL(s.url) {
+			if sp, ok := app.DetectSearchParam(strings.TrimSpace(s.url)); ok {
+				s.searchParamHintRow(c, p, sp)
+			}
+		}
+
 		if s.saveErr != "" {
 			ui.Text(c, s.saveErr).FontSize(12).TextColor(p.Danger).Wrap().Selectable()
 		}
@@ -365,6 +371,103 @@ func (s *state) cardSection(c *ui.Context, p *theme.Palette) {
 		if s.hasAISuggestion() {
 			s.aiSuggestionBox(c, p)
 		}
+
+		if isTemplateURL(s.url) {
+			s.templateRow(c, p)
+		}
+	})
+}
+
+func (s *state) searchParamHintRow(c *ui.Context, p *theme.Palette, sp app.SearchParam) {
+	ui.Row(c.Key("search-param-hint")).FillWidth().AlignItems(ui.Center).Gap(8).Padding(0, 2).Children(func() {
+		ui.Text(c, locales.EditorSearchPageHint()).FontSize(12).TextColor(p.Muted).Grow(1).MinWidth(0).SingleLine()
+		btn := ui.ButtonBase(c.Key("make-template")).Height(22).PaddingX(8).Radius(6).
+			AlignItems(ui.Center).Background(p.AccentBg).TextColor(p.AccentText).
+			Cursor(ui.CursorPointer).Label(locales.EditorMakeTemplate())
+		if btn.Hovered() {
+			btn.Background(p.Accent.Alpha(0.22))
+		}
+		btn.Children(func() {
+			ui.Text(c, locales.EditorMakeTemplate()).FontSize(11.5).FontWeight(500).SingleLine()
+		})
+		if btn.Clicked() {
+			s.makeTemplate(sp)
+		}
+	})
+}
+
+func (s *state) templateRow(c *ui.Context, p *theme.Palette) {
+	ui.Column(c.Key("template-row")).FillWidth().Gap(8).Padding(10, 0, 0, 0).
+		BorderWidth(1, 0, 0, 0).BorderColor(p.LineSoft).Children(func() {
+		ui.Row(c).FillWidth().Wrap().Gap(6).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, locales.EditorKeywords()).FontSize(12).FontWeight(600).TextColor(p.Text2).Shrink(0)
+
+			for _, kw := range s.keywords {
+				kw := kw
+				pill := ui.Row(c.Key("kw-"+kw)).Height(24).Padding(0, 4, 0, 8).Radius(999).
+					AlignItems(ui.Center).Gap(3).Background(p.AccentBg)
+				pill.Children(func() {
+					ui.Text(c, kw).FontSize(12).FontWeight(500).TextColor(p.AccentText).SingleLine()
+					del := ui.ButtonBase(c.Key("kw-del-"+kw)).Size(16, 16).Radius(999).Center().
+						TextColor(p.AccentText.Alpha(0.75)).Cursor(ui.CursorPointer).
+						Label(locales.ActionClose()).Tooltip(locales.ActionClose())
+					if del.Hovered() {
+						del.Background(p.Accent.Alpha(0.18)).TextColor(p.AccentText)
+					}
+					del.Children(func() {
+						ui.Icon(c, theme.IconClose).FontSize(9.5)
+					})
+					if del.Clicked() {
+						s.removeKeyword(kw)
+					}
+				})
+			}
+
+			if s.isNewTemplate() && len(s.keywords) == 0 {
+				for _, sug := range app.SuggestKeywords(s.title, s.url) {
+					if s.a.KeywordOwner(sug, s.id) != nil {
+						continue
+					}
+					sug := sug
+					sb := ui.ButtonBase(c.Key("kw-sug-"+sug)).Height(24).PaddingX(8).Radius(999).
+						AlignItems(ui.Center).Gap(3).Border(1, p.Line).BorderStyle(ui.BorderDashed).
+						TextColor(p.Muted).Cursor(ui.CursorPointer).Label(sug)
+					if sb.Hovered() {
+						sb.Background(p.Hover).TextColor(p.Text)
+					}
+					sb.Children(func() {
+						ui.Icon(c, theme.IconPlus).FontSize(10)
+						ui.Text(c, sug).FontSize(12).SingleLine()
+					})
+					if sb.Clicked() {
+						s.tryAddKeyword(sug)
+					}
+				}
+			}
+
+			kwIn := ui.TextInput(c.Key(fmt.Sprintf("kw-in-%d", s.sessionSeq)), &s.keywordInput).
+				Bind(&s.keywordHandle).
+				Width(104).Height(24).Padding(2, 8).Radius(999).FontSize(12).
+				Placeholder(locales.EditorKeywordPlaceholder()).
+				Label(locales.EditorKeywords())
+			if kwIn.Changed() {
+				s.keywordErr = ""
+			}
+			if kwIn.Submitted() {
+				if s.tryAddKeyword(s.keywordInput) {
+					s.keywordInput = ""
+				}
+			}
+		})
+
+		if s.keywordErr != "" {
+			ui.Text(c, s.keywordErr).FontSize(11.5).TextColor(p.Danger).Wrap().Selectable()
+		}
+
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Justify(ui.SpaceBetween).Gap(8).Children(func() {
+			ui.Text(c, locales.EditorShowInSearch()).FontSize(12.5).TextColor(p.Text2).SingleLine()
+			ui.Switch(c.Key("show-in-search"), &s.showInSearch).Label(locales.EditorShowInSearch())
+		})
 	})
 }
 

@@ -2,8 +2,8 @@ package mode
 
 import (
 	"math"
-	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -33,31 +33,29 @@ const (
 )
 
 type notchMode struct {
-	app          *app.App
-	win          *mygo.Window
-	state        notchState
-	groupID      string
-	menuOpen     bool
-	query        string
-	searchInput  ui.Handle
-	hoverSince   time.Time
-	hoverBlocked bool
-	dragLeftAt   time.Time
-	openedAt     time.Time
-	tmplID       string
-	tmplQuery    string
-	tmplInput    ui.Handle
+	app                  *app.App
+	win                  *mygo.Window
+	state                notchState
+	groupID              string
+	menuOpen             bool
+	search               modeSearchState
+	searchInput          ui.Handle
+	hoverSince           time.Time
+	hoverBlocked         bool
+	dragLeftAt           time.Time
+	openedAt             time.Time
 	disp                 mygo.Display
 	hasNotch             bool
 	closingBoundsPending bool
 	unsubDisp            func()
-	list         ui.ListState
-	cache        struct {
+	list                 ui.ListState
+	cache                struct {
 		library  *model.Library
 		revision int64
 		groupID  string
 		query    string
 		items    []*model.Bookmark
+		engines  []*model.Bookmark
 	}
 }
 
@@ -99,9 +97,7 @@ func (n *notchMode) syncDisplay() {
 		n.hasNotch = false
 		n.state = notchClosed
 		n.menuOpen = false
-		n.query = ""
-		n.tmplID = ""
-		n.tmplQuery = ""
+		n.search.reset()
 		n.closingBoundsPending = false
 		if n.win != nil {
 			n.win.Hide()
@@ -117,7 +113,7 @@ func (n *notchMode) syncDisplay() {
 		}
 	} else if d.ID != n.disp.ID {
 		n.disp = d
-		x, y, w, h := n.boundsFor(n.state, n.currentRows())
+		x, y, w, h := n.boundsFor(n.state, n.currentContentHeight())
 		if n.win != nil {
 			n.win.SetBounds(mygo.Rectangle{X: x, Y: y, Width: w, Height: h})
 		}
@@ -187,7 +183,7 @@ func (n *notchMode) destroy() {
 	}
 }
 
-func (n *notchMode) boundsFor(st notchState, rows int) (x, y, w, h int) {
+func (n *notchMode) boundsFor(st notchState, contentH int) (x, y, w, h int) {
 	d := n.disp
 	if d.Bounds.Width <= 0 {
 		d = cursorDisplay()
@@ -196,7 +192,7 @@ func (n *notchMode) boundsFor(st notchState, rows int) (x, y, w, h int) {
 	switch st {
 	case notchOpen:
 		w = notchOpenWinW
-		h = n.panelHeight(rows) + 52
+		h = n.panelHeight(contentH) + 52
 	case notchDrop:
 		w = notchDropWinW
 		h = notchDropWinH
@@ -209,12 +205,8 @@ func (n *notchMode) boundsFor(st notchState, rows int) (x, y, w, h int) {
 	return x, y, w, h
 }
 
-func (n *notchMode) panelHeight(rows int) int {
-	height := 92 + rows*notchGridRowH
-	if n.tmplID != "" {
-		height += 48
-	}
-	return height
+func (n *notchMode) panelHeight(contentH int) int {
+	return 92 + contentH
 }
 
 func (n *notchMode) placeClosed(d mygo.Display) {
@@ -222,18 +214,19 @@ func (n *notchMode) placeClosed(d mygo.Display) {
 		return
 	}
 	n.disp = d
-	x, y, w, h := n.boundsFor(notchClosed, 1)
+	x, y, w, h := n.boundsFor(notchClosed, 0)
 	n.win.SetBounds(mygo.Rectangle{X: x, Y: y, Width: w, Height: h})
 }
 
-func (n *notchMode) currentItems(lib *model.Library) []*model.Bookmark {
-	q := strings.TrimSpace(n.query)
+func (n *notchMode) currentItems(lib *model.Library) ([]*model.Bookmark, []*model.Bookmark) {
+	q := n.search.trimmedQuery()
 	if n.cache.library == lib && n.cache.revision == lib.Revision && n.cache.groupID == n.groupID && n.cache.query == q {
-		return n.cache.items
+		return n.cache.items, n.cache.engines
 	}
-	var items []*model.Bookmark
+	var items, engines []*model.Bookmark
 	if q != "" {
 		items = searchBookmarks(n.app, q, "")
+		engines = n.app.Engines()
 	} else if len(lib.Groups) > 0 {
 		items = groupBookmarks(lib, activeGroup(lib, n.groupID))
 	}
@@ -242,14 +235,29 @@ func (n *notchMode) currentItems(lib *model.Library) []*model.Bookmark {
 	n.cache.groupID = n.groupID
 	n.cache.query = q
 	n.cache.items = items
-	return items
+	n.cache.engines = engines
+	return items, engines
 }
 
-func (n *notchMode) currentRows() int {
+func (n *notchMode) currentContentHeight() int {
 	lib := n.app.Store.Lib()
-	count := len(n.currentItems(lib))
-	rows := int(math.Ceil(float64(max(count, 1)) / 6.0))
-	return min(max(rows, 1), 3)
+	if templateBookmark(lib, n.search.lockedID) != nil {
+		return 64
+	}
+	q := n.search.trimmedQuery()
+	items, engines := n.currentItems(lib)
+	if q != "" {
+		if len(items) == 0 && len(engines) == 0 {
+			return notchGridRowH
+		}
+		h := ((len(items) + 5) / 6) * notchGridRowH
+		if len(engines) > 0 {
+			h += 28 + len(engines)*36
+		}
+		return min(max(h, notchGridRowH), 260)
+	}
+	rows := int(math.Ceil(float64(max(len(items), 1)) / 6.0))
+	return min(max(rows, 1), 3) * notchGridRowH
 }
 
 func (n *notchMode) setState(st notchState) {
@@ -272,9 +280,7 @@ func (n *notchMode) setState(st notchState) {
 	n.dragLeftAt = time.Time{}
 	if st == notchClosed {
 		n.menuOpen = false
-		n.query = ""
-		n.tmplID = ""
-		n.tmplQuery = ""
+		n.search.reset()
 		n.list.ScrollTo(0, ui.Start)
 	} else {
 		n.openedAt = time.Now()
@@ -286,8 +292,7 @@ func (n *notchMode) setState(st notchState) {
 		n.win.Hide()
 	}
 	if st != notchClosed {
-		rows := n.currentRows()
-		x, y, w, h := n.boundsFor(st, rows)
+		x, y, w, h := n.boundsFor(st, n.currentContentHeight())
 		n.win.SetBounds(mygo.Rectangle{X: x, Y: y, Width: w, Height: h})
 	}
 	if st == notchOpen {
@@ -327,7 +332,7 @@ func (n *notchMode) syncOpenHeight() {
 	if n.win == nil || n.state != notchOpen {
 		return
 	}
-	x, y, w, h := n.boundsFor(notchOpen, n.currentRows())
+	x, y, w, h := n.boundsFor(notchOpen, n.currentContentHeight())
 	b := n.win.Bounds()
 	if b.Width != w || b.Height != h || b.X != x || b.Y != y {
 		n.win.SetBounds(mygo.Rectangle{X: x, Y: y, Width: w, Height: h})
@@ -381,17 +386,20 @@ func (n *notchMode) view(c *ui.Context) {
 	c.Root().Background(ui.Transparent)
 
 	lib := n.app.Store.Lib()
-	if n.tmplID != "" && templateBookmark(lib, n.tmplID) == nil {
-		n.tmplID = ""
+	if n.search.lockedID != "" && templateBookmark(lib, n.search.lockedID) == nil {
+		n.search.unlockKeepQuery()
 	}
 
 	if !n.menuOpen && n.state == notchOpen && c.Shortcut(ui.Cmd, ui.KeyF) && !c.ShortcutRepeated() {
 		n.searchInput.SelectAll(c)
 	}
 
-	if !n.menuOpen && n.state == notchOpen && !n.searchInput.Focused(c) && !n.tmplInput.Focused(c) {
+	if !n.menuOpen && n.state == notchOpen && !n.searchInput.Focused(c) {
 		if ch, ok := widget.TypedSearchKey(c); ok {
-			n.query += ch
+			n.search.query += ch
+			n.search.selIdx = 0
+			n.search.caretPending = true
+			n.search.pendingCaret = utf8.RuneCountInString(n.search.query)
 			n.list.ScrollTo(0, ui.Start)
 			n.syncOpenHeight()
 			n.searchInput.Focus(c)
@@ -408,7 +416,7 @@ func (n *notchMode) view(c *ui.Context) {
 	switch n.state {
 	case notchOpen:
 		targetW = 640
-		targetH = float32(n.panelHeight(n.currentRows()))
+		targetH = float32(n.panelHeight(n.currentContentHeight()))
 		targetR = 30
 	case notchDrop:
 		targetW = 420
@@ -543,27 +551,20 @@ func (n *notchMode) view(c *ui.Context) {
 		})
 	})
 
-	// Evaluate Escape after TextInputBase so n.query is synced with text typed this frame.
+	// Evaluate Escape after TextInputBase so n.search.query is synced with text typed this frame.
 	if !n.menuOpen && !menuOpenThisFrame && n.state == notchOpen && c.Shortcut(0, ui.KeyEscape) {
-		if n.tmplID != "" {
-			n.tmplID = ""
-			n.tmplQuery = ""
-			n.syncOpenHeight()
-			n.searchInput.Focus(c)
-			if n.win != nil {
-				n.win.Invalidate()
-			}
-		} else if n.query != "" {
-			n.query = ""
-			n.list.ScrollTo(0, ui.Start)
-			n.syncOpenHeight()
-			n.searchInput.Focus(c)
-			if n.win != nil {
-				n.win.Invalidate()
-			}
-		} else {
-			n.collapse()
-		}
+		handleModeEscape(&n.search, &n.searchInput, c,
+			func() {
+				n.list.ScrollTo(0, ui.Start)
+				n.syncOpenHeight()
+			},
+			n.collapse,
+			func() {
+				if n.win != nil {
+					n.win.Invalidate()
+				}
+			},
+		)
 	}
 }
 
@@ -585,7 +586,11 @@ func (n *notchMode) renderOpen(c *ui.Context, p *theme.Palette, lib *model.Libra
 	body := ui.Column(c.Key("notch-body")).Fill().Padding(40, 20, 18, 20).Gap(14)
 	body.Children(func() {
 		defer widget.Toast(c, n.app, p, 12)
-		q := strings.TrimSpace(n.query)
+		onStateChange := func() {
+			n.list.ScrollTo(0, ui.Start)
+			n.syncOpenHeight()
+		}
+		var searchIn ui.Element
 		// Header: group pills + persistent search input + Open Main
 		ui.Row(c.Key("notch-hdr")).Height(30).AlignItems(ui.Center).Gap(6).Children(func() {
 			if len(lib.Groups) > 0 {
@@ -594,7 +599,7 @@ func (n *notchMode) renderOpen(c *ui.Context, p *theme.Palette, lib *model.Libra
 					ui.Row(c.Key("notch-tabs-row")).Gap(4).AlignItems(ui.Center).Children(func() {
 						for i := range lib.Groups {
 							g := &lib.Groups[i]
-							sel := g.ID == n.groupID && q == ""
+							sel := g.ID == n.groupID && n.search.trimmedQuery() == "" && n.search.lockedID == ""
 							pill := ui.ButtonBase(c.Key(g.ID)).Height(26).PaddingX(10).Radius(999).
 								MaxWidth(156).Shrink(0).Label(g.Name).Tooltip(g.Name).AlignItems(ui.Center)
 							widget.RevealSelectedTab(pill, sel, i)
@@ -612,12 +617,10 @@ func (n *notchMode) renderOpen(c *ui.Context, p *theme.Palette, lib *model.Libra
 								}
 							})
 							if pill.Clicked() {
-								n.query = ""
 								n.groupID = g.ID
 								n.app.SetModeGroup(model.ModeNotch, g.ID)
-								n.tmplID = ""
-								n.list.ScrollTo(0, ui.Start)
-								n.syncOpenHeight()
+								n.search.reset()
+								onStateChange()
 								n.searchInput.Focus(c)
 							}
 						}
@@ -627,48 +630,14 @@ func (n *notchMode) renderOpen(c *ui.Context, p *theme.Palette, lib *model.Libra
 				ui.Spacer(c)
 			}
 
-			focused := n.searchInput.Focused(c)
-			hasQ := n.query != ""
-			sbox := ui.Row(c.Key("notch-sbox")).Width(186).Shrink(0).Height(30).Padding(0, 6, 0, 10).Gap(6).Radius(9).
-				AlignItems(ui.Center)
-			if focused || hasQ {
-				sbox.Background(ui.RGBA(255, 255, 255, 0.16)).Border(1.5, ui.Hex("#e0875f"))
-			} else {
-				sbox.Background(ui.RGBA(255, 255, 255, 0.11)).Border(1.5, ui.RGBA(255, 255, 255, 0.08))
+			boxW := float32(186)
+			if templateBookmark(lib, n.search.lockedID) != nil {
+				boxW = 250
 			}
-			sbox.Children(func() {
-				ui.Icon(c, theme.IconSearch).FontSize(13).TextColor(ui.RGBA(234, 232, 225, 0.65)).Shrink(0)
-				in := ui.TextInputBase(c.Key("notch-q"), &n.query).Bind(&n.searchInput).Grow(1).MinWidth(0).
-					Label(locales.MainSearchPlaceholder()).Placeholder(locales.MainSearchPlaceholder()).TextColor(ui.Hex("#ffffff")).
-					PlaceholderColor(ui.RGBA(234, 232, 225, 0.60))
-				if in.Changed() {
-					n.list.ScrollTo(0, ui.Start)
-					n.syncOpenHeight()
-				}
-				if in.Submitted() {
-					hits := searchBookmarks(n.app, n.query, "")
-					if len(hits) > 0 {
-						n.openItem(hits[0])
-						if n.tmplID != "" {
-							n.tmplInput.Focus(c)
-						}
-					}
-				}
-				if hasQ {
-					clr := ui.ButtonBase(c.Key("notch-qclr")).Size(18, 18).Radius(5).Center().
-						TextColor(ui.RGBA(234, 232, 225, 0.70)).Label(locales.ActionClearSearch()).Tooltip(locales.ActionClearSearch()).Shrink(0)
-					if clr.Hovered() {
-						clr.Background(ui.RGBA(255, 255, 255, 0.14)).TextColor(ui.Hex("#ffffff"))
-					}
-					clr.Children(func() { ui.Icon(c, theme.IconClose).FontSize(11) })
-					if clr.Clicked() {
-						n.query = ""
-						n.list.ScrollTo(0, ui.Start)
-						n.syncOpenHeight()
-						n.searchInput.Focus(c)
-					}
-				}
-			})
+			searchIn = renderModeSearchBox(c, n.app, p, "notch", &n.search, &n.searchInput, modeSearchStyle{
+				darkNotch: true,
+				width:     boxW,
+			}, onStateChange)
 
 			mainBtn := notchIconBtn(c, "notch-main", theme.IconExternal, locales.MenuOpenMain())
 			if mainBtn.Clicked() {
@@ -679,24 +648,121 @@ func (n *notchMode) renderOpen(c *ui.Context, p *theme.Palette, lib *model.Libra
 			}
 		})
 
-		if b := templateBookmark(lib, n.tmplID); b != nil {
-			renderTemplateBar(c, n.app, b, &n.tmplQuery, &n.tmplInput, true, func() {
-				n.tmplID = ""
-				n.tmplQuery = ""
-				n.syncOpenHeight()
-				if n.state == notchOpen {
-					n.searchInput.Focus(c)
-				}
-			})
+		q := n.search.trimmedQuery()
+		locked := templateBookmark(lib, n.search.lockedID)
+		var items, engines []*model.Bookmark
+		if locked == nil {
+			items, engines = n.currentItems(lib)
+		}
+		var hits []*model.Bookmark
+		if locked == nil && q != "" {
+			hits = items
+		}
+		handleModeSearchNav(n.app, lib, &n.search, searchIn, hits, engines, onStateChange)
+		locked = templateBookmark(lib, n.search.lockedID)
+
+		openOrLock := func(b *model.Bookmark) {
+			if b.IsTemplate() {
+				n.search.lockEngine(b, "", "")
+				searchIn.ReplaceText(0, math.MaxInt, "")
+				onStateChange()
+				n.searchInput.Focus(c)
+				return
+			}
+			n.app.Open(b, "")
 		}
 
-		items := n.currentItems(lib)
+		if locked != nil {
+			ui.Column(c.Key("notch-locked-wrap")).FillWidth().Grow(1).Children(func() {
+				renderLockedEngineRow(c, n.app, p, "notch-locked", locked, q, 44, true, func() {
+					n.app.Open(locked, q)
+				})
+			})
+			return
+		}
+
+		const cols = 6
+		if q != "" {
+			type notchRowKind uint8
+			const (
+				notchRowGrid notchRowKind = iota
+				notchRowEngHeader
+				notchRowEngine
+			)
+			type notchSearchRow struct {
+				kind   notchRowKind
+				first  int
+				eng    *model.Bookmark
+				selIdx int
+			}
+			hitGridRows := (len(hits) + cols - 1) / cols
+			rows := make([]notchSearchRow, 0, hitGridRows+len(engines)+1)
+			for r := 0; r < hitGridRows; r++ {
+				rows = append(rows, notchSearchRow{kind: notchRowGrid, first: r * cols, selIdx: -1})
+			}
+			if len(engines) > 0 {
+				rows = append(rows, notchSearchRow{kind: notchRowEngHeader, selIdx: -1})
+				for j, eng := range engines {
+					rows = append(rows, notchSearchRow{kind: notchRowEngine, eng: eng, selIdx: len(hits) + j})
+				}
+			}
+			if len(rows) == 0 {
+				ui.Column(c.Key("notch-empty")).FillWidth().Grow(1).Center().Children(func() {
+					ui.Text(c, locales.MainNoMatchingBookmarks()).Font(theme.TitleFont(c)).FontSize(14).
+						TextColor(ui.RGBA(234, 232, 225, 0.72)).SingleLine()
+				})
+				return
+			}
+			if n.search.scrollMoved {
+				n.search.scrollMoved = false
+				rowIdx := n.search.selIdx / cols
+				if n.search.selIdx >= len(hits) {
+					rowIdx = hitGridRows + 1 + (n.search.selIdx - len(hits))
+				}
+				n.list.ScrollIntoView(rowIdx)
+			}
+			widget.AutoScrollbar(c, ui.List(c.Key("notch-search-list"), &n.list, len(rows))).Grow(1).MinHeight(0).FillWidth().Gap(6).
+				ItemKey(func(i int) any {
+					r := rows[i]
+					switch r.kind {
+					case notchRowEngHeader:
+						return "eng-hdr"
+					case notchRowEngine:
+						return "eng-" + r.eng.ID
+					default:
+						return "srow-" + hits[r.first].ID
+					}
+				}).
+				Rows(func(row ui.ListRow) {
+					c := row.Context
+					r := rows[row.Index]
+					switch r.kind {
+					case notchRowEngHeader:
+						top := float32(4)
+						if row.Index == 0 {
+							top = 0
+						}
+						renderEngineSectionHeader(c, p, "notch-eng-hdr", q, top, true)
+					case notchRowEngine:
+						selected := r.selIdx == n.search.selIdx
+						renderEngineRow(c, n.app, p, "notch-eng-"+r.eng.ID, r.eng, q, 34, selected, true, func() {
+							n.app.Open(r.eng, q)
+						})
+					default:
+						rowItems := hits[r.first:min(r.first+cols, len(hits))]
+						ui.Grid(c).Columns(cols).GapX(6).Children(func() {
+							for j, bm := range rowItems {
+								n.renderTile(c, bm, r.first+j == n.search.selIdx, menuOpen, openOrLock)
+							}
+						})
+					}
+				})
+			return
+		}
 
 		if len(items) == 0 {
 			msg := locales.MainNoBookmarks()
-			if q != "" {
-				msg = locales.MainNoMatchingBookmarks()
-			} else if len(lib.Groups) == 0 {
+			if len(lib.Groups) == 0 {
 				msg = locales.MainNoGroups()
 			}
 			ui.Column(c.Key("notch-empty")).FillWidth().Grow(1).Center().Children(func() {
@@ -705,7 +771,6 @@ func (n *notchMode) renderOpen(c *ui.Context, p *theme.Palette, lib *model.Libra
 			return
 		}
 
-		const cols = 6
 		numRows := (len(items) + cols - 1) / cols
 		widget.AutoScrollbar(c, ui.List(c.Key("notch-grid-list"), &n.list, numRows)).Grow(1).MinHeight(0).FillWidth().Gap(14).
 			ItemKey(func(i int) any { return "row-" + items[i*cols].ID }).
@@ -715,56 +780,43 @@ func (n *notchMode) renderOpen(c *ui.Context, p *theme.Palette, lib *model.Libra
 				rowItems := items[first:min(first+cols, len(items))]
 				ui.Grid(c).Columns(cols).GapX(6).Children(func() {
 					for _, bm := range rowItems {
-						b := bm
-						tile := ui.ButtonBase(c.Key("nt-" + b.ID)).Padding(0).Radius(12).
-							AlignItems(ui.Center).Label(b.Title)
-						titleH := ui.Local(tile, "titleH", func() ui.Handle { return ui.Handle{} })
-						if widget.TextTruncated(c, titleH, b.Title, 12, 0, 1) {
-							tile.Tooltip(b.Title)
-						}
-						if tile.Hovered() {
-							tile.Background(ui.RGBA(255, 255, 255, 0.08))
-						}
-						tile.Children(func() {
-							ui.Column(c).AlignItems(ui.Center).Gap(7).FillWidth().Children(func() {
-								sq := theme.Tile(c, b.Icon, n.app.Store.IconPath(b.Icon), 44).Radius(12).
-									Border(1, ui.RGBA(255, 255, 255, 0.08))
-								if tile.Hovered() {
-									sq.Translate(0, -2).Scale(1.04, 1.04)
-								}
-								ui.Text(c, b.Title).FontSize(12).TextColor(ui.Hex("#e8e6df")).SingleLine().Bind(titleH)
-							})
-						})
-						if tile.Clicked() {
-							n.openItem(b)
-							if n.tmplID != "" {
-								n.tmplInput.Focus(c)
-							}
-						}
-						bindBookmarkPopoverMenu(c, n.app, tile, b, modeMenuOptions(&theme.Dark), menuOpen,
-							func() {
-								n.openItem(b)
-								if n.tmplID != "" {
-									n.tmplInput.Focus(c)
-								}
-							},
-							n.collapse,
-							n.syncOpenHeight,
-						)
+						n.renderTile(c, bm, false, menuOpen, openOrLock)
 					}
 				})
 			})
 	})
 }
 
-func (n *notchMode) openItem(b *model.Bookmark) {
-	if b.IsTemplate() {
-		n.tmplID = b.ID
-		n.tmplQuery = ""
-		n.syncOpenHeight()
-		return
+func (n *notchMode) renderTile(c *ui.Context, b *model.Bookmark, selected bool, menuOpen *bool, openOrLock func(*model.Bookmark)) {
+	tile := ui.ButtonBase(c.Key("nt-" + b.ID)).Padding(0).Radius(12).
+		AlignItems(ui.Center).Label(b.Title)
+	titleH := ui.Local(tile, "titleH", func() ui.Handle { return ui.Handle{} })
+	if widget.TextTruncated(c, titleH, b.Title, 12, 0, 1) {
+		tile.Tooltip(b.Title)
 	}
-	n.app.Open(b, "")
+	if selected {
+		tile.Background(ui.RGBA(255, 255, 255, 0.16)).Border(1, ui.Hex("#e0875f"))
+	} else if tile.Hovered() {
+		tile.Background(ui.RGBA(255, 255, 255, 0.08))
+	}
+	tile.Children(func() {
+		ui.Column(c).AlignItems(ui.Center).Gap(7).FillWidth().Children(func() {
+			sq := theme.Tile(c, b.Icon, n.app.Store.IconPath(b.Icon), 44).Radius(12).
+				Border(1, ui.RGBA(255, 255, 255, 0.08))
+			if tile.Hovered() || selected {
+				sq.Translate(0, -2).Scale(1.04, 1.04)
+			}
+			ui.Text(c, b.Title).FontSize(12).TextColor(ui.Hex("#e8e6df")).SingleLine().Bind(titleH)
+		})
+	})
+	if tile.Clicked() {
+		openOrLock(b)
+	}
+	bindBookmarkPopoverMenu(c, n.app, tile, b, modeMenuOptions(&theme.Dark), menuOpen,
+		func() { openOrLock(b) },
+		n.collapse,
+		n.syncOpenHeight,
+	)
 }
 
 func notchIconBtn(c *ui.Context, key string, icon *ui.SVG, label string) ui.Element {

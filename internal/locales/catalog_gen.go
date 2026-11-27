@@ -1372,6 +1372,80 @@ func (msgs Messages) SearchFooterHint() string {
 	return Catalog.Format(msgs.locale, "searchFooterHint", nil)
 }
 
+// EngineSearchSection says "Search “{query}”"
+// in the language the app shows.
+func EngineSearchSection(query string) string { return In(i18n.Locale()).EngineSearchSection(query) }
+
+// EngineSearchSection says "Search “{query}”"
+// in the language of msgs.
+func (msgs Messages) EngineSearchSection(query string) string {
+	return Catalog.Format(msgs.locale, "engineSearchSection", map[string]any{"query": query})
+}
+
+// EngineRowWith says "Search with {engine}"
+// in the language the app shows.
+func EngineRowWith(engine string) string { return In(i18n.Locale()).EngineRowWith(engine) }
+
+// EngineRowWith says "Search with {engine}"
+// in the language of msgs.
+func (msgs Messages) EngineRowWith(engine string) string {
+	return Catalog.Format(msgs.locale, "engineRowWith", map[string]any{"engine": engine})
+}
+
+// EngineLockedPlaceholder says "Search {engine}…"
+// in the language the app shows.
+func EngineLockedPlaceholder(engine string) string {
+	return In(i18n.Locale()).EngineLockedPlaceholder(engine)
+}
+
+// EngineLockedPlaceholder says "Search {engine}…"
+// in the language of msgs.
+func (msgs Messages) EngineLockedPlaceholder(engine string) string {
+	return Catalog.Format(msgs.locale, "engineLockedPlaceholder", map[string]any{"engine": engine})
+}
+
+// EngineLockedTitle says "Search {engine} for “{query}”"
+// in the language the app shows.
+func EngineLockedTitle(engine string, query string) string {
+	return In(i18n.Locale()).EngineLockedTitle(engine, query)
+}
+
+// EngineLockedTitle says "Search {engine} for “{query}”"
+// in the language of msgs.
+func (msgs Messages) EngineLockedTitle(engine string, query string) string {
+	return Catalog.Format(msgs.locale, "engineLockedTitle", map[string]any{"engine": engine, "query": query})
+}
+
+// EngineUnlock says "Unlock"
+// in the language the app shows.
+func EngineUnlock() string { return In(i18n.Locale()).EngineUnlock() }
+
+// EngineUnlock says "Unlock"
+// in the language of msgs.
+func (msgs Messages) EngineUnlock() string {
+	return Catalog.Format(msgs.locale, "engineUnlock", nil)
+}
+
+// EngineTabLock says "Tab to lock"
+// in the language the app shows.
+func EngineTabLock() string { return In(i18n.Locale()).EngineTabLock() }
+
+// EngineTabLock says "Tab to lock"
+// in the language of msgs.
+func (msgs Messages) EngineTabLock() string {
+	return Catalog.Format(msgs.locale, "engineTabLock", nil)
+}
+
+// EngineGo says "Go"
+// in the language the app shows.
+func EngineGo() string { return In(i18n.Locale()).EngineGo() }
+
+// EngineGo says "Go"
+// in the language of msgs.
+func (msgs Messages) EngineGo() string {
+	return Catalog.Format(msgs.locale, "engineGo", nil)
+}
+
 // ModeNotchTitle says "Cooool Mark Notch"
 // in the language the app shows.
 func ModeNotchTitle() string { return In(i18n.Locale()).ModeNotchTitle() }
@@ -2104,6 +2178,66 @@ func (msgs Messages) EditorDiscardAndClose() string {
 	return Catalog.Format(msgs.locale, "editorDiscardAndClose", nil)
 }
 
+// EditorSearchPageHint says "Looks like a search results page"
+// in the language the app shows.
+func EditorSearchPageHint() string { return In(i18n.Locale()).EditorSearchPageHint() }
+
+// EditorSearchPageHint says "Looks like a search results page"
+// in the language of msgs.
+func (msgs Messages) EditorSearchPageHint() string {
+	return Catalog.Format(msgs.locale, "editorSearchPageHint", nil)
+}
+
+// EditorMakeTemplate says "Make template"
+// in the language the app shows.
+func EditorMakeTemplate() string { return In(i18n.Locale()).EditorMakeTemplate() }
+
+// EditorMakeTemplate says "Make template"
+// in the language of msgs.
+func (msgs Messages) EditorMakeTemplate() string {
+	return Catalog.Format(msgs.locale, "editorMakeTemplate", nil)
+}
+
+// EditorKeywords says "Keywords"
+// in the language the app shows.
+func EditorKeywords() string { return In(i18n.Locale()).EditorKeywords() }
+
+// EditorKeywords says "Keywords"
+// in the language of msgs.
+func (msgs Messages) EditorKeywords() string {
+	return Catalog.Format(msgs.locale, "editorKeywords", nil)
+}
+
+// EditorKeywordPlaceholder says "Add keyword"
+// in the language the app shows.
+func EditorKeywordPlaceholder() string { return In(i18n.Locale()).EditorKeywordPlaceholder() }
+
+// EditorKeywordPlaceholder says "Add keyword"
+// in the language of msgs.
+func (msgs Messages) EditorKeywordPlaceholder() string {
+	return Catalog.Format(msgs.locale, "editorKeywordPlaceholder", nil)
+}
+
+// EditorKeywordTaken says "Used by “{title}”"
+// in the language the app shows.
+func EditorKeywordTaken(title string) string { return In(i18n.Locale()).EditorKeywordTaken(title) }
+
+// EditorKeywordTaken says "Used by “{title}”"
+// in the language of msgs.
+func (msgs Messages) EditorKeywordTaken(title string) string {
+	return Catalog.Format(msgs.locale, "editorKeywordTaken", map[string]any{"title": title})
+}
+
+// EditorShowInSearch says "Show under searches"
+// in the language the app shows.
+func EditorShowInSearch() string { return In(i18n.Locale()).EditorShowInSearch() }
+
+// EditorShowInSearch says "Show under searches"
+// in the language of msgs.
+func (msgs Messages) EditorShowInSearch() string {
+	return Catalog.Format(msgs.locale, "editorShowInSearch", nil)
+}
+
 // SettingsTitle says "Settings"
 // in the language the app shows.
 func SettingsTitle() string { return In(i18n.Locale()).SettingsTitle() }
@@ -2142,6 +2276,26 @@ func SettingsPageData() string { return In(i18n.Locale()).SettingsPageData() }
 // in the language of msgs.
 func (msgs Messages) SettingsPageData() string {
 	return Catalog.Format(msgs.locale, "settingsPageData", nil)
+}
+
+// SettingsPageEngines says "Search engines"
+// in the language the app shows.
+func SettingsPageEngines() string { return In(i18n.Locale()).SettingsPageEngines() }
+
+// SettingsPageEngines says "Search engines"
+// in the language of msgs.
+func (msgs Messages) SettingsPageEngines() string {
+	return Catalog.Format(msgs.locale, "settingsPageEngines", nil)
+}
+
+// SettingsEnginesEmpty says "No search templates yet. Paste a search results page when adding a bookmark"
+// in the language the app shows.
+func SettingsEnginesEmpty() string { return In(i18n.Locale()).SettingsEnginesEmpty() }
+
+// SettingsEnginesEmpty says "No search templates yet. Paste a search results page when adding a bookmark"
+// in the language of msgs.
+func (msgs Messages) SettingsEnginesEmpty() string {
+	return Catalog.Format(msgs.locale, "settingsEnginesEmpty", nil)
 }
 
 // SettingsLanguage says "Language"

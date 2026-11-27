@@ -36,11 +36,13 @@ type mainState struct {
 	app *app.App
 
 	// Search state.
-	searchOpen  bool
-	query       string
-	searchScope string // "" = 全部, else groupID
-	searchIdx   int
-	searchList  ui.ListState
+	searchOpen     bool
+	query          string
+	lockedEngineID string
+	lockedKeyword  string
+	searchScope    string // "" = 全部, else groupID
+	searchIdx      int
+	searchList     ui.ListState
 	searchCache struct {
 		library  *model.Library
 		revision int64
@@ -213,10 +215,13 @@ func ShowSearch(a *app.App, q string) {
 	state.moveOpen = false
 	state.searchOpen = true
 	state.query = q
+	state.lockedEngineID = ""
+	state.lockedKeyword = ""
 	state.searchScope = ""
 	state.searchIdx = 0
 	state.tplBookmarkID = ""
 	state.tplQuery = ""
+	state.pendingSearchCaret = -1
 	state.searchList.ScrollTo(0, ui.Start)
 	Show(a)
 	if q != "" {
@@ -266,9 +271,11 @@ func (s *mainState) view(c *ui.Context) {
 
 	root := ui.Row(c).Fill().Background(p.Bg).AlignItems(ui.Stretch)
 	root.Children(func() {
-		s.buildSidebar(c, p)
+		if !s.searchOpen {
+			s.buildSidebar(c, p)
+		}
 
-		right := ui.Column(c).Grow(1).MinWidth(0).FillHeight().Background(p.Bg)
+		right := ui.Column(c.Key("main-right")).Grow(1).MinWidth(0).FillHeight().Background(p.Bg)
 		right.Children(func() {
 			if s.searchOpen {
 				s.buildSearchInline(c, p)
@@ -300,7 +307,7 @@ func (s *mainState) view(c *ui.Context) {
 	s.moveWasOpen = s.moveOpen
 	if s.refocusHome {
 		s.refocusHome = false
-		if !s.moveOpen && (s.searchOpen && !s.tplInputHandle.Focused(c) || !s.inputFocused(c)) {
+		if !s.moveOpen && (s.searchOpen || !s.inputFocused(c)) {
 			s.focusHome(c)
 		}
 	}
@@ -320,11 +327,14 @@ func (s *mainState) focusHome(c *ui.Context) {
 func (s *mainState) openSearch(c *ui.Context, initial string, selectAll bool) {
 	s.searchOpen = true
 	s.query = initial
+	s.lockedEngineID = ""
+	s.lockedKeyword = ""
 	s.searchScope = ""
 	s.searchIdx = 0
 	s.searchScrollMoved = false
 	s.tplBookmarkID = ""
 	s.tplQuery = ""
+	s.pendingSearchCaret = -1
 	s.searchList.ScrollTo(0, ui.Start)
 	if selectAll && initial != "" {
 		s.searchHandle.SelectAll(c)
@@ -343,11 +353,14 @@ func (s *mainState) closeSearch(c *ui.Context) {
 
 func (s *mainState) clearSearch() {
 	s.query = ""
+	s.lockedEngineID = ""
+	s.lockedKeyword = ""
 	s.searchScope = ""
 	s.searchIdx = 0
 	s.searchList.ScrollTo(0, ui.Start)
 	s.tplBookmarkID = ""
 	s.tplQuery = ""
+	s.pendingSearchCaret = -1
 }
 
 func (s *mainState) inputFocused(c *ui.Context) bool {
@@ -384,14 +397,8 @@ func (s *mainState) handleGlobalShortcuts(c *ui.Context) {
 		return
 	}
 	if s.searchOpen {
-		if c.Shortcut(0, ui.KeyEscape) && !s.searchHandle.Focused(c) && !s.tplInputHandle.Focused(c) {
-			if s.tplBookmarkID != "" {
-				s.tplBookmarkID = ""
-				s.tplQuery = ""
-				s.searchHandle.Focus(c)
-			} else {
-				s.closeSearch(c)
-			}
+		if c.Shortcut(0, ui.KeyEscape) && !s.searchHandle.Focused(c) {
+			s.handleSearchEscape(c)
 		}
 		return
 	}
@@ -686,7 +693,11 @@ func (s *mainState) drawExternalDropOverlay(c *ui.Context, p *theme.Palette) {
 			targetName += " / " + sub.Name
 		}
 	}
-	ui.Column(c).Absolute().Left(196).Top(58).Right(12).Bottom(12).
+	left := float32(196)
+	if s.searchOpen {
+		left = 12
+	}
+	ui.Column(c).Absolute().Left(left).Top(58).Right(12).Bottom(12).
 		Radius(12).Background(p.AccentBg.Alpha(0.92)).Border(2, p.Accent).BorderStyle(ui.BorderDashed).
 		Center().PassThrough().Children(func() {
 		ui.Text(c, locales.MainDropSaveTo(targetName)).FontSize(14).FontWeight(600).TextColor(p.AccentText)

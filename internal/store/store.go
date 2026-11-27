@@ -362,6 +362,7 @@ func sameBookmark(a, b model.Bookmark) bool {
 		a.Icon == b.Icon && a.GroupID == b.GroupID &&
 		a.SubID == b.SubID && a.Order == b.Order && a.CreatedAt.Equal(b.CreatedAt) &&
 		a.UpdatedAt.Equal(b.UpdatedAt) && a.Polished == b.Polished &&
+	slices.Equal(a.Keywords, b.Keywords) && a.SearchOff == b.SearchOff && a.SearchRank == b.SearchRank &&
 		(a.DeletedAt == nil && b.DeletedAt == nil || a.DeletedAt != nil && b.DeletedAt != nil && a.DeletedAt.Equal(*b.DeletedAt))
 }
 

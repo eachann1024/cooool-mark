@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -116,12 +117,14 @@ func Show(a *app.App, req app.EditorRequest) {
 }
 
 type editorSnapshot struct {
-	url     string
-	title   string
-	note    string
-	groupID string
-	subID   string
-	iconImg string
+	url       string
+	title     string
+	note      string
+	groupID   string
+	subID     string
+	iconImg   string
+	keywords  []string
+	searchOff bool
 }
 
 type state struct {
@@ -130,19 +133,24 @@ type state struct {
 	closed bool
 
 	// Bookmark fields
-	id          string
-	url         string
-	title       string
-	note        string
-	titleEdited bool
-	noteEdited  bool
-	noteDirty   bool
-	icon        model.Icon
-	groupID     string
-	subID       string
-	createdAt   time.Time
-	order       float64
-	polished    bool
+	id           string
+	url          string
+	title        string
+	note         string
+	titleEdited  bool
+	noteEdited   bool
+	noteDirty    bool
+	icon         model.Icon
+	groupID      string
+	subID        string
+	createdAt    time.Time
+	order        float64
+	polished     bool
+	keywords     []string
+	showInSearch bool
+	searchRank   float64
+	keywordInput string
+	keywordErr   string
 
 	// Draft protection & queued incoming requests
 	fromExternal   bool
@@ -181,10 +189,11 @@ type state struct {
 	saveErr string
 
 	// Focus handles
-	urlHandle    ui.Handle
-	titleHandle  ui.Handle
-	newSubHandle ui.Handle
-	needFocus    *ui.Handle
+	urlHandle     ui.Handle
+	titleHandle   ui.Handle
+	newSubHandle  ui.Handle
+	keywordHandle ui.Handle
+	needFocus     *ui.Handle
 }
 
 func newState(a *app.App) *state {
@@ -228,23 +237,29 @@ func (s *state) cancelAll() {
 }
 
 func (s *state) snapshot() editorSnapshot {
+	keywords, searchOff := s.templateFieldsForSave(strings.TrimSpace(s.url))
 	return editorSnapshot{
-		url:     strings.TrimSpace(s.url),
-		title:   strings.TrimSpace(s.title),
-		note:    strings.TrimSpace(s.note),
-		groupID: s.groupID,
-		subID:   s.subID,
-		iconImg: s.icon.Image,
+		url:       strings.TrimSpace(s.url),
+		title:     strings.TrimSpace(s.title),
+		note:      strings.TrimSpace(s.note),
+		groupID:   s.groupID,
+		subID:     s.subID,
+		iconImg:   s.icon.Image,
+		keywords:  keywords,
+		searchOff: searchOff,
 	}
 }
 
 func (s *state) isDirty() bool {
+	curKeywords, curSearchOff := s.templateFieldsForSave(strings.TrimSpace(s.url))
 	if strings.TrimSpace(s.url) != s.baseline.url ||
 		strings.TrimSpace(s.title) != s.baseline.title ||
 		strings.TrimSpace(s.note) != s.baseline.note ||
 		s.groupID != s.baseline.groupID ||
 		s.subID != s.baseline.subID ||
 		s.icon.Image != s.baseline.iconImg ||
+		!slices.Equal(curKeywords, s.baseline.keywords) ||
+		curSearchOff != s.baseline.searchOff ||
 		(s.addingSub && strings.TrimSpace(s.newSubName) != "") {
 		return true
 	}
@@ -304,6 +319,11 @@ func (s *state) load(req app.EditorRequest) {
 	s.fetchErr = ""
 	s.aiErr = ""
 	s.saveErr = ""
+	s.keywordInput = ""
+	s.keywordErr = ""
+	s.keywords = nil
+	s.showInSearch = true
+	s.searchRank = 0
 	s.lastFetchedURL = ""
 	s.aiSuggest = nil
 	s.aiDismissed = false
@@ -325,6 +345,11 @@ func (s *state) load(req app.EditorRequest) {
 			s.createdAt = b.CreatedAt
 			s.order = b.Order
 			s.polished = b.Polished
+			if b.IsTemplate() {
+				s.keywords = app.NormalizeKeywords(b.Keywords)
+				s.showInSearch = !b.SearchOff
+				s.searchRank = b.SearchRank
+			}
 			s.titleEdited = true
 			s.noteEdited = true
 			if s.icon.Letter == "" || s.icon.Color == "" {
@@ -414,6 +439,9 @@ func (s *state) close() {
 
 func (s *state) scheduleDebouncedFetch() {
 	s.saveErr = ""
+	if !isTemplateURL(s.url) {
+		s.keywordErr = ""
+	}
 	u := strings.TrimSpace(s.url)
 	if u == s.lastFetchedURL && s.fetchErr == "" {
 		return
@@ -809,17 +837,26 @@ func (s *state) doSave() bool {
 		icon = theme.DefaultIcon(title, u)
 	}
 
+	keywords, searchOff := s.templateFieldsForSave(u)
+	var searchRank float64
+	if isTemplateURL(u) {
+		searchRank = s.searchRank
+	}
+
 	bm := model.Bookmark{
-		ID:        s.id,
-		Title:     title,
-		URL:       u,
-		Note:      strings.TrimSpace(s.note),
-		Icon:      icon,
-		GroupID:   s.groupID,
-		SubID:     s.subID,
-		Order:     s.order,
-		CreatedAt: s.createdAt,
-		Polished:  s.polished,
+		ID:         s.id,
+		Title:      title,
+		URL:        u,
+		Note:       strings.TrimSpace(s.note),
+		Icon:       icon,
+		GroupID:    s.groupID,
+		SubID:      s.subID,
+		Order:      s.order,
+		CreatedAt:  s.createdAt,
+		Polished:   s.polished,
+		Keywords:   keywords,
+		SearchOff:  searchOff,
+		SearchRank: searchRank,
 	}
 	if isNew {
 		fetchedOK := !s.fetching && s.fetchErr == "" && s.lastFetchedURL != "" &&
@@ -905,6 +942,59 @@ func looksLikeURL(raw string) bool {
 		return err == nil && parsed.Host != "" && strings.Contains(parsed.Host, ".")
 	}
 	return strings.Contains(u, ".") && !strings.HasPrefix(u, ".") && !strings.HasSuffix(u, ".")
+}
+
+func isTemplateURL(raw string) bool {
+	return strings.Contains(raw, "{query}")
+}
+
+func (s *state) isNewTemplate() bool {
+	return s.id == "" || !isTemplateURL(s.baseline.url)
+}
+
+func (s *state) templateFieldsForSave(u string) ([]string, bool) {
+	if !isTemplateURL(u) {
+		return nil, false
+	}
+	return app.NormalizeKeywords(s.keywords), !s.showInSearch
+}
+
+func (s *state) makeTemplate(sp app.SearchParam) {
+	s.url = sp.Pre + "{query}" + sp.Post
+	s.saveErr = ""
+	s.keywordErr = ""
+}
+
+func (s *state) tryAddKeyword(raw string) bool {
+	norm := app.NormalizeKeywords([]string{raw})
+	if len(norm) == 0 {
+		s.keywordErr = ""
+		return true
+	}
+	kw := norm[0]
+	if slices.Contains(s.keywords, kw) {
+		s.keywordErr = ""
+		return true
+	}
+	if owner := s.a.KeywordOwner(kw, s.id); owner != nil {
+		s.keywordErr = locales.EditorKeywordTaken(keywordOwnerTitle(owner))
+		return false
+	}
+	s.keywords = app.NormalizeKeywords(append(s.keywords, kw))
+	s.keywordErr = ""
+	return true
+}
+
+func (s *state) removeKeyword(kw string) {
+	s.keywords = slices.DeleteFunc(s.keywords, func(k string) bool { return k == kw })
+	s.keywordErr = ""
+}
+
+func keywordOwnerTitle(b *model.Bookmark) string {
+	if t := strings.TrimSpace(b.Title); t != "" {
+		return t
+	}
+	return fallbackTitleFromURL(b.URL)
 }
 
 func fallbackTitleFromURL(raw string) string {

@@ -24,6 +24,7 @@ type pageMeta struct {
 
 var pages = []pageMeta{
 	{id: "general", label: locales.SettingsPageGeneral, icon: theme.IconSettings},
+	{id: "engines", label: locales.SettingsPageEngines, icon: theme.IconSearch},
 	{id: "ai", label: locales.SettingsPageAI, icon: theme.IconSparkle},
 	{id: "data", label: locales.SettingsPageData, icon: theme.IconCloud},
 }
@@ -532,6 +533,8 @@ func (s *state) content(c *ui.Context, p *theme.Palette, bar ui.TitleBar) {
 				switch s.page {
 				case "general":
 					s.pageGeneral(c, p)
+				case "engines":
+					s.pageEngines(c, p)
 				case "ai":
 					s.pageAI(c, p)
 				case "data":

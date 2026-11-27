@@ -1,8 +1,9 @@
 package mode
 
 import (
+	"math"
 	"runtime"
-	"strings"
+	"unicode/utf8"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -23,13 +24,9 @@ type trayMode struct {
 	groupID        string
 	menuOpen       bool
 	refocus        bool
-	query          string
+	search         modeSearchState
 	flyoutSearch   ui.Handle
 	detachedSearch ui.Handle
-	tmplID         string
-	tmplQuery      string
-	flyoutTmpl     ui.Handle
-	detachedTmpl   ui.Handle
 	flyoutList     ui.ListState
 	detachedList   ui.ListState
 	cache          struct {
@@ -38,6 +35,7 @@ type trayMode struct {
 		groupID  string
 		query    string
 		items    []*model.Bookmark
+		engines  []*model.Bookmark
 	}
 }
 
@@ -58,13 +56,6 @@ func (t *trayMode) refocusOnActivate(w *mygo.Window) {
 		t.refocus = true
 		w.Invalidate()
 	})
-}
-
-func (t *trayMode) tmplHandle(detached bool) *ui.Handle {
-	if detached {
-		return &t.detachedTmpl
-	}
-	return &t.flyoutTmpl
 }
 
 func syncTray(a *app.App, on bool) {
@@ -249,9 +240,7 @@ func (t *trayMode) showAttached() {
 	if t.tray == nil || t.flyout != nil {
 		return
 	}
-	t.query = ""
-	t.tmplID = ""
-	t.tmplQuery = ""
+	t.search.reset()
 	t.flyoutList.ScrollTo(0, ui.Start)
 	w := mygo.NewFlyout(mygo.FlyoutOptions{
 		Tray:         t.tray,
@@ -273,7 +262,7 @@ func (t *trayMode) showAttached() {
 		if t.flyout == w {
 			t.flyout = nil
 			if t.detached == nil {
-				t.query = ""
+				t.search.reset()
 			}
 		}
 	})
@@ -329,7 +318,7 @@ func (t *trayMode) tearOff() {
 	w.OnClosed(func() {
 		if t.detached == w {
 			t.detached = nil
-			t.query = ""
+			t.search.reset()
 		}
 	})
 }
@@ -363,17 +352,16 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 	c.Root().Background(ui.Transparent)
 
 	lib := t.app.Store.Lib()
-	if t.tmplID != "" && templateBookmark(lib, t.tmplID) == nil {
-		t.tmplID = ""
+	if t.search.lockedID != "" && templateBookmark(lib, t.search.lockedID) == nil {
+		t.search.unlockKeepQuery()
 	}
 
 	searchH := t.searchHandle(detached)
-	tmplH := t.tmplHandle(detached)
 
 	// Coming back to the panel from elsewhere puts the caret back in search.
 	if t.refocus {
 		t.refocus = false
-		if !t.menuOpen && !tmplH.Focused(c) {
+		if !t.menuOpen {
 			searchH.Focus(c)
 		}
 	}
@@ -382,9 +370,12 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 		searchH.SelectAll(c)
 	}
 
-	if !t.menuOpen && !searchH.Focused(c) && !tmplH.Focused(c) {
+	if !t.menuOpen && !searchH.Focused(c) {
 		if ch, ok := widget.TypedSearchKey(c); ok {
-			t.query += ch
+			t.search.query += ch
+			t.search.selIdx = 0
+			t.search.caretPending = true
+			t.search.pendingCaret = utf8.RuneCountInString(t.search.query)
 			t.flyoutList.ScrollTo(0, ui.Start)
 			t.detachedList.ScrollTo(0, ui.Start)
 			searchH.Focus(c)
@@ -443,14 +434,13 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 					ui.Row(c.Key("tray-tabs-row")).Gap(4).AlignItems(ui.Center).Children(func() {
 						for i := range lib.Groups {
 							g := &lib.Groups[i]
-							selected := g.ID == t.groupID && strings.TrimSpace(t.query) == ""
+							selected := g.ID == t.groupID && t.search.trimmedQuery() == "" && t.search.lockedID == ""
 							pill := widget.Pill(c.Key("tray-grp-"+g.ID), p, g.Name, selected)
 							widget.RevealSelectedTab(pill, selected, i)
 							if pill.Clicked() {
 								t.groupID = g.ID
 								t.app.SetModeGroup(model.ModeTray, g.ID)
-								t.query = ""
-								t.tmplID = ""
+								t.search.reset()
 								t.flyoutList.ScrollTo(0, ui.Start)
 								t.detachedList.ScrollTo(0, ui.Start)
 								searchH.Focus(c)
@@ -489,50 +479,157 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 			}
 		})
 
+		scrollTop := func() {
+			t.flyoutList.ScrollTo(0, ui.Start)
+			t.detachedList.ScrollTo(0, ui.Start)
+		}
 		fieldBg := p.Text.Alpha(0.06)
 		if !c.Vibrancy() || reduceTrans {
 			fieldBg = p.Field
 		}
+		var searchIn ui.Element
 		ui.Row(c.Key("tray-srow")).Padding(0, 10, 8, 10).AlignItems(ui.Center).
 			BorderWidth(0, 0, 1, 0).BorderColor(p.LineSoft).Children(func() {
-			renderModeSearchBox(c, p, "tray", &t.query, searchH, fieldBg,
-				func() {
-					t.flyoutList.ScrollTo(0, ui.Start)
-					t.detachedList.ScrollTo(0, ui.Start)
-				},
-				func() {
-					hits := searchBookmarks(t.app, t.query, "")
-					if len(hits) > 0 {
-						t.openItem(hits[0])
-						if t.tmplID != "" {
-							tmplH.Focus(c)
-						}
-					}
-				},
-			)
+			searchIn = renderModeSearchBox(c, t.app, p, "tray", &t.search, searchH, modeSearchStyle{fieldBg: fieldBg}, scrollTop)
 		})
 
-		q := strings.TrimSpace(t.query)
+		q := t.search.trimmedQuery()
+		locked := templateBookmark(lib, t.search.lockedID)
+		var items, engines []*model.Bookmark
+		if locked == nil {
+			items, engines = t.currentItems(lib, q)
+		}
+		var hits []*model.Bookmark
+		if locked == nil && q != "" {
+			hits = items
+		}
+		handleModeSearchNav(t.app, lib, &t.search, searchIn, hits, engines, scrollTop)
+		locked = templateBookmark(lib, t.search.lockedID)
 
-		if b := templateBookmark(lib, t.tmplID); b != nil {
-			ui.Box(c.Key("tray-tmpl-wrap")).Padding(6, 10, 6, 10).Children(func() {
-				renderTemplateBar(c, t.app, b, &t.tmplQuery, tmplH, p.Dark, func() {
-					t.tmplID = ""
-					t.tmplQuery = ""
-					searchH.Focus(c)
-				})
-			})
+		openOrLock := func(b *model.Bookmark) {
+			if b.IsTemplate() {
+				t.search.lockEngine(b, "", "")
+				searchIn.ReplaceText(0, math.MaxInt, "")
+				scrollTop()
+				searchH.Focus(c)
+				return
+			}
+			t.app.Open(b, "")
 		}
 
-		// Bookmark list
-		items := t.currentItems(lib, q)
-		if len(items) == 0 {
-			msg := locales.MainNoBookmarks()
-			if q != "" {
-				msg = locales.MainNoMatchingBookmarks()
+		// Body: locked engine preview, search hits + engines, or browse list
+		if locked != nil {
+			ui.Column(c.Key("tray-locked-wrap")).Grow(1).Padding(4, 6).Children(func() {
+				renderLockedEngineRow(c, t.app, p, "tray-locked", locked, q, 46, false, func() {
+					t.app.Open(locked, q)
+				})
+			})
+		} else if q != "" {
+			type trayRowKind uint8
+			const (
+				trayRowBookmark trayRowKind = iota
+				trayRowEngHeader
+				trayRowEngine
+			)
+			type trayRow struct {
+				kind   trayRowKind
+				b      *model.Bookmark
+				selIdx int
 			}
+			rows := make([]trayRow, 0, len(hits)+len(engines)+1)
+			for i, b := range hits {
+				rows = append(rows, trayRow{kind: trayRowBookmark, b: b, selIdx: i})
+			}
+			if len(engines) > 0 {
+				rows = append(rows, trayRow{kind: trayRowEngHeader, selIdx: -1})
+				for j, eng := range engines {
+					rows = append(rows, trayRow{kind: trayRowEngine, b: eng, selIdx: len(hits) + j})
+				}
+			}
+			if len(rows) == 0 {
+				ui.Column(c.Key("tray-empty")).Grow(1).Center().Padding(60, 16).Children(func() {
+					ui.Text(c, locales.MainNoMatchingBookmarks()).Font(theme.TitleFont(c)).FontSize(15).TextColor(p.Text2).SingleLine()
+				})
+			} else {
+				listState := &t.flyoutList
+				if detached {
+					listState = &t.detachedList
+				}
+				if t.search.scrollMoved {
+					t.search.scrollMoved = false
+					rowIdx := t.search.selIdx
+					if rowIdx >= len(hits) {
+						rowIdx++ // account for engine section header
+					}
+					listState.ScrollIntoView(rowIdx)
+				}
+				widget.AutoScrollbar(c, ui.List(c.Key("tray-search-list"), listState, len(rows))).Grow(1).MinHeight(0).FillWidth().
+					Padding(2, 6).Gap(1).
+					ItemKey(func(i int) any {
+						r := rows[i]
+						switch r.kind {
+						case trayRowEngHeader:
+							return "eng-hdr"
+						case trayRowEngine:
+							return "eng-" + r.b.ID
+						default:
+							return "bm-" + r.b.ID
+						}
+					}).
+					Rows(func(row ui.ListRow) {
+						c := row.Context
+						r := rows[row.Index]
+						switch r.kind {
+						case trayRowEngHeader:
+							top := float32(10)
+							if row.Index == 0 {
+								top = 4
+							}
+							renderEngineSectionHeader(c, p, "tray-eng-hdr", q, top, false)
+						case trayRowEngine:
+							selected := r.selIdx == t.search.selIdx
+							renderEngineRow(c, t.app, p, "tray-eng-"+r.b.ID, r.b, q, 36, selected, false, func() {
+								t.app.Open(r.b, q)
+							})
+						default:
+							b := r.b
+							selected := r.selIdx == t.search.selIdx
+							btn := ui.ButtonBase(c.Key("tr-" + b.ID)).Height(36).PaddingX(8).Gap(10).
+								Radius(8).Justify(ui.Start).AlignItems(ui.Center).Label(b.Title)
+							titleH := ui.Local(btn, "titleH", func() ui.Handle { return ui.Handle{} })
+							if widget.TextTruncated(c, titleH, b.Title, 0, 0, 1) {
+								btn.Tooltip(b.Title)
+							}
+							if selected {
+								btn.Background(p.RowSel)
+							} else if btn.Hovered() {
+								btn.Background(p.Hover)
+							}
+							btn.Children(func() {
+								theme.Tile(c, b.Icon, t.app.Store.IconPath(b.Icon), 22).Radius(6)
+								ui.Text(c, b.Title).Grow(1).MinWidth(0).TextColor(p.Text).SingleLine().Bind(titleH)
+								if selected && b.IsTemplate() {
+									ui.Text(c, locales.EngineTabLock()).FontSize(11).TextColor(p.Muted).SingleLine().Shrink(0)
+								}
+							})
+							if btn.Clicked() {
+								openOrLock(b)
+							}
+							bindBookmarkPopoverMenu(c, t.app, btn, b, modeMenuOptions(p), &menuOpenThisFrame,
+								func() { openOrLock(b) },
+								func() {
+									if !detached {
+										t.hideAttached()
+									}
+								},
+								nil,
+							)
+						}
+					})
+			}
+		} else if len(items) == 0 {
 			ui.Column(c.Key("tray-empty")).Grow(1).Center().Padding(60, 16).Children(func() {
-				ui.Text(c, msg).Font(theme.TitleFont(c)).FontSize(15).TextColor(p.Text2).SingleLine()
+				ui.Text(c, locales.MainNoBookmarks()).Font(theme.TitleFont(c)).FontSize(15).TextColor(p.Text2).SingleLine()
 			})
 		} else {
 			listState := &t.flyoutList
@@ -559,18 +656,10 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 						ui.Text(c, b.Title).Grow(1).MinWidth(0).TextColor(p.Text).SingleLine().Bind(titleH)
 					})
 					if btn.Clicked() {
-						t.openItem(b)
-						if t.tmplID != "" {
-							tmplH.Focus(c)
-						}
+						openOrLock(b)
 					}
 					bindBookmarkPopoverMenu(c, t.app, btn, b, modeMenuOptions(p), &menuOpenThisFrame,
-						func() {
-							t.openItem(b)
-							if t.tmplID != "" {
-								tmplH.Focus(c)
-							}
-						},
+						func() { openOrLock(b) },
 						func() {
 							if !detached {
 								t.hideAttached()
@@ -617,7 +706,7 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 		widget.Toast(c, t.app, p, 52)
 	})
 
-	// Evaluate Escape after TextInputBase so t.query is synced with text typed this frame.
+	// Evaluate Escape after TextInputBase so t.search.query is synced with text typed this frame.
 	if !t.menuOpen && !menuOpenThisFrame && c.Shortcut(0, ui.KeyEscape) {
 		inv := func() {
 			if detached && t.detached != nil {
@@ -626,30 +715,25 @@ func (t *trayMode) view(c *ui.Context, detached bool) {
 				t.flyout.Invalidate()
 			}
 		}
-		if t.tmplID != "" {
-			t.tmplID = ""
-			t.tmplQuery = ""
-			searchH.Focus(c)
-			inv()
-		} else if t.query != "" {
-			t.query = ""
+		handleModeEscape(&t.search, searchH, c, func() {
 			t.flyoutList.ScrollTo(0, ui.Start)
 			t.detachedList.ScrollTo(0, ui.Start)
-			searchH.Focus(c)
-			inv()
-		} else if !detached {
-			t.hideAttached()
-		}
+		}, func() {
+			if !detached {
+				t.hideAttached()
+			}
+		}, inv)
 	}
 }
 
-func (t *trayMode) currentItems(lib *model.Library, q string) []*model.Bookmark {
+func (t *trayMode) currentItems(lib *model.Library, q string) ([]*model.Bookmark, []*model.Bookmark) {
 	if t.cache.library == lib && t.cache.revision == lib.Revision && t.cache.groupID == t.groupID && t.cache.query == q {
-		return t.cache.items
+		return t.cache.items, t.cache.engines
 	}
-	var items []*model.Bookmark
+	var items, engines []*model.Bookmark
 	if q != "" {
 		items = searchBookmarks(t.app, q, "")
+		engines = t.app.Engines()
 	} else if len(lib.Groups) > 0 {
 		items = groupBookmarks(lib, activeGroup(lib, t.groupID))
 	}
@@ -658,14 +742,6 @@ func (t *trayMode) currentItems(lib *model.Library, q string) []*model.Bookmark 
 	t.cache.groupID = t.groupID
 	t.cache.query = q
 	t.cache.items = items
-	return items
-}
-
-func (t *trayMode) openItem(b *model.Bookmark) {
-	if b.IsTemplate() {
-		t.tmplID = b.ID
-		t.tmplQuery = ""
-		return
-	}
-	t.app.Open(b, "")
+	t.cache.engines = engines
+	return items, engines
 }

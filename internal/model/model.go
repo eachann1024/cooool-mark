@@ -51,6 +51,13 @@ type Bookmark struct {
 	DeletedAt *time.Time `json:"deletedAt,omitempty"`
 	// Polished is set once the AI pass filled title/note.
 	Polished bool `json:"polished,omitempty"`
+	// Keywords are a template's trigger words: typing "<kw> " in any search
+	// locks that engine (lower case, no spaces, unique across the library).
+	Keywords []string `json:"keywords,omitempty"`
+	// SearchOff hides a template from the engine rows under every search.
+	SearchOff bool `json:"searchOff,omitempty"`
+	// SearchRank orders those engine rows (ascending; 0 sorts after ranked ones).
+	SearchRank float64 `json:"searchRank,omitempty"`
 }
 
 // IsTemplate reports whether the URL takes a query.
