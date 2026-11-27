@@ -13,6 +13,10 @@ type nsEdgeInsets struct {
 	Top, Left, Bottom, Right float64
 }
 
+type nsRect struct {
+	X, Y, W, H float64
+}
+
 var (
 	notchStyleMask = objc.RegisterName("styleMask")
 	notchSetStyle  = objc.RegisterName("setStyleMask:")
@@ -28,7 +32,11 @@ var (
 	selRespondsTo     objc.SEL
 	selSafeAreaInsets objc.SEL
 	nsScreenNumKey    objc.ID
+	selAuxLeft        objc.SEL
+	selAuxRight       objc.SEL
+	selFrame          objc.SEL
 	msgEdgeInsets     func(objc.ID, objc.SEL) nsEdgeInsets
+	msgRect           func(objc.ID, objc.SEL) nsRect
 )
 
 func initNotchScreen() {
@@ -48,6 +56,10 @@ func initNotchScreen() {
 			}
 		}
 		purego.RegisterFunc(&msgEdgeInsets, stret)
+		purego.RegisterFunc(&msgRect, stret)
+		selAuxLeft = objc.RegisterName("auxiliaryTopLeftArea")
+		selAuxRight = objc.RegisterName("auxiliaryTopRightArea")
+		selFrame = objc.RegisterName("frame")
 		selScreens = objc.RegisterName("screens")
 		selCount = objc.RegisterName("count")
 		selObjectAtIndex = objc.RegisterName("objectAtIndex:")
@@ -62,22 +74,28 @@ func initNotchScreen() {
 	})
 }
 
-// displayHasNotch reports whether d is a physical macOS display with a notch (camera housing).
 func displayHasNotch(d mygo.Display) bool {
+	_, _, ok := displayNotchSize(d)
+	return ok
+}
+
+// displayNotchSize returns the camera housing size in points for the display's
+// current scaled resolution; ok is false when d has no notch.
+func displayNotchSize(d mygo.Display) (w, h float64, ok bool) {
 	if d.ID == 0 {
-		return false
+		return 0, 0, false
 	}
 	initNotchScreen()
 	if msgEdgeInsets == nil || nsScreenNumKey == 0 {
-		return false
+		return 0, 0, false
 	}
 	cls := objc.GetClass("NSScreen")
 	if cls == 0 {
-		return false
+		return 0, 0, false
 	}
 	screens := objc.ID(cls).Send(selScreens)
 	if screens == 0 {
-		return false
+		return 0, 0, false
 	}
 	count := int(screens.Send(selCount))
 	for i := 0; i < count; i++ {
@@ -98,13 +116,29 @@ func displayHasNotch(d mygo.Display) bool {
 			continue
 		}
 		if s.Send(selRespondsTo, uintptr(selSafeAreaInsets)) == 0 {
-			return false
+			return 0, 0, false
 		}
 		insets := msgEdgeInsets(s, selSafeAreaInsets)
-		return insets.Top > 0
+		if insets.Top <= 0 {
+			return 0, 0, false
+		}
+		h = insets.Top
+		w = 0
+		if s.Send(selRespondsTo, uintptr(selAuxLeft)) != 0 && s.Send(selRespondsTo, uintptr(selAuxRight)) != 0 {
+			frame := msgRect(s, selFrame)
+			l := msgRect(s, selAuxLeft)
+			r := msgRect(s, selAuxRight)
+			w = frame.W - l.W - r.W
+		}
+		if w <= 0 || w > 400 {
+			w = 200
+		}
+		return w, h, true
 	}
-	return false
+	return 0, 0, false
 }
+
+
 
 func prepareNotchWindow(w *mygo.Window) {
 	const titled = 1 << 0

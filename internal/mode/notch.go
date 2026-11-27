@@ -24,8 +24,8 @@ const (
 )
 
 const (
-	notchClosedWinW = 236
-	notchClosedWinH = 40
+	notchClosedPadW = 36
+	notchClosedPadH = 8
 	notchDropWinW   = 480
 	notchDropWinH   = 180
 	notchOpenWinW   = 740
@@ -197,12 +197,22 @@ func (n *notchMode) boundsFor(st notchState, contentH int) (x, y, w, h int) {
 		w = notchDropWinW
 		h = notchDropWinH
 	default:
-		w = notchClosedWinW
-		h = notchClosedWinH
+		cw, ch := n.closedSize()
+		w = int(math.Ceil(float64(cw))) + notchClosedPadW
+		h = int(math.Ceil(float64(ch))) + notchClosedPadH
 	}
 	x = d.Bounds.X + (d.Bounds.Width-w)/2
 	y = d.Bounds.Y
 	return x, y, w, h
+}
+
+// closedSize is the real camera housing size in points, which shrinks or grows
+// with the display's scaled resolution.
+func (n *notchMode) closedSize() (float32, float32) {
+	if w, h, ok := displayNotchSize(n.disp); ok {
+		return float32(w), float32(h)
+	}
+	return 200, 32
 }
 
 func (n *notchMode) panelHeight(contentH int) int {
@@ -423,10 +433,10 @@ func (n *notchMode) view(c *ui.Context) {
 		targetH = 128
 		targetR = 26
 	default:
-		targetW = 200
-		targetH = 32
-		targetR = 14
+		targetW, targetH = n.closedSize()
+		targetR = min(14, targetH*0.4)
 	}
+	trigW, trigH := n.closedSize()
 
 	// Root drop receiver so dragging a URL anywhere onto the notch triggers drop mode.
 	dropOpts := urlDropOptions()
@@ -510,13 +520,13 @@ func (n *notchMode) view(c *ui.Context) {
 		}
 
 		panel.Children(func() {
-			// Top notch trigger strip (200x32 centered at top)
+			// Top notch trigger strip, same size as the real notch
 			trigLabel := locales.ActionExpandBookmarks()
 			if n.state == notchOpen {
 				trigLabel = locales.ActionCollapseBookmarks()
 			}
 			trigger := ui.ButtonBase(c.Key("notch-trigger")).Absolute().
-				Left((animW-200)/2).Top(0).Size(200, 32).FocusRing(false)
+				Left((animW-trigW)/2).Top(0).Size(trigW, trigH).FocusRing(false)
 			trigger.Label(trigLabel).Tooltip(trigLabel)
 			if trigger.Clicked() {
 				if n.state == notchOpen {
