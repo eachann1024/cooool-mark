@@ -918,11 +918,8 @@ func validateSaveURL(raw string) (string, string) {
 	if strings.ContainsAny(u, " \t\n\r") {
 		return "", locales.EditorErrURLSpace()
 	}
+	u = model.EnsureURLScheme(u)
 	low := strings.ToLower(u)
-	if !strings.Contains(u, "://") && !strings.HasPrefix(low, "about:") && !strings.HasPrefix(low, "file:") && !strings.HasPrefix(low, "javascript:") {
-		u = "https://" + u
-		low = strings.ToLower(u)
-	}
 	if strings.HasPrefix(low, "http://") || strings.HasPrefix(low, "https://") {
 		parsed, err := url.Parse(u)
 		if err != nil || parsed.Host == "" {
@@ -998,7 +995,7 @@ func keywordOwnerTitle(b *model.Bookmark) string {
 }
 
 func fallbackTitleFromURL(raw string) string {
-	if u, err := url.Parse(raw); err == nil && u.Host != "" {
+	if u, err := url.Parse(model.EnsureURLScheme(raw)); err == nil && u.Host != "" {
 		return strings.TrimPrefix(u.Host, "www.")
 	}
 	return raw

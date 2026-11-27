@@ -190,6 +190,64 @@ func NormalizeURL(u string) string {
 	return strings.TrimSuffix(u, "/")
 }
 
+// HasURLScheme reports whether raw begins with an explicit URI scheme
+// (either "scheme://..." or a known non-authority scheme like "mailto:").
+func HasURLScheme(raw string) bool {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return false
+	}
+	if idx := strings.Index(s, "://"); idx > 0 && isValidScheme(s[:idx]) {
+		return true
+	}
+	low := strings.ToLower(s)
+	for _, prefix := range []string{
+		"about:", "file:", "javascript:", "mailto:", "tel:", "sms:", "facetime:", "data:", "blob:", "magnet:",
+	} {
+		if strings.HasPrefix(low, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// EnsureURLScheme trims raw and prepends https:// (or https: for //) when it
+// has no explicit URI scheme.
+func EnsureURLScheme(raw string) string {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return ""
+	}
+	if strings.HasPrefix(s, "//") {
+		return "https:" + s
+	}
+	if HasURLScheme(s) {
+		return s
+	}
+	return "https://" + s
+}
+
+func isValidScheme(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		isAlpha := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+		isDigit := c >= '0' && c <= '9'
+		if i == 0 {
+			if !isAlpha {
+				return false
+			}
+			continue
+		}
+		if !isAlpha && !isDigit && c != '+' && c != '-' && c != '.' {
+			return false
+		}
+	}
+	return true
+}
+
 func sortBookmarks(bs []*Bookmark) {
 	slices.SortStableFunc(bs, func(a, b *Bookmark) int {
 		return cmp.Compare(a.Order, b.Order)

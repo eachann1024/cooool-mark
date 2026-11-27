@@ -152,7 +152,7 @@ func (importer) Apply(lib *model.Library, plan *app.ImportPlan, opts app.ImportO
 	filterItems := func(items []model.Bookmark) []model.Bookmark {
 		var out []model.Bookmark
 		for _, it := range items {
-			u := strings.TrimSpace(it.URL)
+			u := model.EnsureURLScheme(it.URL)
 			if u == "" {
 				continue
 			}

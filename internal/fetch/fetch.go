@@ -23,6 +23,7 @@ import (
 
 	"cooool-mark/internal/app"
 	"cooool-mark/internal/locales"
+	"cooool-mark/internal/model"
 )
 
 const (
@@ -146,12 +147,9 @@ func (f *fetcher) Fetch(ctx context.Context, rawURL string) (app.PageMeta, error
 }
 
 func normalizeFetchURL(raw string) (string, error) {
-	s := strings.TrimSpace(raw)
+	s := model.EnsureURLScheme(raw)
 	if s == "" {
 		return "", errors.New("empty url")
-	}
-	if !strings.Contains(s, "://") {
-		s = "https://" + s
 	}
 	u, err := url.Parse(s)
 	if err != nil {

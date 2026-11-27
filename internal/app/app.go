@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -17,6 +19,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo"
+	"golang.org/x/net/idna"
 
 	"cooool-mark/internal/locales"
 	"cooool-mark/internal/model"
@@ -1169,12 +1172,19 @@ func (a *App) ToastAction() {
 // Open opens a bookmark in the default browser. A template needs
 // its query (call with the query; "" opens the URL with {query} removed).
 func (a *App) Open(b *model.Bookmark, query string) bool {
-	url := b.URL
-	if b.IsTemplate() {
-		url = strings.ReplaceAll(url, "{query}", urlQueryEscape(query))
+	if b == nil {
+		return false
 	}
-	if err := a.OpenURL(url); err != nil {
-		a.SayErr(locales.ToastOpenFailed(b.Title), locales.ActionRetry(), func() { a.Open(b, query) })
+	target := b.URL
+	if b.IsTemplate() {
+		target = strings.ReplaceAll(target, "{query}", urlQueryEscape(query))
+	}
+	if err := a.OpenURL(target); err != nil {
+		title := strings.TrimSpace(b.Title)
+		if title == "" {
+			title = b.URL
+		}
+		a.SayErr(locales.ToastOpenFailed(title), locales.ActionRetry(), func() { a.Open(b, query) })
 		return false
 	}
 	if a.Win.HideSummoned != nil {
@@ -1184,8 +1194,87 @@ func (a *App) Open(b *model.Bookmark, query string) bool {
 }
 
 // OpenURL opens a URL in the system default browser.
-func (a *App) OpenURL(url string) error {
-	return mygo.Shell.OpenExternal(url)
+func (a *App) OpenURL(raw string) error {
+	target, err := prepareOpenURL(raw)
+	if err != nil {
+		return err
+	}
+	return mygo.Shell.OpenExternal(target)
+}
+
+func prepareOpenURL(raw string) (string, error) {
+	s := model.EnsureURLScheme(raw)
+	if s == "" {
+		return "", errors.New("empty url")
+	}
+	s = strings.NewReplacer("\r", "", "\n", "", "\t", "%09", " ", "%20").Replace(s)
+	u, err := url.Parse(s)
+	if err != nil || u.Scheme == "" {
+		return "", fmt.Errorf("invalid url %q", raw)
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https":
+		if u.Host == "" {
+			return "", fmt.Errorf("missing host in url %q", raw)
+		}
+		if asciiHost, err := encodeHostASCII(u.Host); err == nil && asciiHost != "" && asciiHost != u.Host {
+			u.Host = asciiHost
+			s = u.String()
+		}
+	case "file":
+		if u.Path == "" && u.Host == "" {
+			return "", fmt.Errorf("invalid file url %q", raw)
+		}
+	case "about", "javascript", "data", "blob":
+		return "", fmt.Errorf("unsupported external scheme %q", u.Scheme)
+	}
+	return percentEncodeNonASCII(s), nil
+}
+
+func encodeHostASCII(hostPort string) (string, error) {
+	hasHigh := false
+	for i := 0; i < len(hostPort); i++ {
+		if hostPort[i] >= 0x80 {
+			hasHigh = true
+			break
+		}
+	}
+	if !hasHigh {
+		return hostPort, nil
+	}
+	host, port, err := net.SplitHostPort(hostPort)
+	if err != nil {
+		return idna.Lookup.ToASCII(hostPort)
+	}
+	ascii, err := idna.Lookup.ToASCII(host)
+	if err != nil {
+		return "", err
+	}
+	return net.JoinHostPort(ascii, port), nil
+}
+
+func percentEncodeNonASCII(s string) string {
+	hasHigh := false
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 || s[i] < 0x20 || s[i] == 0x7f {
+			hasHigh = true
+			break
+		}
+	}
+	if !hasHigh {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s) + 16)
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 0x80 || c < 0x20 || c == 0x7f {
+			fmt.Fprintf(&b, "%%%02X", c)
+		} else {
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
 }
 
 func urlQueryEscape(s string) string {

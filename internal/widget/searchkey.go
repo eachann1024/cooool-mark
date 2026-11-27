@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo/ui"
+
+	"cooool-mark/internal/model"
 )
 
 // TypedSearchKey listens for a bare letter (a-z / Shift+A-Z) or digit (0-9)
@@ -56,16 +58,12 @@ func LooksLikeURL(q string) bool {
 
 // EnsureURLScheme prepends https:// when q has no http(s) scheme.
 func EnsureURLScheme(q string) string {
-	low := strings.ToLower(q)
-	if strings.HasPrefix(low, "http://") || strings.HasPrefix(low, "https://") {
-		return q
-	}
-	return "https://" + q
+	return model.EnsureURLScheme(q)
 }
 
 // ShortDomain formats a bookmark URL cleanly for secondary display.
 func ShortDomain(raw string) string {
-	u, err := url.Parse(raw)
+	u, err := url.Parse(model.EnsureURLScheme(raw))
 	if err != nil || u.Host == "" {
 		s := strings.TrimPrefix(strings.TrimPrefix(raw, "https://"), "http://")
 		s = strings.TrimPrefix(s, "www.")

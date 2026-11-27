@@ -80,7 +80,7 @@ func (a *App) SaveNewBookmark(b model.Bookmark, opts EnrichOptions) string {
 func (a *App) saveBookmark(b model.Bookmark, toast, autoPolish bool) string {
 	now := time.Now()
 	b.Title = strings.TrimSpace(b.Title)
-	b.URL = strings.TrimSpace(b.URL)
+	b.URL = model.EnsureURLScheme(b.URL)
 	if b.Icon.Image == "" && b.Icon.Letter == "" {
 		b.Icon = defaultIcon(b.Title, b.URL)
 	}
@@ -415,7 +415,7 @@ func looksLikeBareDomain(q string) bool {
 }
 
 func hostFallbackTitle(raw string) string {
-	u, err := url.Parse(raw)
+	u, err := url.Parse(model.EnsureURLScheme(raw))
 	if err != nil {
 		return raw
 	}
@@ -770,7 +770,7 @@ func sameAsHostBrand(title, rawURL string) bool {
 	if normTitle == "" {
 		return false
 	}
-	u, err := url.Parse(rawURL)
+	u, err := url.Parse(model.EnsureURLScheme(rawURL))
 	if err != nil {
 		return false
 	}
@@ -845,7 +845,11 @@ func IsPlaceholderTitle(title string) bool {
 // IsLocalOrIPURL reports whether raw points to localhost, a .local host, or a
 // bare IP address.
 func IsLocalOrIPURL(raw string) bool {
-	u, err := url.Parse(raw)
+	s := model.EnsureURLScheme(raw)
+	if s == "" {
+		return true
+	}
+	u, err := url.Parse(s)
 	if err != nil {
 		return false
 	}

@@ -294,10 +294,7 @@ func DetectSearchParam(rawURL string) (p SearchParam, ok bool) {
 	if hash >= 0 && hash < qMark {
 		return SearchParam{}, false
 	}
-	checkURL := rawURL
-	if !strings.Contains(checkURL, "://") {
-		checkURL = "https://" + checkURL
-	}
+	checkURL := model.EnsureURLScheme(rawURL)
 	u, err := url.Parse(checkURL)
 	if err != nil || u.Host == "" {
 		return SearchParam{}, false
@@ -438,12 +435,9 @@ func isCJK(r rune) bool {
 }
 
 func domainStem(rawURL string) string {
-	s := strings.TrimSpace(rawURL)
+	s := model.EnsureURLScheme(rawURL)
 	if s == "" {
 		return ""
-	}
-	if !strings.Contains(s, "://") {
-		s = "https://" + s
 	}
 	u, err := url.Parse(s)
 	if err != nil || u.Host == "" {
